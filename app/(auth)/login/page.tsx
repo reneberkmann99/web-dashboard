@@ -44,7 +44,7 @@ export default function LoginPage(): React.JSX.Element {
       }
 
       toast.success("Logged in successfully");
-      router.push(payload.data.redirectPath);
+      router.push(payload.data.redirectPath as "/admin" | "/client");
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Login failed");
