@@ -10,8 +10,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Prisma client
-RUN npx prisma generate
+# Generate Prisma client (use local binary, not npx which may fetch latest)
+RUN ./node_modules/.bin/prisma generate
 
 # Build Next.js (standalone output)
 RUN npm run build
