@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 
 /**
@@ -28,7 +28,7 @@ export async function logAuditEvent(input: AuditInput): Promise<void> {
       action: input.action,
       targetType: input.targetType,
       targetId: input.targetId ?? null,
-      metadata: input.metadata,
+      metadata: (input.metadata ?? Prisma.JsonNull) as Prisma.InputJsonValue,
       result: input.result,
       sourceIp: input.sourceIp ?? null
     }
