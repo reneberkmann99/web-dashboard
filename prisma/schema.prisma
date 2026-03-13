@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}
+
+enum NodeStatus {
+  ONLINE
+  OFFLINE
+  UNKNOWN
+  INACTIVE
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+}
+
+model ClientAccount {
+  id          String                @id @default(cuid())
+  name        String
+  slug        String                @unique
+  isActive    Boolean               @default(true)
+  users       User[]
+  projects    Project[]
+  assignments ContainerAssignment[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([isActive])
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  displayName     String
+  passwordHash    String
+  role            Role           @default(CLIENT)
+  isActive        Boolean        @default(true)
+  lastLoginAt     DateTime?
+  clientAccountId String?
+  clientAccount   ClientAccount? @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  sessions        Session[]
+  auditLogs       AuditLog[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([clientAccountId])
+  @@index([role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  lastUsedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Node {
+  id             String                @id @default(cuid())
+  name           String
+  hostname       String                @unique
+  apiBaseUrl     String
+  apiKeyEncrypted String
+  dockerContext  String?
+  status         NodeStatus            @default(UNKNOWN)
+  isActive       Boolean               @default(true)
+  lastHeartbeatAt DateTime?
+  projects       Project[]
+  assignments    ContainerAssignment[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([isActive])
+  @@index([status])
+}
+
+model Project {
+  id              String                @id @default(cuid())
+  name            String
+  slug            String
+  description     String?
+  isActive        Boolean               @default(true)
+  clientAccountId String
+  clientAccount   ClientAccount         @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  nodeId          String
+  node            Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  assignments     ContainerAssignment[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([clientAccountId, slug])
+  @@index([nodeId])
+}
+
+model ContainerAssignment {
+  id                String        @id @default(cuid())
+  clientAccountId   String
+  clientAccount     ClientAccount @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  projectId         String?
+  project           Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  nodeId            String
+  node              Node          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  dockerContainerId String
+  dockerName        String
+  image             String?
+  friendlyLabel     String?
+  allowedActions    String[]      @default(["start", "stop", "restart"])
+  isActive          Boolean       @default(true)
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([nodeId, dockerContainerId])
+  @@index([clientAccountId])
+  @@index([projectId])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  actorUserId String?
+  actorUser  User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail String?
+  actorRole  Role?
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  result     AuditResult
+  sourceIp   String?
+  createdAt  DateTime    @default(now())
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([createdAt])
+}

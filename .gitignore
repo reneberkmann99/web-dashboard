@@ -1,0 +1,14 @@
+node_modules
+.next
+.env
+.env.local
+prisma/dev.db
+coverage
+dist
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

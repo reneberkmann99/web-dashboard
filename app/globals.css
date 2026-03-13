@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: #1f2a44;
+}
+
+body {
+  @apply bg-background text-text min-h-screen bg-hostpanel-grid;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+a {
+  @apply text-accent;
+}
+
+.panel {
+  @apply rounded-xl border border-border bg-panel shadow-panel;
+}
+
+.panel-alt {
+  @apply rounded-xl border border-border bg-panelAlt;
+}
+
+.metric-value {
+  @apply text-3xl font-semibold tracking-tight;
+}
