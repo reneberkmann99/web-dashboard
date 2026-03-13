@@ -21,10 +21,12 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Install prisma CLI for migrations
+RUN npm install -g prisma@6
+
 # Prisma needs these at runtime
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=build /app/node_modules/prisma ./node_modules/prisma
 COPY --from=build /app/prisma ./prisma
 
 # Next.js standalone output
