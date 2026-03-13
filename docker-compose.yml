@@ -1,16 +1,49 @@
-version: "3.9"
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    ports:
-      - "5433:5432"
     environment:
       POSTGRES_DB: hostpanel
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
       - hostpanel_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "1337:3000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:${DB_PASSWORD:-postgres}@postgres:5432/hostpanel?schema=public"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-12}"
+      NODE_CREDENTIALS_KEY: "${NODE_CREDENTIALS_KEY}"
+      NODE_AGENT_TIMEOUT_MS: "${NODE_AGENT_TIMEOUT_MS:-5000}"
+      NEXT_PUBLIC_APP_NAME: "${NEXT_PUBLIC_APP_NAME:-HostPanel}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENT_PORT: "8081"
+      AGENT_API_KEY: "${AGENT_API_KEY}"
+      AGENT_DOCKER_MODE: "${AGENT_DOCKER_MODE:-mock}"
+      DOCKER_HOST: "${DOCKER_HOST:-}"
+      XDG_RUNTIME_DIR: "${XDG_RUNTIME_DIR:-}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   hostpanel_pg:
