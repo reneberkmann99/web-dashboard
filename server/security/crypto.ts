@@ -1,5 +1,12 @@
 import crypto from "node:crypto";
 
+/**
+ * Security: AES-256-GCM encryption for node agent API keys.
+ * Keys are encrypted at rest using NODE_CREDENTIALS_KEY.
+ * The key must be a 64-character hex string (32 bytes).
+ * Each encryption uses a unique 12-byte IV for GCM nonce.
+ */
+
 function getKey(): Buffer {
   const rawKey = process.env.NODE_CREDENTIALS_KEY;
   if (!rawKey || rawKey.length !== 64) {

@@ -1,12 +1,11 @@
 import { Prisma } from "@prisma/client";
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { fromError, ok } from "@/server/http";
 
 export async function GET(request: Request): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    await requireApiRole("ADMIN");
 
     const query = new URL(request.url).searchParams.get("q")?.trim();
     const where: Prisma.AuditLogWhereInput = query

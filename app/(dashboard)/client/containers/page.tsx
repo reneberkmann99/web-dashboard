@@ -84,8 +84,10 @@ export default function ClientContainersPage(): React.JSX.Element {
               <div className="h-10 animate-pulse rounded bg-panelAlt" />
               <div className="h-10 animate-pulse rounded bg-panelAlt" />
             </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load containers.</p>
           ) : !filtered.length ? (
-            <p className="text-sm text-muted">No containers found.</p>
+            <p className="text-sm text-muted">{search ? "No containers match your search." : "No containers assigned yet."}</p>
           ) : (
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase tracking-wide text-muted">

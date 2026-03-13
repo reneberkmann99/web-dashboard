@@ -1,7 +1,7 @@
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { fromError, ok } from "@/server/http";
-import { updateAssignmentSchema } from "@/server/validation/admin";
+import { updateAssignmentSchema, cuidParamSchema } from "@/server/validation/admin";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 
@@ -10,10 +10,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
     const sourceIp = getSourceIpFromRequest(request);
-    const { id } = await params;
+    const id = cuidParamSchema.parse((await params).id);
 
     const body = updateAssignmentSchema.parse(await request.json());
 
@@ -51,10 +50,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
     const sourceIp = getSourceIpFromRequest(request);
-    const { id } = await params;
+    const id = cuidParamSchema.parse((await params).id);
 
     await prisma.containerAssignment.delete({ where: { id } });
 

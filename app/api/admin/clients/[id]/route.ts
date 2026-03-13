@@ -1,6 +1,6 @@
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
-import { updateClientSchema } from "@/server/validation/admin";
+import { updateClientSchema, cuidParamSchema } from "@/server/validation/admin";
 import { fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
@@ -10,10 +10,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
     const sourceIp = getSourceIpFromRequest(request);
-    const { id } = await params;
+    const id = cuidParamSchema.parse((await params).id);
 
     const body = updateClientSchema.parse(await request.json());
 
@@ -45,10 +44,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
     const sourceIp = getSourceIpFromRequest(request);
-    const { id } = await params;
+    const id = cuidParamSchema.parse((await params).id);
 
     await prisma.clientAccount.update({
       where: { id },

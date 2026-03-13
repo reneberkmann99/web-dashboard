@@ -1,16 +1,15 @@
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { runContainerAction } from "@/server/services/containers";
 import { fail, fromError, ok } from "@/server/http";
-import { containerActionSchema } from "@/server/validation/admin";
+import { containerActionSchema, cuidParamSchema } from "@/server/validation/admin";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const { id } = await params;
-    const session = await requireApiSession();
-    ensureRole(session, ["CLIENT"]);
+    const id = cuidParamSchema.parse((await params).id);
+    const session = await requireApiRole("CLIENT");
 
     const body = containerActionSchema.parse(await request.json());
     const sourceIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;

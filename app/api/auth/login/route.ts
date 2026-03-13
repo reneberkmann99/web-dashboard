@@ -47,6 +47,16 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     if (user.role === "CLIENT" && (!user.clientAccount || !user.clientAccount.isActive)) {
+      await logAuditEvent({
+        action: "LOGIN_FAILED",
+        targetType: "USER",
+        targetId: user.id,
+        actorEmail: user.email,
+        actorRole: user.role,
+        metadata: { reason: "client_account_inactive" },
+        result: "FAILURE",
+        sourceIp
+      });
       return fail("CLIENT_INACTIVE", "Client account is inactive", 403);
     }
 

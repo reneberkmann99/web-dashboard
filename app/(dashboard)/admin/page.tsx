@@ -3,22 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
-type AdminOverview = {
-  totalClients: number;
-  totalNodes: number;
-  totalContainers: number;
-  runningContainers: number;
-  stoppedContainers: number;
-  offlineNodes: number;
-  recentActions: Array<{
-    id: string;
-    action: string;
-    actorEmail: string | null;
-    result: "SUCCESS" | "FAILURE";
-    createdAt: string;
-  }>;
-};
+import { MetricCard } from "@/components/ui/metric-card";
+import type { AdminOverview } from "@/types/domain";
 
 export default function AdminDashboardPage(): React.JSX.Element {
   const query = useQuery({
@@ -35,12 +21,12 @@ export default function AdminDashboardPage(): React.JSX.Element {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard label="Clients" value={query.data?.totalClients ?? "-"} />
-        <SummaryCard label="Nodes" value={query.data?.totalNodes ?? "-"} />
-        <SummaryCard label="Containers" value={query.data?.totalContainers ?? "-"} />
-        <SummaryCard label="Running" value={query.data?.runningContainers ?? "-"} />
-        <SummaryCard label="Stopped" value={query.data?.stoppedContainers ?? "-"} />
-        <SummaryCard label="Offline nodes" value={query.data?.offlineNodes ?? "-"} />
+        <MetricCard label="Clients" value={query.data?.totalClients ?? "-"} />
+        <MetricCard label="Nodes" value={query.data?.totalNodes ?? "-"} />
+        <MetricCard label="Containers" value={query.data?.totalContainers ?? "-"} />
+        <MetricCard label="Running" value={query.data?.runningContainers ?? "-"} />
+        <MetricCard label="Stopped" value={query.data?.stoppedContainers ?? "-"} />
+        <MetricCard label="Offline nodes" value={query.data?.offlineNodes ?? "-"} />
       </section>
 
       <Card className="panel">
@@ -54,6 +40,8 @@ export default function AdminDashboardPage(): React.JSX.Element {
               <div className="h-10 animate-pulse rounded bg-panelAlt" />
               <div className="h-10 animate-pulse rounded bg-panelAlt" />
             </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load recent actions.</p>
           ) : query.data?.recentActions.length ? (
             <div className="space-y-3 text-sm">
               {query.data.recentActions.map((entry) => (
@@ -74,15 +62,4 @@ export default function AdminDashboardPage(): React.JSX.Element {
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string | number }): React.JSX.Element {
-  return (
-    <Card className="panel">
-      <CardHeader className="pb-2">
-        <CardDescription>{label}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="metric-value">{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
+

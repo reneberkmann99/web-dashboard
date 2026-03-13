@@ -7,19 +7,10 @@ import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import type { NodeRecord } from "@/types/domain";
 
 type NodePayload = {
-  nodes: Array<{
-    id: string;
-    name: string;
-    hostname: string;
-    apiBaseUrl: string;
-    status: "ONLINE" | "OFFLINE" | "UNKNOWN" | "INACTIVE";
-    isActive: boolean;
-    _count: {
-      assignments: number;
-    };
-  }>;
+  nodes: NodeRecord[];
 };
 
 export default function AdminNodesPage(): React.JSX.Element {
@@ -82,7 +73,9 @@ export default function AdminNodesPage(): React.JSX.Element {
             <Input placeholder="API URL" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} required />
             <Input placeholder="Agent API key" value={apiKey} onChange={(event) => setApiKey(event.target.value)} required />
             <div className="md:col-span-4">
-              <Button type="submit">Add node</Button>
+              <Button disabled={createMutation.isPending} type="submit">
+                {createMutation.isPending ? "Adding..." : "Add node"}
+              </Button>
             </div>
           </form>
         </CardContent>
@@ -94,6 +87,16 @@ export default function AdminNodesPage(): React.JSX.Element {
           <CardDescription>Agent-connected servers in your control plane.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {query.isLoading ? (
+            <div className="space-y-3">
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+            </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load nodes.</p>
+          ) : !(query.data?.nodes ?? []).length ? (
+            <p className="text-sm text-muted">No nodes registered yet.</p>
+          ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -116,6 +119,7 @@ export default function AdminNodesPage(): React.JSX.Element {
                   <td className="py-3">{node._count.assignments}</td>
                   <td className="py-3">
                     <Button
+                      disabled={patchMutation.isPending}
                       size="sm"
                       variant={node.isActive ? "danger" : "secondary"}
                       onClick={() => patchMutation.mutate({ id: node.id, isActive: !node.isActive })}
@@ -127,6 +131,7 @@ export default function AdminNodesPage(): React.JSX.Element {
               ))}
             </tbody>
           </table>
+          )}
         </CardContent>
       </Card>
     </div>

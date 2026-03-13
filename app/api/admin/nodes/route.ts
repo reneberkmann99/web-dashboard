@@ -1,4 +1,4 @@
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { createNodeSchema } from "@/server/validation/admin";
 import { encryptSecret } from "@/server/security/crypto";
@@ -8,8 +8,7 @@ import { getSourceIpFromRequest } from "@/server/request";
 
 export async function GET(): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
 
     const nodes = await prisma.node.findMany({
       orderBy: { createdAt: "desc" },
@@ -36,8 +35,7 @@ export async function GET(): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
     const sourceIp = getSourceIpFromRequest(request);
 
     const body = createNodeSchema.parse(await request.json());

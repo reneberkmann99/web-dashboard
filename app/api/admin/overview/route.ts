@@ -1,12 +1,11 @@
 import { prisma } from "@/server/db";
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { buildOverview, listContainersForSession } from "@/server/services/containers";
 import { fromError, ok } from "@/server/http";
 
 export async function GET(): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
 
     const [totalClients, totalNodes, recentActions, containers] = await Promise.all([
       prisma.clientAccount.count(),

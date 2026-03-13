@@ -8,22 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import type { AssignmentRecord, NameRef } from "@/types/domain";
 
 type AssignmentPayload = {
-  assignments: Array<{
-    id: string;
-    dockerName: string;
-    dockerContainerId: string;
-    image: string | null;
-    isActive: boolean;
-    clientAccount: { name: string };
-    node: { name: string };
-    project: { name: string } | null;
-    allowedActions: string[];
-  }>;
-  clients: Array<{ id: string; name: string }>;
-  nodes: Array<{ id: string; name: string }>;
-  projects: Array<{ id: string; name: string }>;
+  assignments: AssignmentRecord[];
+  clients: NameRef[];
+  nodes: NameRef[];
+  projects: NameRef[];
 };
 
 export default function AdminAssignmentsPage(): React.JSX.Element {
@@ -123,7 +114,9 @@ export default function AdminAssignmentsPage(): React.JSX.Element {
             <Input placeholder="Image" value={image} onChange={(event) => setImage(event.target.value)} />
             <Input placeholder="Friendly label" value={friendlyLabel} onChange={(event) => setFriendlyLabel(event.target.value)} />
             <div className="md:col-span-4">
-              <Button type="submit">Create assignment</Button>
+              <Button disabled={createMutation.isPending} type="submit">
+                {createMutation.isPending ? "Creating..." : "Create assignment"}
+              </Button>
             </div>
           </form>
         </CardContent>
@@ -135,6 +128,16 @@ export default function AdminAssignmentsPage(): React.JSX.Element {
           <CardDescription>Only active assignments are shown to clients.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {query.isLoading ? (
+            <div className="space-y-3">
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+            </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load assignments.</p>
+          ) : !(query.data?.assignments ?? []).length ? (
+            <p className="text-sm text-muted">No assignments yet. Create one above.</p>
+          ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -159,6 +162,7 @@ export default function AdminAssignmentsPage(): React.JSX.Element {
                   <td className="py-3">{assignment.allowedActions.join(", ")}</td>
                   <td className="py-3">
                     <Button
+                      disabled={deleteMutation.isPending}
                       size="sm"
                       variant="danger"
                       onClick={() => {
@@ -174,6 +178,7 @@ export default function AdminAssignmentsPage(): React.JSX.Element {
               ))}
             </tbody>
           </table>
+          )}
         </CardContent>
       </Card>
     </div>

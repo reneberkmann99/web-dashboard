@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MetricCard } from "@/components/ui/metric-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { ContainerView, OverviewStats } from "@/types/domain";
 
@@ -46,6 +47,8 @@ export default function ClientDashboardPage(): React.JSX.Element {
               <div className="h-10 animate-pulse rounded bg-panelAlt" />
               <div className="h-10 animate-pulse rounded bg-panelAlt" />
             </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load containers.</p>
           ) : query.data?.recentContainers.length ? (
             <div className="space-y-3">
               {query.data.recentContainers.map((container) => (
@@ -70,15 +73,4 @@ export default function ClientDashboardPage(): React.JSX.Element {
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string | number }): React.JSX.Element {
-  return (
-    <Card className="panel">
-      <CardHeader className="pb-2">
-        <CardDescription>{label}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="metric-value">{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
+

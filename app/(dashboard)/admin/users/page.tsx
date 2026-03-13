@@ -8,21 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import type { UserRecord, UserRole, NameRef } from "@/types/domain";
 
 type UsersPayload = {
-  users: Array<{
-    id: string;
-    email: string;
-    displayName: string;
-    role: "ADMIN" | "CLIENT";
-    isActive: boolean;
-    clientAccountId: string | null;
-    clientAccount: { id: string; name: string } | null;
-  }>;
-  clients: Array<{
-    id: string;
-    name: string;
-  }>;
+  users: UserRecord[];
+  clients: NameRef[];
 };
 
 export default function AdminUsersPage(): React.JSX.Element {
@@ -30,7 +20,7 @@ export default function AdminUsersPage(): React.JSX.Element {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("ClientPass123!");
-  const [role, setRole] = useState<"ADMIN" | "CLIENT">("CLIENT");
+  const [role, setRole] = useState<UserRole>("CLIENT");
   const [clientAccountId, setClientAccountId] = useState("");
 
   const query = useQuery({
@@ -61,7 +51,7 @@ export default function AdminUsersPage(): React.JSX.Element {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (input: { id: string; role: "ADMIN" | "CLIENT"; isActive: boolean; clientAccountId: string | null }) =>
+    mutationFn: (input: { id: string; role: UserRole; isActive: boolean; clientAccountId: string | null }) =>
       apiFetch<{ success: boolean }>(`/api/admin/users/${input.id}`, {
         method: "PATCH",
         body: JSON.stringify(input)
@@ -91,7 +81,7 @@ export default function AdminUsersPage(): React.JSX.Element {
             <Input placeholder="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             <Input placeholder="display name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} required />
             <Input placeholder="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-            <Select value={role} onChange={(event) => setRole(event.target.value as "ADMIN" | "CLIENT")}>
+            <Select value={role} onChange={(event) => setRole(event.target.value as UserRole)}>
               <option value="CLIENT">CLIENT</option>
               <option value="ADMIN">ADMIN</option>
             </Select>
@@ -109,7 +99,7 @@ export default function AdminUsersPage(): React.JSX.Element {
             </Select>
             <div className="md:col-span-5">
               <Button disabled={createMutation.isPending} type="submit">
-                Create user
+                {createMutation.isPending ? "Creating..." : "Create user"}
               </Button>
             </div>
           </form>
@@ -122,6 +112,16 @@ export default function AdminUsersPage(): React.JSX.Element {
           <CardDescription>Role-based access control assignments.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {query.isLoading ? (
+            <div className="space-y-3">
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+            </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load users.</p>
+          ) : !(query.data?.users ?? []).length ? (
+            <p className="text-sm text-muted">No users yet. Create one above.</p>
+          ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -145,6 +145,7 @@ export default function AdminUsersPage(): React.JSX.Element {
                   <td className="py-3">
                     <div className="flex gap-2">
                       <Button
+                        disabled={updateMutation.isPending}
                         size="sm"
                         variant="secondary"
                         onClick={() =>
@@ -159,6 +160,7 @@ export default function AdminUsersPage(): React.JSX.Element {
                         Toggle role
                       </Button>
                       <Button
+                        disabled={updateMutation.isPending}
                         size="sm"
                         variant={user.isActive ? "danger" : "secondary"}
                         onClick={() =>
@@ -178,6 +180,7 @@ export default function AdminUsersPage(): React.JSX.Element {
               ))}
             </tbody>
           </table>
+          )}
         </CardContent>
       </Card>
     </div>

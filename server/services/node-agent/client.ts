@@ -7,6 +7,15 @@ import {
   RuntimeContainer
 } from "@/server/services/node-agent/types";
 
+/**
+ * Security: server-to-server agent client.
+ * - All container IDs are URL-encoded before use in agent URLs.
+ * - API keys are decrypted on each call (never cached in memory).
+ * - Agent responses are validated with Zod before returning to callers.
+ * - Timeouts prevent hanging requests from blocking the web app.
+ * - Errors are normalized: agent internals are never surfaced to the browser.
+ */
+
 type AgentResponse<T> = {
   ok: boolean;
   data: T | null;
@@ -32,7 +41,8 @@ export class NodeAgentClient {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await fetch(`${node.apiBaseUrl}${path}`, {
+      const url = new URL(path, node.apiBaseUrl);
+      const response = await fetch(url.toString(), {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -43,11 +53,18 @@ export class NodeAgentClient {
       });
 
       if (!response.ok) {
+        console.error(`[NodeAgent] ${method} ${path} on node ${node.id} returned ${response.status}`);
         return { ok: false, data: null };
       }
 
       return { ok: true, data: (await response.json()) as T };
-    } catch {
+    } catch (error) {
+      // Distinguish timeout from other errors for operational diagnosis
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.error(`[NodeAgent] timeout after ${this.timeoutMs}ms: ${method} ${path} on node ${node.id}`);
+      } else {
+        console.error(`[NodeAgent] ${method} ${path} on node ${node.id} failed:`, error instanceof Error ? error.message : error);
+      }
       return { ok: false, data: null };
     } finally {
       clearTimeout(timeout);

@@ -1,3 +1,15 @@
+/**
+ * Container service — primary business-logic layer.
+ *
+ * Security invariants:
+ *  - CLIENT sessions are automatically scoped to their `clientAccountId`
+ *    via the Prisma WHERE clause built in `buildWhereClause()`.
+ *  - ADMIN sessions omit the client filter, granting full cross-client access.
+ *  - Every action mutation is audited through `logAuditEvent`.
+ *
+ * Callers MUST validate session and role *before* invoking these functions
+ * (enforced by the `requireApiRole` guard in each route handler).
+ */
 import { ContainerAssignment, Prisma, Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
@@ -213,7 +225,22 @@ export async function runContainerAction(
     }
   });
 
-  if (!assignment || !assignment.allowedActions.includes(action)) {
+  if (!assignment) {
+    return false;
+  }
+
+  if (!assignment.allowedActions.includes(action)) {
+    await logAuditEvent({
+      actorUserId: session.userId,
+      actorEmail: session.email,
+      actorRole: session.role,
+      action: `CONTAINER_${action.toUpperCase()}`,
+      targetType: "CONTAINER_ASSIGNMENT",
+      targetId: assignmentId,
+      metadata: { reason: "action_not_allowed" },
+      result: "FAILURE",
+      sourceIp
+    });
     return false;
   }
 

@@ -1,8 +1,8 @@
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { hashPassword } from "@/server/auth/password";
 import { fromError, ok } from "@/server/http";
-import { updateUserSchema } from "@/server/validation/admin";
+import { updateUserSchema, cuidParamSchema } from "@/server/validation/admin";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 
@@ -11,10 +11,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const session = await requireApiRole("ADMIN");
     const sourceIp = getSourceIpFromRequest(request);
-    const { id } = await params;
+    const id = cuidParamSchema.parse((await params).id);
 
     const body = updateUserSchema.parse(await request.json());
 

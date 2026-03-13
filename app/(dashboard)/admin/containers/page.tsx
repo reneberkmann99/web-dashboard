@@ -77,6 +77,17 @@ export default function AdminContainersPage(): React.JSX.Element {
           <CardDescription>Server-side authorized controls for assigned containers.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {query.isLoading ? (
+            <div className="space-y-3">
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+            </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load containers.</p>
+          ) : !filtered.length ? (
+            <p className="text-sm text-muted">{search ? "No containers match your search." : "No containers assigned yet."}</p>
+          ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -108,13 +119,14 @@ export default function AdminContainersPage(): React.JSX.Element {
                   <td className="py-3">{container.memoryUsage ?? "-"}</td>
                   <td className="py-3">
                     <div className="flex gap-2">
-                      <Button size="sm" onClick={() => actionMutation.mutate({ assignmentId: container.assignmentId, action: "start" })}>
+                      <Button disabled={actionMutation.isPending} size="sm" onClick={() => actionMutation.mutate({ assignmentId: container.assignmentId, action: "start" })}>
                         start
                       </Button>
-                      <Button size="sm" variant="secondary" onClick={() => actionMutation.mutate({ assignmentId: container.assignmentId, action: "restart" })}>
+                      <Button disabled={actionMutation.isPending} size="sm" variant="secondary" onClick={() => actionMutation.mutate({ assignmentId: container.assignmentId, action: "restart" })}>
                         restart
                       </Button>
                       <Button
+                        disabled={actionMutation.isPending}
                         size="sm"
                         variant="danger"
                         onClick={() => {
@@ -131,6 +143,7 @@ export default function AdminContainersPage(): React.JSX.Element {
               ))}
             </tbody>
           </table>
+          )}
         </CardContent>
       </Card>
     </div>

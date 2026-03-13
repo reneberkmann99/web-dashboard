@@ -1,6 +1,12 @@
 import { Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 
+/**
+ * Audit logging for all privileged mutations.
+ * Every state-changing admin/client action MUST produce an audit event.
+ * Events are immutable once written.
+ */
+
 type AuditInput = {
   actorUserId?: string | null;
   actorEmail?: string | null;

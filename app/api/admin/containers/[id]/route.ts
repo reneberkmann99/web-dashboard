@@ -1,5 +1,6 @@
-import { ensureRole, requireApiSession } from "@/server/auth/guards";
+import { requireApiRole } from "@/server/auth/guards";
 import { getContainerByAssignmentId } from "@/server/services/containers";
+import { cuidParamSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 
 export async function GET(
@@ -7,9 +8,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const { id } = await params;
-    const session = await requireApiSession();
-    ensureRole(session, ["ADMIN"]);
+    const id = cuidParamSchema.parse((await params).id);
+    const session = await requireApiRole("ADMIN");
 
     const container = await getContainerByAssignmentId(session, id);
     if (!container) {

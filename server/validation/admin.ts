@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+/**
+ * Security: validates that route :id params are valid CUIDs.
+ * Prevents arbitrary string injection into Prisma queries and agent calls.
+ */
+export const cuidParamSchema = z.string().cuid();
+
 export const createClientSchema = z.object({
   name: z.string().min(2).max(100),
   slug: z.string().min(2).max(60).regex(/^[a-z0-9-]+$/),

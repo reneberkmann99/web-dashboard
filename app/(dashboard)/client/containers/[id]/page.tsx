@@ -62,6 +62,13 @@ export default function ContainerDetailPage(): React.JSX.Element {
       </div>
 
       {detail.isLoading || !container ? (
+        detail.isError ? (
+          <Card className="panel">
+            <CardContent className="p-6">
+              <p className="text-sm text-red-400">Failed to load container details.</p>
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="panel">
           <CardContent className="space-y-3 p-6">
             <div className="h-8 animate-pulse rounded bg-panelAlt" />
@@ -69,6 +76,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
             <div className="h-8 animate-pulse rounded bg-panelAlt" />
           </CardContent>
         </Card>
+        )
       ) : (
         <>
           <Card className="panel">
@@ -125,6 +133,8 @@ export default function ContainerDetailPage(): React.JSX.Element {
                   <div className="h-8 animate-pulse rounded bg-panelAlt" />
                   <div className="h-8 animate-pulse rounded bg-panelAlt" />
                 </div>
+              ) : logs.isError ? (
+                <p className="text-sm text-red-400">Failed to load logs.</p>
               ) : (
                 <pre className="max-h-[460px] overflow-auto rounded-lg border border-border bg-black/40 p-4 text-xs text-slate-200">
                   {(logs.data?.logs ?? ["No logs available"]).join("\n")}

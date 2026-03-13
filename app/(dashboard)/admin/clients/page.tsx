@@ -7,17 +7,7 @@ import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-
-type ClientRecord = {
-  id: string;
-  name: string;
-  slug: string;
-  isActive: boolean;
-  _count: {
-    users: number;
-    assignments: number;
-  };
-};
+import type { ClientRecord } from "@/types/domain";
 
 export default function AdminClientsPage(): React.JSX.Element {
   const queryClient = useQueryClient();
@@ -93,6 +83,10 @@ export default function AdminClientsPage(): React.JSX.Element {
         <CardContent>
           {query.isLoading ? (
             <div className="h-10 animate-pulse rounded bg-panelAlt" />
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load clients.</p>
+          ) : !(query.data?.clients ?? []).length ? (
+            <p className="text-sm text-muted">No clients yet. Create one above.</p>
           ) : (
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase tracking-wide text-muted">

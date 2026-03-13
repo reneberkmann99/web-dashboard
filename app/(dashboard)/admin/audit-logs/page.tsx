@@ -5,19 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import type { AuditLogEntry } from "@/types/domain";
 
 type AuditPayload = {
-  logs: Array<{
-    id: string;
-    createdAt: string;
-    actorEmail: string | null;
-    actorRole: "ADMIN" | "CLIENT" | null;
-    action: string;
-    targetType: string;
-    targetId: string | null;
-    result: "SUCCESS" | "FAILURE";
-    sourceIp: string | null;
-  }>;
+  logs: AuditLogEntry[];
 };
 
 export default function AdminAuditLogsPage(): React.JSX.Element {
@@ -49,6 +40,17 @@ export default function AdminAuditLogsPage(): React.JSX.Element {
           <CardDescription>Includes login attempts and container actions.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {query.isLoading ? (
+            <div className="space-y-3">
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+              <div className="h-10 animate-pulse rounded bg-panelAlt" />
+            </div>
+          ) : query.isError ? (
+            <p className="text-sm text-red-400">Failed to load audit logs.</p>
+          ) : !(query.data?.logs ?? []).length ? (
+            <p className="text-sm text-muted">{search ? "No logs match your search." : "No audit events recorded yet."}</p>
+          ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -78,6 +80,7 @@ export default function AdminAuditLogsPage(): React.JSX.Element {
               ))}
             </tbody>
           </table>
+          )}
         </CardContent>
       </Card>
     </div>
