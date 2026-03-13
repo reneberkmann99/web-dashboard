@@ -2,7 +2,7 @@
 set -e
 
 echo "[HostPanel] Running database migrations..."
-prisma migrate deploy
+node ./node_modules/prisma/build/index.js migrate deploy
 
 echo "[HostPanel] Starting server..."
 exec node server.js
