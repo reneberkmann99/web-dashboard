@@ -294,3 +294,83 @@ export function buildOverview(containers: ContainerView[]): OverviewStats {
     onlineNodes
   };
 }
+
+
+/**
+ * ADMIN-only: return every container running on every active node,
+ * regardless of assignment. Containers that have an assignment carry its
+ * metadata (client/project/label/actions); unassigned ones are returned
+ * read-only (no actions, clientName "Unassigned").
+ */
+export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
+  const nodes = await prisma.node.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" }
+  });
+
+  const assignments = await prisma.containerAssignment.findMany({
+    where: { isActive: true },
+    include: {
+      node: true,
+      project: true,
+      clientAccount: true
+    }
+  });
+  const assignmentByNodeContainer = new Map<string, (typeof assignments)[number]>();
+  for (const assignment of assignments) {
+    assignmentByNodeContainer.set(`${assignment.nodeId}:${assignment.dockerContainerId}`, assignment);
+  }
+
+  const results: ContainerView[] = [];
+
+  for (const node of nodes) {
+    const runtimePayload = await nodeAgentClient.listContainers(node);
+    await prisma.node
+      .update({
+        where: { id: node.id },
+        data: {
+          status: runtimePayload.nodeOnline ? "ONLINE" : "OFFLINE",
+          lastHeartbeatAt: new Date()
+        }
+      })
+      .catch(() => undefined);
+
+    for (const live of runtimePayload.containers) {
+      const assignment = assignmentByNodeContainer.get(`${node.id}:${live.id}`);
+      const mapped = {
+        ...live,
+        status: mapStatus(live.status)
+      };
+
+      if (assignment) {
+        results.push(toContainerView(assignment, mapped, runtimePayload.nodeOnline));
+      } else {
+        results.push({
+          assignmentId: "",
+          containerId: live.id,
+          name: live.name,
+          image: live.image,
+          status: mapped.status,
+          uptime: live.uptime,
+          ports: live.ports,
+          createdAt: live.createdAt,
+          cpuPercent: live.cpuPercent,
+          memoryUsage: live.memoryUsage,
+          restartCount: live.restartCount,
+          nodeId: node.id,
+          nodeName: node.name,
+          nodeOnline: runtimePayload.nodeOnline,
+          projectName: null,
+          clientName: "Unassigned",
+          allowedActions: [],
+          lastUpdatedAt: live.lastUpdatedAt
+        });
+      }
+    }
+  }
+
+  return results.sort(
+    (a, b) => a.nodeName.localeCompare(b.nodeName) || a.name.localeCompare(b.name)
+  );
+}
+

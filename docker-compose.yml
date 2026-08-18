@@ -28,6 +28,9 @@ services:
       NODE_AGENT_TIMEOUT_MS: "${NODE_AGENT_TIMEOUT_MS:-5000}"
       NEXT_PUBLIC_APP_NAME: "${NEXT_PUBLIC_APP_NAME:-HostPanel}"
       COOKIE_SECURE: "${COOKIE_SECURE:-}"
+      PAM_BRIDGE_URL: "${PAM_BRIDGE_URL:-}"
+      PAM_BRIDGE_KEY: "${PAM_BRIDGE_KEY:-}"
+      PAM_ADMIN_USERS: "${PAM_ADMIN_USERS:-rene}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,6 +48,20 @@ services:
       XDG_RUNTIME_DIR: "${XDG_RUNTIME_DIR:-}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
+
+  agent-rootless:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENT_PORT: "8082"
+      AGENT_API_KEY: "${AGENT_ROOTLESS_API_KEY}"
+      AGENT_DOCKER_MODE: "rootless"
+      DOCKER_HOST: "unix:///run/rootless.sock"
+      XDG_RUNTIME_DIR: ""
+    volumes:
+      - /home/lenel/.docker/run/docker.sock:/run/rootless.sock:rw
 
 volumes:
   hostpanel_pg:

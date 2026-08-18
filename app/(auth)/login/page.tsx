@@ -70,13 +70,15 @@ export default function LoginPage(): React.JSX.Element {
         <Card className="panel">
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
-            <CardDescription>Use your HostPanel account credentials.</CardDescription>
+            <CardDescription>
+              Use your HostPanel account credentials, or your Linux system username/password.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={onSubmit}>
               <div className="space-y-2">
                 <label className="text-sm text-muted" htmlFor="email">
-                  Email
+                  Email or Linux username
                 </label>
                 <Input
                   id="email"

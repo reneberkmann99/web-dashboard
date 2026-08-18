@@ -12,6 +12,11 @@ enum Role {
   CLIENT
 }
 
+enum AuthSource {
+  LOCAL
+  PAM
+}
+
 enum NodeStatus {
   ONLINE
   OFFLINE
@@ -43,6 +48,8 @@ model User {
   email           String         @unique
   displayName     String
   passwordHash    String
+  authSource      AuthSource     @default(LOCAL)
+  pamUsername     String?        @unique
   role            Role           @default(CLIENT)
   isActive        Boolean        @default(true)
   lastLoginAt     DateTime?
@@ -55,6 +62,7 @@ model User {
 
   @@index([clientAccountId])
   @@index([role])
+  @@index([pamUsername])
 }
 
 model Session {
