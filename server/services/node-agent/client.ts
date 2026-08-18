@@ -133,6 +133,36 @@ export class NodeAgentClient {
     const result = await this.call<unknown>(node, "/health");
     return result.ok;
   }
+
+  /** Agent + host metadata (version, docker version, os, cpu, memory). */
+  async getNodeInfo(node: Node): Promise<{
+    agentVersion?: string;
+    dockerVersion?: string;
+    osInfo?: Record<string, unknown>;
+    systemInfo?: Record<string, unknown>;
+  }> {
+    const result = await this.call<unknown>(node, "/info");
+    if (!result.ok || !result.data || typeof result.data !== "object") {
+      return {};
+    }
+    const data = result.data as Record<string, unknown>;
+    return {
+      agentVersion: typeof data.agentVersion === "string" ? data.agentVersion : undefined,
+      dockerVersion: typeof data.dockerVersion === "string" ? data.dockerVersion : undefined,
+      osInfo:
+        data.os && typeof data.os === "string"
+          ? { os: data.os, arch: data.arch ?? null }
+          : undefined,
+      systemInfo:
+        data.hostname || data.cpuCount || data.totalMemBytes
+          ? {
+              hostname: data.hostname ?? null,
+              cpuCount: data.cpuCount ?? null,
+              totalMemBytes: data.totalMemBytes ?? null
+            }
+          : undefined
+    };
+  }
 }
 
 export const nodeAgentClient = new NodeAgentClient();

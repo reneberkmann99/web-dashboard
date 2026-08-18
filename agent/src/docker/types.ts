@@ -14,6 +14,8 @@ export type RuntimeContainer = {
 
 export interface DockerAdapter {
   health(): Promise<boolean>;
+  /** Docker server version string, e.g. "29.6.2"; null when unavailable. */
+  version?(): Promise<string | null>;
   listContainers(): Promise<RuntimeContainer[]>;
   getContainer(containerId: string): Promise<RuntimeContainer | null>;
   getContainerLogs(containerId: string, tail: number): Promise<string[]>;

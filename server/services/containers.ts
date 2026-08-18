@@ -247,12 +247,17 @@ export async function listContainersForSession(session: AuthSession): Promise<Co
     const node = await prisma.node.findUnique({ where: { id: nodeId } });
     if (!node) continue;
     const runtimePayload = await nodeAgentClient.listContainers(node);
+    const nodeInfo = await nodeAgentClient.getNodeInfo(node).catch(() => ({} as Awaited<ReturnType<typeof nodeAgentClient.getNodeInfo>>));
     await prisma.node
       .update({
         where: { id: node.id },
         data: {
           status: runtimePayload.nodeOnline ? "ONLINE" : "OFFLINE",
-          lastHeartbeatAt: new Date()
+          lastHeartbeatAt: new Date(),
+          agentVersion: nodeInfo.agentVersion ?? undefined,
+          dockerVersion: nodeInfo.dockerVersion ?? undefined,
+          osInfo: (nodeInfo.osInfo as object) ?? undefined,
+          systemInfo: (nodeInfo.systemInfo as object) ?? undefined
         }
       })
       .catch(() => undefined);
@@ -407,12 +412,17 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
 
   for (const node of nodes) {
     const runtimePayload = await nodeAgentClient.listContainers(node);
+    const nodeInfo = await nodeAgentClient.getNodeInfo(node).catch(() => ({} as Awaited<ReturnType<typeof nodeAgentClient.getNodeInfo>>));
     await prisma.node
       .update({
         where: { id: node.id },
         data: {
           status: runtimePayload.nodeOnline ? "ONLINE" : "OFFLINE",
-          lastHeartbeatAt: new Date()
+          lastHeartbeatAt: new Date(),
+          agentVersion: nodeInfo.agentVersion ?? undefined,
+          dockerVersion: nodeInfo.dockerVersion ?? undefined,
+          osInfo: (nodeInfo.osInfo as object) ?? undefined,
+          systemInfo: (nodeInfo.systemInfo as object) ?? undefined
         }
       })
       .catch(() => undefined);

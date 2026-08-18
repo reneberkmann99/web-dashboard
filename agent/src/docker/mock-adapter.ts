@@ -59,6 +59,10 @@ const mockLogs: Record<string, string[]> = {
 };
 
 export class MockDockerAdapter implements DockerAdapter {
+  async version(): Promise<string | null> {
+    return "0.0.0-mock";
+  }
+
   async health(): Promise<boolean> {
     return true;
   }

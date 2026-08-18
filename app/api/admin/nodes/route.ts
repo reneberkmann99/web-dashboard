@@ -19,6 +19,9 @@ export async function GET(): Promise<Response> {
         apiBaseUrl: true,
         status: true,
         isActive: true,
+        agentVersion: true,
+        dockerVersion: true,
+        lastHeartbeatAt: true,
         _count: {
           select: {
             assignments: true

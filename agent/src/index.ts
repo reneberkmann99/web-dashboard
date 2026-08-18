@@ -1,23 +1,126 @@
 import express, { Request, Response, NextFunction } from "express";
 import crypto from "node:crypto";
+import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { DockerAdapter } from "./docker/types";
 import { MockDockerAdapter } from "./docker/mock-adapter";
 import { RootlessDockerAdapter } from "./docker/rootless-adapter";
 
+export const AGENT_VERSION = "0.2.0";
+
 const app = express();
 app.use(express.json());
 
-const apiKey = process.env.AGENT_API_KEY;
 const port = Number(process.env.AGENT_PORT ?? 8081);
 const adapterMode = process.env.AGENT_DOCKER_MODE ?? "mock";
-const adapter: DockerAdapter = adapterMode === "rootless" ? new RootlessDockerAdapter() : new MockDockerAdapter();
+const adapter: DockerAdapter =
+  adapterMode === "rootless" ? new RootlessDockerAdapter() : new MockDockerAdapter();
 
-if (!apiKey || apiKey.length < 8) {
-  throw new Error("AGENT_API_KEY is required and must be at least 8 characters");
+// ----- agent credentials ---------------------------------------------------
+// Two paths:
+//  1. AGENT_API_KEY set explicitly (manual enrollment, legacy) — used as-is.
+//  2. AGENT_ENROLL_TOKEN set — the agent registers itself with the control
+//     plane on startup, receives a fresh API key, and persists it to
+//     AGENT_KEY_FILE so it survives restarts.
+const MANUAL_KEY = process.env.AGENT_API_KEY;
+const ENROLL_TOKEN = process.env.AGENT_ENROLL_TOKEN;
+const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL;
+const KEY_FILE = process.env.AGENT_KEY_FILE;
+
+let agentKey: string | null = MANUAL_KEY ?? null;
+
+function loadKeyFile(): string | null {
+  if (!KEY_FILE) return null;
+  try {
+    const value = fs.readFileSync(KEY_FILE, "utf8").trim();
+    return value || null;
+  } catch {
+    return null;
+  }
 }
 
+function persistKeyFile(key: string): void {
+  if (!KEY_FILE) return;
+  try {
+    fs.mkdirSync(path.dirname(KEY_FILE), { recursive: true });
+    fs.writeFileSync(KEY_FILE, key, { mode: 0o600 });
+  } catch (error) {
+    console.error(`[agent] failed to persist agent key to ${KEY_FILE}:`, error instanceof Error ? error.message : error);
+  }
+}
+
+if (KEY_FILE) {
+  const persisted = loadKeyFile();
+  if (persisted) {
+    agentKey = persisted;
+  }
+}
+
+async function collectHostInfo() {
+  let dockerVersion: string | null = null;
+  try {
+    dockerVersion = await adapter.version?.() ?? null;
+  } catch {
+    dockerVersion = null;
+  }
+  return {
+    hostname: os.hostname(),
+    os: `${os.type()} ${os.release()}`,
+    arch: os.arch(),
+    cpuCount: os.cpus().length,
+    totalMemBytes: os.totalmem(),
+    agentVersion: AGENT_VERSION,
+    dockerVersion
+  };
+}
+
+/** One-time self-enrollment: register with the control plane and receive an API key. */
+async function enroll(): Promise<boolean> {
+  if (agentKey || !ENROLL_TOKEN || !CONTROL_PLANE_URL) {
+    return Boolean(agentKey);
+  }
+  try {
+    const info = await collectHostInfo();
+    const response = await fetch(new URL("/api/agent/enroll", CONTROL_PLANE_URL).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: ENROLL_TOKEN,
+        agentVersion: AGENT_VERSION,
+        dockerVersion: info.dockerVersion,
+        osInfo: { type: os.type(), release: os.release(), arch: os.arch() },
+        systemInfo: {
+          hostname: info.hostname,
+          cpuCount: info.cpuCount,
+          totalMemBytes: info.totalMemBytes
+        },
+        apiBaseUrl: `http://${info.hostname}:${port}`
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) {
+      console.error(`[agent] enrollment rejected (HTTP ${response.status})`);
+      return false;
+    }
+    const payload = (await response.json()) as { ok: boolean; data?: { apiKey: string; nodeId: string } };
+    if (!payload.ok || !payload.data?.apiKey) {
+      console.error("[agent] enrollment response missing apiKey");
+      return false;
+    }
+    agentKey = payload.data.apiKey;
+    persistKeyFile(payload.data.apiKey);
+    console.log(`[agent] enrolled with control plane; node=${payload.data.nodeId}`);
+    return true;
+  } catch (error) {
+    console.error("[agent] enrollment failed:", error instanceof Error ? error.message : error);
+    return false;
+  }
+}
+
+// ---------- rate limit + auth ----------
 app.use(
   rateLimit({
     windowMs: 10 * 1000,
@@ -27,14 +130,26 @@ app.use(
   })
 );
 
-// Security: timing-safe API key comparison to prevent timing attacks.
+// Enroll endpoint must be reachable before the agent has a key; everything
+// else requires the (now possibly persisted) agent key.
+app.post("/enroll", async (req: Request, res: Response) => {
+  // Delegate to the control plane. The control plane answers with the node
+  // registration response; the agent proxies it back to whoever triggered
+  // the enrollment command.
+  res.status(501).json({ error: "use the control plane enrollment flow" });
+});
+
 app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!agentKey) {
+    res.status(503).json({ error: "AGENT_NOT_ENROLLED" });
+    return;
+  }
   const provided = req.header("x-agent-key");
-  if (!provided || !apiKey) {
+  if (!provided) {
     res.status(401).json({ error: "UNAUTHORIZED" });
     return;
   }
-  const expected = Buffer.from(apiKey);
+  const expected = Buffer.from(agentKey);
   const received = Buffer.from(provided);
   if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
     res.status(401).json({ error: "UNAUTHORIZED" });
@@ -47,14 +162,27 @@ const containerIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/)
 
 app.get("/health", async (_req: Request, res: Response) => {
   const healthy = await adapter.health();
+  const info = await collectHostInfo();
   res.json({
     nodeOnline: healthy,
     mode: adapterMode,
+    agentVersion: AGENT_VERSION,
+    hostname: info.hostname,
+    os: info.os,
+    arch: info.arch,
+    cpuCount: info.cpuCount,
+    totalMemBytes: info.totalMemBytes,
+    dockerVersion: info.dockerVersion,
     rootlessHints: {
       dockerHost: process.env.DOCKER_HOST ? "configured" : "unset",
       xdgRuntimeDir: process.env.XDG_RUNTIME_DIR ? "configured" : "unset"
     }
   });
+});
+
+app.get("/info", async (_req: Request, res: Response) => {
+  const info = await collectHostInfo();
+  res.json({ ...info, nodeOnline: await adapter.health() });
 });
 
 app.get("/containers", async (_req: Request, res: Response) => {
@@ -129,13 +257,19 @@ app.post("/containers/:id/:action", async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`[HostPanel Agent] listening on :${port} (mode=${adapterMode})`);
+app.listen(port, async () => {
+  console.log(`[HostPanel Agent] listening on :${port} (mode=${adapterMode}, version=${AGENT_VERSION})`);
   if (adapterMode === "rootless") {
-    // eslint-disable-next-line no-console
     console.log(`[HostPanel Agent] DOCKER_HOST=${process.env.DOCKER_HOST ?? "(unset)"}`);
-    // eslint-disable-next-line no-console
     console.log(`[HostPanel Agent] XDG_RUNTIME_DIR=${process.env.XDG_RUNTIME_DIR ?? "(unset)"}`);
+  }
+  if (ENROLL_TOKEN && CONTROL_PLANE_URL && !agentKey) {
+    console.log("[HostPanel Agent] enrollment token present — registering with control plane…");
+    const ok = await enroll();
+    if (!ok) {
+      console.error("[HostPanel Agent] enrollment failed; will retry on restart");
+    }
+  } else if (!agentKey) {
+    console.error("[HostPanel Agent] no API key configured (set AGENT_API_KEY or AGENT_ENROLL_TOKEN + CONTROL_PLANE_URL)");
   }
 });

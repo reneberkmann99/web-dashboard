@@ -42,12 +42,16 @@ services:
     restart: unless-stopped
     environment:
       AGENT_PORT: "8081"
-      AGENT_API_KEY: "${AGENT_API_KEY}"
+      AGENT_API_KEY: "${AGENT_API_KEY:-}"
+      AGENT_ENROLL_TOKEN: "${AGENT_ENROLL_TOKEN:-}"
+      CONTROL_PLANE_URL: "${CONTROL_PLANE_URL:-}"
+      AGENT_KEY_FILE: "/data/agent.key"
       AGENT_DOCKER_MODE: "${AGENT_DOCKER_MODE:-mock}"
       DOCKER_HOST: "${DOCKER_HOST:-}"
       XDG_RUNTIME_DIR: "${XDG_RUNTIME_DIR:-}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
+      - hostpanel-agent-data:/data
 
   agent-rootless:
     build:
@@ -56,12 +60,18 @@ services:
     restart: unless-stopped
     environment:
       AGENT_PORT: "8082"
-      AGENT_API_KEY: "${AGENT_ROOTLESS_API_KEY}"
+      AGENT_API_KEY: "${AGENT_ROOTLESS_API_KEY:-}"
+      AGENT_ENROLL_TOKEN: "${AGENT_ROOTLESS_ENROLL_TOKEN:-}"
+      CONTROL_PLANE_URL: "${CONTROL_PLANE_URL:-}"
+      AGENT_KEY_FILE: "/data/agent.key"
       AGENT_DOCKER_MODE: "rootless"
       DOCKER_HOST: "unix:///run/rootless.sock"
       XDG_RUNTIME_DIR: ""
     volumes:
       - /home/lenel/.docker/run/docker.sock:/run/rootless.sock:rw
+      - hostpanel-agent-rootless-data:/data
 
 volumes:
   hostpanel_pg:
+  hostpanel-agent-data:
+  hostpanel-agent-rootless-data:
