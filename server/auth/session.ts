@@ -90,7 +90,9 @@ export function setSessionCookie(response: NextResponse, token: string, expiresA
     name: SESSION_COOKIE,
     value: token,
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.COOKIE_SECURE !== undefined
+      ? process.env.COOKIE_SECURE === "true"
+      : process.env.NODE_ENV === "production",
     sameSite: "lax",
     expires: expiresAt,
     path: "/"
@@ -103,7 +105,9 @@ export function clearSessionCookie(response: NextResponse): void {
     value: "",
     expires: new Date(0),
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.COOKIE_SECURE !== undefined
+      ? process.env.COOKIE_SECURE === "true"
+      : process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/"
   });

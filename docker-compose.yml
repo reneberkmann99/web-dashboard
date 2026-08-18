@@ -27,6 +27,7 @@ services:
       NODE_CREDENTIALS_KEY: "${NODE_CREDENTIALS_KEY}"
       NODE_AGENT_TIMEOUT_MS: "${NODE_AGENT_TIMEOUT_MS:-5000}"
       NEXT_PUBLIC_APP_NAME: "${NEXT_PUBLIC_APP_NAME:-HostPanel}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-}"
     depends_on:
       postgres:
         condition: service_healthy
