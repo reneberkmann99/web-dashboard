@@ -133,6 +133,45 @@ export class RootlessDockerAdapter implements DockerAdapter {
     }
   }
 
+  private async inspectDetails(containerId: string): Promise<NonNullable<RuntimeContainer["details"]>> {
+    try {
+      const { stdout } = await this.runDocker([
+        "inspect",
+        containerId,
+        "--format",
+        "{{json .}}"
+      ]);
+      const raw = JSON.parse(stdout.trim()) as {
+        HostConfig?: { RestartPolicy?: { Name?: string } };
+        Config?: { Labels?: Record<string, string> };
+        NetworkSettings?: { Networks?: Record<string, { IPAddress?: string; Gateway?: string }> };
+        Mounts?: Array<{ Type?: string; Source?: string; Destination?: string; Mode?: string }>;
+        State?: { Status?: string; Health?: { Status?: string } };
+        Image?: string;
+      };
+      return {
+        restartPolicy: raw.HostConfig?.RestartPolicy?.Name ?? null,
+        labels: raw.Config?.Labels ?? {},
+        networks: Object.entries(raw.NetworkSettings?.Networks ?? {}).map(([name, n]) => ({
+          name,
+          ipAddress: n.IPAddress ?? "",
+          gateway: n.Gateway ?? ""
+        })),
+        mounts: (raw.Mounts ?? []).map((m) => ({
+          type: m.Type ?? "unknown",
+          source: m.Source ?? "",
+          destination: m.Destination ?? "",
+          mode: m.Mode ?? ""
+        })),
+        imageId: raw.Image ?? null,
+        state: raw.State?.Status ?? null,
+        health: raw.State?.Health?.Status ?? null
+      };
+    } catch {
+      return { restartPolicy: null, labels: {}, networks: [], mounts: [] };
+    }
+  }
+
   async listContainers(): Promise<RuntimeContainer[]> {
     const [{ stdout: psOutput }, { stdout: statsOutput }] = await Promise.all([
       this.runDocker(["ps", "-a", "--format", "{{json .}}"]),
@@ -180,7 +219,8 @@ export class RootlessDockerAdapter implements DockerAdapter {
         cpuPercent: parseCpuPercent(stat?.CPUPerc),
         memoryUsage: stat?.MemUsage ?? null,
         restartCount: detail.RestartCount ?? null,
-        lastUpdatedAt: new Date().toISOString()
+        lastUpdatedAt: new Date().toISOString(),
+        details: await this.inspectDetails(row.ID)
       });
     }
 

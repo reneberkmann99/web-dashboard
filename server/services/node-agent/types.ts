@@ -1,5 +1,32 @@
 import { z } from "zod";
 
+export const containerDetailsSchema = z.object({
+  restartPolicy: z.string().nullable().optional(),
+  labels: z.record(z.string(), z.string()).optional(),
+  networks: z
+    .array(
+      z.object({
+        name: z.string(),
+        ipAddress: z.string(),
+        gateway: z.string()
+      })
+    )
+    .optional(),
+  mounts: z
+    .array(
+      z.object({
+        type: z.string(),
+        source: z.string(),
+        destination: z.string(),
+        mode: z.string()
+      })
+    )
+    .optional(),
+  imageId: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  health: z.string().nullable().optional()
+});
+
 export const containerRuntimeSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -11,7 +38,8 @@ export const containerRuntimeSchema = z.object({
   cpuPercent: z.number().nullable(),
   memoryUsage: z.string().nullable(),
   restartCount: z.number().nullable(),
-  lastUpdatedAt: z.string()
+  lastUpdatedAt: z.string(),
+  details: containerDetailsSchema.nullable().optional()
 });
 
 export const listContainersResponseSchema = z.object({

@@ -1,0 +1,397 @@
+"use client";
+
+import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { apiFetch } from "@/lib/fetcher";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { timeAgo } from "@/lib/format";
+
+type ClientDetailPayload = {
+  client: {
+    id: string;
+    name: string;
+    slug: string;
+    isActive: boolean;
+    createdAt: string;
+    users: Array<{
+      id: string;
+      email: string;
+      displayName: string;
+      role: string;
+      isActive: boolean;
+      lastLoginAt: string | null;
+      authSource: string;
+    }>;
+    projects: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string | null;
+      node: { name: string };
+      _count: { containers: number };
+    }>;
+    grants: Array<{
+      id: string;
+      allowedActions: string[];
+      node: { name: string };
+      project: { id: string; name: string } | null;
+      container: { id: string; dockerName: string; dockerContainerId: string } | null;
+    }>;
+    counts: { users: number; projects: number; grants: number };
+  };
+  activity: Array<{ id: string; action: string; humanized: string; actorEmail: string | null; result: string; createdAt: string }>;
+};
+
+type CreateUserResponse = { id: string; activationUrl: string; activationExpiresAt: string };
+
+const ROLE_OPTIONS = [
+  { value: "CLIENT_VIEWER", label: "Viewer (read-only)" },
+  { value: "CLIENT_OPERATOR", label: "Operator (operate workloads)" },
+  { value: "CLIENT_ADMIN", label: "Client admin (manage users)" }
+];
+
+const TABS = ["Overview", "Users", "Workloads", "Permissions", "Activity"] as const;
+
+export default function AdminClientDetailPage(): React.JSX.Element {
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
+
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState("CLIENT_OPERATOR");
+  const [activationUrl, setActivationUrl] = useState<string | null>(null);
+
+  const [deactivateUser, setDeactivateUser] = useState<{ id: string; name: string } | null>(null);
+  const [deactivateClient, setDeactivateClient] = useState(false);
+
+  const query = useQuery({
+    queryKey: ["client", params.id],
+    queryFn: () => apiFetch<ClientDetailPayload>(`/api/admin/clients/${params.id}`),
+    refetchInterval: 15000
+  });
+
+  const inviteMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<CreateUserResponse>("/api/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          email: inviteEmail,
+          displayName: inviteName,
+          role: inviteRole,
+          clientAccountId: params.id
+        })
+      }),
+    onSuccess: (data) => {
+      toast.success("Invitation generated");
+      setActivationUrl(data.activationUrl);
+      queryClient.invalidateQueries({ queryKey: ["client", params.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Invite failed")
+  });
+
+  const deactivateUserMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ success: boolean }>(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify({ isActive: false }) }),
+    onSuccess: () => {
+      toast.success("User deactivated");
+      queryClient.invalidateQueries({ queryKey: ["client", params.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to deactivate")
+  });
+
+  const deactivateClientMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ success: boolean }>(`/api/admin/clients/${params.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Client deactivated");
+      router.push("/admin/clients");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to deactivate")
+  });
+
+  const revokeGrantMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ success: boolean }>(`/api/admin/grants/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Grant revoked");
+      queryClient.invalidateQueries({ queryKey: ["client", params.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to revoke grant")
+  });
+
+  if (query.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
+  if (query.isError || !query.data) return <p className="text-sm text-red-400">Failed to load client.</p>;
+
+  const { client, activity } = query.data;
+
+  const userColumns: Column<(typeof client.users)[number]>[] = [
+    {
+      key: "name",
+      header: "User",
+      render: (u) => (
+        <div>
+          <p className="font-medium">{u.displayName}</p>
+          <p className="text-xs text-muted">{u.email}</p>
+        </div>
+      )
+    },
+    { key: "role", header: "Role", sortValue: (u) => u.role, render: (u) => <span className="text-sm">{u.role.replace(/_/g, " ").toLowerCase()}</span> },
+    {
+      key: "status",
+      header: "Status",
+      render: (u) => <Badge variant={u.isActive ? "success" : "default"}>{u.isActive ? "active" : u.authSource === "PAM" ? "pam" : "pending"}</Badge>
+    },
+    {
+      key: "lastLogin",
+      header: "Last login",
+      sortValue: (u) => u.lastLoginAt ?? "",
+      render: (u) => <span className="text-xs text-muted">{timeAgo(u.lastLoginAt)}</span>,
+      hideBelow: "sm"
+    },
+    {
+      key: "actions",
+      header: "",
+      render: (u) => (
+        <div className="flex gap-2">
+          {u.isActive && (
+            <Button size="sm" variant="danger" onClick={() => setDeactivateUser({ id: u.id, name: u.displayName })}>
+              Deactivate
+            </Button>
+          )}
+        </div>
+      )
+    }
+  ];
+
+  const grantColumns: Column<(typeof client.grants)[number]>[] = [
+    {
+      key: "target",
+      header: "Target",
+      render: (g) => (
+        <div>
+          <p className="font-medium">{g.project?.name ?? g.container?.dockerName ?? "—"}</p>
+          <p className="text-xs text-muted">{g.project ? "Workload" : "Container"} · {g.node.name}</p>
+        </div>
+      )
+    },
+    {
+      key: "actions",
+      header: "Permissions",
+      render: (g) => <span className="text-sm text-muted">{g.allowedActions.join(", ")}</span>
+    },
+    {
+      key: "revoke",
+      header: "",
+      render: (g) => (
+        <Button size="sm" variant="danger" onClick={() => revokeGrantMutation.mutate(g.id)}>
+          Revoke
+        </Button>
+      )
+    }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <button type="button" onClick={() => router.push("/admin/clients")} className="mb-1 text-sm text-accent hover:underline">
+            ← Clients
+          </button>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-semibold">{client.name}</h1>
+            <Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge>
+          </div>
+          <p className="text-muted">{client.slug} · {client.counts.users} users · {client.counts.projects} workloads</p>
+        </div>
+        {client.isActive && (
+          <Button variant="danger" onClick={() => setDeactivateClient(true)}>
+            Deactivate client
+          </Button>
+        )}
+      </div>
+
+      {tab === "Overview" && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <Metric label="Active users" value={String(client.users.filter((u) => u.isActive).length)} />
+          <Metric label="Workloads" value={String(client.projects.length)} />
+          <Metric label="Grants" value={String(client.grants.length)} />
+        </div>
+      )}
+
+      {tab === "Users" && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button onClick={() => setInviteOpen(true)}>Invite user</Button>
+          </div>
+          <DataTable
+            columns={userColumns}
+            rows={client.users}
+            searchableText={(u) => `${u.displayName} ${u.email}`}
+            searchPlaceholder="Search users…"
+            emptyTitle="No users yet"
+            emptyBody="Invite a user to give them access to this client's workloads."
+            rowKey={(u) => u.id}
+          />
+        </div>
+      )}
+
+      {tab === "Workloads" && (
+        <DataTable
+          columns={[
+            { key: "name", header: "Workload", sortValue: (p: (typeof client.projects)[number]) => p.name, render: (p) => <p className="font-medium">{p.name}</p> },
+            { key: "node", header: "Node", render: (p: (typeof client.projects)[number]) => <span className="text-sm">{p.node.name}</span>, hideBelow: "sm" },
+            { key: "containers", header: "Containers", sortValue: (p: (typeof client.projects)[number]) => p._count.containers, render: (p: (typeof client.projects)[number]) => <span className="text-sm">{p._count.containers}</span> },
+            { key: "open", header: "", render: (p: (typeof client.projects)[number]) => <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/workloads/${p.id}`)}>Open</Button> }
+          ]}
+          rows={client.projects}
+          searchableText={(p) => p.name}
+          searchPlaceholder="Search workloads…"
+          emptyTitle="No workloads"
+          emptyBody="Grant this client access to a workload to get started."
+          rowKey={(p) => p.id}
+        />
+      )}
+
+      {tab === "Permissions" && (
+        <DataTable
+          columns={grantColumns}
+          rows={client.grants}
+          emptyTitle="No permissions granted"
+          emptyBody="Grant access from a workload's detail page, or grant a single container as an exception."
+          rowKey={(g) => g.id}
+        />
+      )}
+
+      {tab === "Activity" && (
+        <div className="rounded-lg border border-border bg-panel">
+          {activity.length === 0 ? (
+            <p className="p-4 text-sm text-muted">No activity recorded for this client.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {activity.map((a) => (
+                <li key={a.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                  <span>
+                    {a.humanized}
+                    <span className="ml-2 text-xs text-muted">{a.actorEmail ?? "system"}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-muted">{timeAgo(a.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="flex gap-1 border-b border-border">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={`rounded-t px-4 py-2 text-sm ${tab === t ? "border-b-2 border-accent font-medium" : "text-muted hover:text-text"}`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* Invite modal */}
+      <Modal
+        open={inviteOpen}
+        onClose={() => {
+          setInviteOpen(false);
+          setActivationUrl(null);
+        }}
+        title={`Invite user to ${client.name}`}
+        description="The user receives a one-time activation link and sets their own password."
+        footer={
+          activationUrl ? (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  void navigator.clipboard.writeText(`${window.location.origin}${activationUrl}`);
+                  toast.success("Activation link copied");
+                }}
+              >
+                Copy link
+              </Button>
+              <Button onClick={() => { setInviteOpen(false); setActivationUrl(null); setInviteEmail(""); setInviteName(""); }}>Done</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setInviteOpen(false)}>Cancel</Button>
+              <Button disabled={inviteMutation.isPending || inviteEmail.length < 5 || inviteName.length < 2} onClick={() => inviteMutation.mutate()}>
+                {inviteMutation.isPending ? "Sending…" : "Generate invite"}
+              </Button>
+            </>
+          )
+        }
+      >
+        {activationUrl ? (
+          <p className="break-all text-sm text-muted">{window.location.origin}{activationUrl}</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label htmlFor="invite-email" className="text-sm text-muted">Email</label>
+              <Input id="invite-email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="person@example.com" required />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="invite-name" className="text-sm text-muted">Display name</label>
+              <Input id="invite-name" value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Jane Doe" required />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="invite-role" className="text-sm text-muted">Role</label>
+              <select id="invite-role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="w-full rounded-md border border-border bg-panelAlt px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
+                {ROLE_OPTIONS.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Deactivate user confirm */}
+      <ConfirmDialog
+        open={deactivateUser !== null}
+        onClose={() => setDeactivateUser(null)}
+        onConfirm={() => {
+          if (deactivateUser) return deactivateUserMutation.mutate(deactivateUser.id);
+        }}
+        title={`Deactivate ${deactivateUser?.name ?? "user"}?`}
+        impact="This user will immediately lose access to the client's workloads."
+        confirmLabel="Deactivate"
+      />
+
+      {/* Deactivate client confirm */}
+      <ConfirmDialog
+        open={deactivateClient}
+        onClose={() => setDeactivateClient(false)}
+        onConfirm={() => deactivateClientMutation.mutate()}
+        title={`Deactivate ${client.name}?`}
+        impact="All of this client's users lose access immediately. Grants are preserved but inactive."
+        confirmLabel="Deactivate"
+      />
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }): React.JSX.Element {
+  return (
+    <div className="rounded-lg border border-border bg-panel p-4">
+      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}

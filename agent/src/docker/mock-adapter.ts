@@ -63,6 +63,10 @@ export class MockDockerAdapter implements DockerAdapter {
     return "0.0.0-mock";
   }
 
+  async getContainerDetails(): Promise<NonNullable<import("./types").RuntimeContainer["details"]>> {
+    return { restartPolicy: "unless-stopped", labels: { "mock": "true" }, networks: [{ name: "mock", ipAddress: "172.30.0.2", gateway: "172.30.0.1" }], mounts: [] };
+  }
+
   async health(): Promise<boolean> {
     return true;
   }

@@ -59,6 +59,7 @@ function toContainerView(
     memoryUsage: string | null;
     restartCount: number | null;
     lastUpdatedAt: string;
+    details?: ContainerView["details"];
   } | null,
   nodeOnline: boolean
 ): ContainerView {
@@ -80,7 +81,8 @@ function toContainerView(
     projectName: assignment.project?.name ?? null,
     clientName: assignment.clientAccount.name,
     allowedActions: assignment.allowedActions,
-    lastUpdatedAt: runtime?.lastUpdatedAt ?? new Date().toISOString()
+    lastUpdatedAt: runtime?.lastUpdatedAt ?? new Date().toISOString(),
+    details: runtime?.details ?? null
   };
 }
 
@@ -361,6 +363,73 @@ export async function resolveActionTarget(
   return { nodeId: grant.nodeId, dockerContainerId: grant.dockerContainerId, allowedActions: grant.allowedActions };
 }
 
+/** ADMIN-only direct container access by node + docker id (no grant needed). */
+export async function getContainerDirect(
+  nodeId: string,
+  dockerContainerId: string
+): Promise<{ container: ContainerView | null; nodeOnline: boolean }> {
+  const node = await prisma.node.findUnique({ where: { id: nodeId } });
+  if (!node) {
+    return { container: null, nodeOnline: false };
+  }
+  const payload = await nodeAgentClient.getContainer(node, dockerContainerId);
+  if (!payload.container) {
+    return { container: null, nodeOnline: payload.nodeOnline };
+  }
+  const live = { ...payload.container, status: mapStatus(payload.container.status) };
+  const assignment = await prisma.containerAssignment.findFirst({
+    where: { nodeId, dockerContainerId, isActive: true },
+    include: {
+      node: { select: { id: true, name: true } },
+      project: { select: { id: true, name: true } },
+      clientAccount: { select: { id: true, name: true } }
+    }
+  });
+  if (assignment) {
+    return { container: toContainerView(assignment, live, payload.nodeOnline), nodeOnline: payload.nodeOnline };
+  }
+  const containerRow = await prisma.container.findUnique({
+    where: { nodeId_dockerContainerId: { nodeId, dockerContainerId } },
+    include: { project: { select: { id: true, name: true } } }
+  });
+  return {
+    container: {
+      assignmentId: "",
+      containerId: live.id,
+      name: live.name,
+      image: live.image,
+      status: live.status,
+      uptime: live.uptime,
+      ports: live.ports,
+      createdAt: live.createdAt,
+      cpuPercent: live.cpuPercent,
+      memoryUsage: live.memoryUsage,
+      restartCount: live.restartCount,
+      nodeId,
+      nodeName: node.name,
+      nodeOnline: payload.nodeOnline,
+      projectName: containerRow?.project?.name ?? null,
+      clientName: "Unassigned",
+      allowedActions: [],
+      lastUpdatedAt: live.lastUpdatedAt,
+      details: live.details ?? null
+    },
+    nodeOnline: payload.nodeOnline
+  };
+}
+
+export async function getContainerLogsDirect(
+  nodeId: string,
+  dockerContainerId: string,
+  tail = 200
+): Promise<{ logs: string[]; nodeOnline: boolean }> {
+  const node = await prisma.node.findUnique({ where: { id: nodeId } });
+  if (!node) {
+    return { logs: [], nodeOnline: false };
+  }
+  return nodeAgentClient.getLogs(node, dockerContainerId, tail);
+}
+
 export async function listDiscoveredContainersForAdmin(): Promise<DiscoveredContainer[]> {
   const nodes = await prisma.node.findMany({ where: { isActive: true } });
   const out: DiscoveredContainer[] = [];
@@ -476,7 +545,8 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
           projectName: null,
           clientName: "Unassigned",
           allowedActions: [],
-          lastUpdatedAt: live.lastUpdatedAt
+          lastUpdatedAt: live.lastUpdatedAt,
+          details: live.details ?? null
         });
       }
     }

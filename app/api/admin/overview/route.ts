@@ -1,15 +1,23 @@
-import { prisma } from "@/server/db";
 import { requireApiRole } from "@/server/auth/guards";
-import { buildOverview, listContainersForSession } from "@/server/services/containers";
+import {
+  collectAttentionItems,
+  collectNodesOperational,
+  collectUtilization,
+  collectWorkloads,
+  humanizeAction
+} from "@/server/services/overview";
+import { prisma } from "@/server/db";
 import { fromError, ok } from "@/server/http";
 
 export async function GET(): Promise<Response> {
   try {
-    const session = await requireApiRole("ADMIN");
+    await requireApiRole("ADMIN");
 
-    const [totalClients, totalNodes, recentActions, containers] = await Promise.all([
-      prisma.clientAccount.count(),
-      prisma.node.count(),
+    const [utilization, nodes, attention, workloads, recentActivity] = await Promise.all([
+      collectUtilization(),
+      collectNodesOperational(),
+      collectAttentionItems(),
+      collectWorkloads(),
       prisma.auditLog.findMany({
         orderBy: { createdAt: "desc" },
         take: 12,
@@ -18,22 +26,35 @@ export async function GET(): Promise<Response> {
           action: true,
           actorEmail: true,
           result: true,
-          createdAt: true
+          createdAt: true,
+          targetType: true,
+          targetId: true
         }
-      }),
-      listContainersForSession(session)
+      })
     ]);
 
-    const summary = buildOverview(containers);
-
     return ok({
-      totalClients,
-      totalNodes,
-      totalContainers: summary.totalContainers,
-      runningContainers: summary.runningContainers,
-      stoppedContainers: summary.stoppedContainers,
-      offlineNodes: summary.offlineNodes,
-      recentActions
+      utilization,
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        name: n.name,
+        hostname: n.hostname,
+        status: n.status,
+        isActive: n.isActive,
+        lastHeartbeatAt: n.lastHeartbeatAt,
+        agentVersion: n.agentVersion,
+        dockerVersion: n.dockerVersion,
+        containerCount: n.containerCount,
+        runningCount: n.runningCount,
+        offline: n.offline,
+        staleHeartbeat: n.staleHeartbeat
+      })),
+      attention,
+      workloads,
+      recentActivity: recentActivity.map((a) => ({
+        ...a,
+        humanized: humanizeAction(a.action)
+      }))
     });
   } catch (error) {
     return fromError(error);

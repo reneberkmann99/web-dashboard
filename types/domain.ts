@@ -26,6 +26,15 @@ export type ContainerStatus =
   | "unhealthy"
   | "unknown";
 
+export type ContainerDetailsView = {
+  restartPolicy?: string | null;
+  labels?: Record<string, string>;
+  networks?: Array<{ name: string; ipAddress: string; gateway: string }>;
+  mounts?: Array<{ type: string; source: string; destination: string; mode: string }>;
+  imageId?: string | null;
+  health?: string | null;
+};
+
 export type ContainerView = {
   assignmentId: string;
   containerId: string;
@@ -45,6 +54,38 @@ export type ContainerView = {
   clientName: string;
   allowedActions: string[];
   lastUpdatedAt: string;
+  details?: ContainerDetailsView | null;
+};
+
+/** Item in the Needs attention section of the Overview dashboard. */
+export type AttentionItem = {
+  severity: "critical" | "warning" | "info";
+  category: string;
+  title: string;
+  detail: string;
+  resourceType: "node" | "container" | "operation" | "client";
+  resourceId: string | null;
+  nodeId: string | null;
+};
+
+/** Workload (Project/Stack) summary for the Workloads page. */
+export type WorkloadSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  nodeId: string;
+  nodeName: string;
+  clientId: string | null;
+  clientName: string | null;
+  totalContainers: number;
+  runningContainers: number;
+  stoppedContainers: number;
+  unhealthyContainers: number;
+  health: "healthy" | "degraded" | "down" | "unknown";
+  cpuPercent: number | null;
+  memoryUsage: string | null;
+  lastEvent: { action: string; createdAt: string; result: string } | null;
 };
 
 export type OperationView = {
@@ -110,7 +151,9 @@ export type NodeRecord = {
   agentVersion: string | null;
   dockerVersion: string | null;
   lastHeartbeatAt: string | null;
-  _count: { assignments: number };
+  osInfo: Record<string, unknown> | null;
+  systemInfo: Record<string, unknown> | null;
+  _count: { assignments: number; containers: number };
 };
 
 /** Admin user list record */

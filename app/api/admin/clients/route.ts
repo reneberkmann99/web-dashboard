@@ -7,21 +7,46 @@ import { getSourceIpFromRequest } from "@/server/request";
 
 export async function GET(): Promise<Response> {
   try {
-    const session = await requireApiRole("ADMIN");
+    await requireApiRole("ADMIN");
 
     const clients = await prisma.clientAccount.findMany({
       orderBy: { createdAt: "desc" },
       include: {
-        _count: {
-          select: {
-            users: true,
-            assignments: true
-          }
-        }
+        _count: { select: { users: true, assignments: true, grants: true, projects: true } }
       }
     });
 
-    return ok({ clients });
+    // last activity per client
+    const withActivity = await Promise.all(
+      clients.map(async (client) => {
+        const last = await prisma.auditLog.findFirst({
+          where: { clientAccountId: client.id },
+          orderBy: { createdAt: "desc" },
+          select: { action: true, createdAt: true, result: true }
+        });
+        const activeUsers = await prisma.user.count({
+          where: { clientAccountId: client.id, isActive: true }
+        });
+        const projectIds = await prisma.project.findMany({
+          where: { clientAccountId: client.id, isActive: true },
+          select: { id: true }
+        });
+        const containerCount = await prisma.accessGrant.count({
+          where: { clientAccountId: client.id, isActive: true }
+        });
+        return {
+          ...client,
+          activeUsers,
+          workloadCount: projectIds.length,
+          containerCount,
+          lastActivity: last
+            ? { action: last.action, createdAt: last.createdAt.toISOString(), result: last.result }
+            : null
+        };
+      })
+    );
+
+    return ok({ clients: withActivity });
   } catch (error) {
     return fromError(error);
   }
@@ -45,6 +70,7 @@ export async function POST(request: Request): Promise<Response> {
       actorUserId: session.userId,
       actorEmail: session.email,
       actorRole: session.role,
+      clientAccountId: created.id,
       action: "CLIENT_CREATE",
       targetType: "CLIENT_ACCOUNT",
       targetId: created.id,

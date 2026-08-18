@@ -10,6 +10,18 @@ export type RuntimeContainer = {
   memoryUsage: string | null;
   restartCount: number | null;
   lastUpdatedAt: string;
+  /** Detailed docker inspect-derived metadata (networks, mounts, labels, …). */
+  details?: ContainerDetails | null;
+};
+
+export type ContainerDetails = {
+  restartPolicy?: string | null;
+  labels?: Record<string, string>;
+  networks?: Array<{ name: string; ipAddress: string; gateway: string }>;
+  mounts?: Array<{ type: string; source: string; destination: string; mode: string }>;
+  imageId?: string | null;
+  state?: string | null;
+  health?: string | null;
 };
 
 export interface DockerAdapter {

@@ -51,6 +51,7 @@ model ClientAccount {
   assignments ContainerAssignment[]
   grants      AccessGrant[]
   operations  Operation[]
+  auditLogs   AuditLog[]
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
 
@@ -291,20 +292,23 @@ model Operation {
 }
 
 model AuditLog {
-  id          String      @id @default(cuid())
-  actorUserId String?
-  actorUser   User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorEmail  String?
-  actorRole   Role?
-  action      String
-  targetType  String
-  targetId    String?
-  metadata    Json?
-  result      AuditResult
-  sourceIp    String?
-  createdAt   DateTime    @default(now())
+  id               String         @id @default(cuid())
+  actorUserId      String?
+  actorUser        User?          @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail       String?
+  actorRole        Role?
+  clientAccountId  String?
+  clientAccount    ClientAccount? @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  action           String
+  targetType       String
+  targetId         String?
+  metadata         Json?
+  result           AuditResult
+  sourceIp         String?
+  createdAt        DateTime       @default(now())
 
   @@index([actorUserId])
   @@index([action])
   @@index([createdAt])
+  @@index([clientAccountId])
 }

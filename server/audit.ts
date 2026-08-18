@@ -11,6 +11,7 @@ type AuditInput = {
   actorUserId?: string | null;
   actorEmail?: string | null;
   actorRole?: Role | null;
+  clientAccountId?: string | null;
   action: string;
   targetType: string;
   targetId?: string | null;
@@ -25,6 +26,7 @@ export async function logAuditEvent(input: AuditInput): Promise<void> {
       actorUserId: input.actorUserId ?? null,
       actorEmail: input.actorEmail ?? null,
       actorRole: input.actorRole ?? null,
+      clientAccountId: input.clientAccountId ?? null,
       action: input.action,
       targetType: input.targetType,
       targetId: input.targetId ?? null,

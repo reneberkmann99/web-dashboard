@@ -22,9 +22,12 @@ export async function GET(): Promise<Response> {
         agentVersion: true,
         dockerVersion: true,
         lastHeartbeatAt: true,
+        osInfo: true,
+        systemInfo: true,
         _count: {
           select: {
-            assignments: true
+            assignments: true,
+            containers: true
           }
         }
       }
