@@ -82,8 +82,8 @@ export default function LoginPage(): React.JSX.Element {
                 </label>
                 <Input
                   id="email"
-                  type="email"
-                  autoComplete="email"
+                  type="text"
+                  autoComplete="username"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   required
