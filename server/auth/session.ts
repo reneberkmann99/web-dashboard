@@ -122,3 +122,25 @@ export async function destroySessionByToken(rawToken: string): Promise<void> {
 export function sessionCookieName(): string {
   return SESSION_COOKIE;
 }
+
+export const CSRF_COOKIE = "hostpanel_csrf";
+
+/**
+ * Double-submit CSRF token: a non-HttpOnly cookie whose value the frontend
+ * mirrors into the X-CSRF-Token header on state-changing requests. The
+ * middleware rejects requests where the two differ. SameSite=Lax is set so
+ * cross-site top-level POSTs cannot even attach it.
+ */
+export function setCsrfCookie(response: NextResponse): void {
+  const token = crypto.randomBytes(24).toString("hex");
+  response.cookies.set({
+    name: CSRF_COOKIE,
+    value: token,
+    httpOnly: false,
+    secure: process.env.COOKIE_SECURE !== undefined
+      ? process.env.COOKIE_SECURE === "true"
+      : process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/"
+  });
+}

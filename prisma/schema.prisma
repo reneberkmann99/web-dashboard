@@ -10,6 +10,9 @@ datasource db {
 enum Role {
   ADMIN
   CLIENT
+  CLIENT_ADMIN
+  CLIENT_OPERATOR
+  CLIENT_VIEWER
 }
 
 enum AuthSource {
@@ -22,6 +25,15 @@ enum NodeStatus {
   OFFLINE
   UNKNOWN
   INACTIVE
+}
+
+enum OperationState {
+  REQUESTED
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
 }
 
 enum AuditResult {
@@ -37,6 +49,8 @@ model ClientAccount {
   users       User[]
   projects    Project[]
   assignments ContainerAssignment[]
+  grants      AccessGrant[]
+  operations  Operation[]
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
 
@@ -47,16 +61,18 @@ model User {
   id              String         @id @default(cuid())
   email           String         @unique
   displayName     String
-  passwordHash    String
+  passwordHash    String?        // null while a locally-managed account is still pending activation
   authSource      AuthSource     @default(LOCAL)
   pamUsername     String?        @unique
-  role            Role           @default(CLIENT)
+  role            Role           @default(CLIENT_OPERATOR)
   isActive        Boolean        @default(true)
   lastLoginAt     DateTime?
   clientAccountId String?
   clientAccount   ClientAccount? @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
   sessions        Session[]
   auditLogs       AuditLog[]
+  operations      Operation[]
+  activationToken ActivationToken?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -66,35 +82,68 @@ model User {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
-  expiresAt DateTime
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
   lastUsedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   @@index([userId])
   @@index([expiresAt])
 }
 
+model ActivationToken {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([expiresAt])
+}
+
 model Node {
-  id             String                @id @default(cuid())
-  name           String
-  hostname       String                @unique
-  apiBaseUrl     String
-  apiKeyEncrypted String
-  dockerContext  String?
-  status         NodeStatus            @default(UNKNOWN)
-  isActive       Boolean               @default(true)
-  lastHeartbeatAt DateTime?
-  projects       Project[]
-  assignments    ContainerAssignment[]
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  id                 String               @id @default(cuid())
+  name               String
+  hostname           String               @unique
+  apiBaseUrl         String
+  apiKeyEncrypted    String
+  dockerContext      String?
+  status             NodeStatus           @default(UNKNOWN)
+  isActive           Boolean              @default(true)
+  lastHeartbeatAt    DateTime?
+  agentVersion       String?
+  dockerVersion      String?
+  osInfo             Json?
+  systemInfo         Json? // cpu / memory / disk snapshots from agent /info
+  enrollmentTokens   NodeEnrollmentToken[]
+  projects           Project[]
+  assignments        ContainerAssignment[]
+  containers         Container[]
+  grants             AccessGrant[]
+  operations         Operation[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   @@index([isActive])
   @@index([status])
+}
+
+model NodeEnrollmentToken {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  nodeId      String?
+  node        Node?     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  createdById String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([expiresAt])
 }
 
 model Project {
@@ -108,6 +157,8 @@ model Project {
   nodeId          String
   node            Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   assignments     ContainerAssignment[]
+  containers      Container[]
+  grants          AccessGrant[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -115,6 +166,40 @@ model Project {
   @@index([nodeId])
 }
 
+/**
+ * Discovered Docker container inventory, one row per (node, dockerContainerId).
+ * This is the identity that permissions reference — administrators never type
+ * container IDs by hand; they pick from what the node agent reported.
+ */
+model Container {
+  id                String                @id @default(cuid())
+  nodeId            String
+  node              Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  projectId         String?
+  project           Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  dockerContainerId String
+  dockerName        String
+  image             String?
+  lastKnownStatus   String?
+  firstSeenAt       DateTime              @default(now())
+  lastSeenAt        DateTime              @default(now())
+  isActive          Boolean               @default(true)
+  assignments       ContainerAssignment[]
+  grants            AccessGrant[]
+  operations        Operation[]
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([nodeId, dockerContainerId])
+  @@index([nodeId, isActive])
+  @@index([projectId])
+}
+
+/**
+ * Compatibility grant row (pre-refactor): container-level access grants created
+ * before AccessGrant existed. New grants are created as AccessGrant rows; this
+ * table is retained so historical records and existing URLs keep resolving.
+ */
 model ContainerAssignment {
   id                String        @id @default(cuid())
   clientAccountId   String
@@ -123,6 +208,8 @@ model ContainerAssignment {
   project           Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
   nodeId            String
   node              Node          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  containerId       String?
+  container         Container?    @relation(fields: [containerId], references: [id], onDelete: SetNull)
   dockerContainerId String
   dockerName        String
   image             String?
@@ -136,21 +223,86 @@ model ContainerAssignment {
   @@unique([nodeId, dockerContainerId])
   @@index([clientAccountId])
   @@index([projectId])
+  @@index([containerId])
+}
+
+/**
+ * Unified access grant. A grant targets exactly one of:
+ *   - a Project (normal case: "Client X may operate stack Y")
+ *   - a Container (exception case: container-specific access)
+ */
+model AccessGrant {
+  id              String        @id @default(cuid())
+  clientAccountId String
+  clientAccount   ClientAccount @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  nodeId          String
+  node            Node          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  containerId     String?
+  container       Container?    @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  allowedActions  String[]      @default(["start", "stop", "restart"])
+  isActive        Boolean       @default(true)
+  metadata        Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([clientAccountId, projectId])
+  @@unique([clientAccountId, containerId])
+  @@index([clientAccountId, isActive])
+  @@index([nodeId])
+}
+
+/**
+ * Asynchronous operational action lifecycle. Container start/stop/restart go
+ * through this queue so the UI gets clear feedback and concurrent conflicting
+ * actions on the same container are prevented (partial unique index enforced
+ * in the migration: at most one active operation per container).
+ */
+model Operation {
+  id                String          @id @default(cuid())
+  type              String // e.g. CONTAINER_START / CONTAINER_STOP / CONTAINER_RESTART
+  state             OperationState  @default(REQUESTED)
+  requestId         String // correlation id exposed to the caller
+  actorUserId       String?
+  actorUser         User?           @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail        String?
+  actorRole         Role?
+  clientAccountId   String?
+  clientAccount     ClientAccount?  @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  nodeId            String
+  node              Node            @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  dockerContainerId String
+  containerId       String?
+  container         Container?      @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  targetAssignmentId String? // legacy ContainerAssignment id when the action originated there
+  error             String?
+  result            Json?
+  requestedAt       DateTime        @default(now())
+  queuedAt          DateTime?
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([nodeId, state])
+  @@index([dockerContainerId, state])
+  @@index([requestId])
 }
 
 model AuditLog {
-  id         String      @id @default(cuid())
+  id          String      @id @default(cuid())
   actorUserId String?
-  actorUser  User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorEmail String?
-  actorRole  Role?
-  action     String
-  targetType String
-  targetId   String?
-  metadata   Json?
-  result     AuditResult
-  sourceIp   String?
-  createdAt  DateTime    @default(now())
+  actorUser   User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail  String?
+  actorRole   Role?
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    Json?
+  result      AuditResult
+  sourceIp    String?
+  createdAt   DateTime    @default(now())
 
   @@index([actorUserId])
   @@index([action])

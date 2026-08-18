@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { Role } from "@prisma/client";
 import { getCurrentSession, type AuthSession } from "@/server/auth/session";
+import { isClientRole } from "@/types/domain";
+import { ensureCan, type Capability } from "@/server/auth/policy";
 
 /**
  * Security: server-side page/API guards.
@@ -16,9 +17,11 @@ export async function requirePageSession(): Promise<AuthSession> {
   return session;
 }
 
-export async function requirePageRole(role: Role): Promise<AuthSession> {
+export async function requirePageRole(role: "ADMIN" | "CLIENT"): Promise<AuthSession> {
   const session = await requirePageSession();
-  if (session.role !== role) {
+  const isAdminRequest = role === "ADMIN";
+  const ok = isAdminRequest ? session.role === "ADMIN" : isClientRole(session.role);
+  if (!ok) {
     redirect(session.role === "ADMIN" ? "/admin" : "/client");
   }
   return session;
@@ -32,20 +35,32 @@ export async function requireApiSession(): Promise<AuthSession> {
   return session;
 }
 
-/** Throws FORBIDDEN if the session role is not in the allowed list. */
-export function ensureRole(session: AuthSession, allowed: Role[]): void {
-  if (!allowed.includes(session.role)) {
-    throw new Error("FORBIDDEN");
-  }
+/** Throws FORBIDDEN if the session lacks the required capability. */
+export function requireCapability(session: AuthSession, capability: Capability): void {
+  ensureCan(session, capability);
 }
 
 /**
- * Convenience: requires API session + checks role in one call.
+ * Convenience: requires API session + capability in one call.
  * Reduces boilerplate in route handlers.
  */
-export async function requireApiRole(allowed: Role | Role[]): Promise<AuthSession> {
+export async function requireApiCapability(capability: Capability): Promise<AuthSession> {
+  const session = await requireApiSession();
+  ensureCan(session, capability);
+  return session;
+}
+
+/**
+ * Legacy convenience kept for route files not yet migrated to capabilities:
+ * requires API session + role membership in the allowed set.
+ */
+export async function requireApiRole(allowed: "ADMIN" | "CLIENT" | Array<"ADMIN" | "CLIENT">): Promise<AuthSession> {
   const session = await requireApiSession();
   const roles = Array.isArray(allowed) ? allowed : [allowed];
-  ensureRole(session, roles);
+  const clientOk = roles.includes("CLIENT") && isClientRole(session.role);
+  const adminOk = roles.includes("ADMIN") && session.role === "ADMIN";
+  if (!clientOk && !adminOk) {
+    throw new Error("FORBIDDEN");
+  }
   return session;
 }

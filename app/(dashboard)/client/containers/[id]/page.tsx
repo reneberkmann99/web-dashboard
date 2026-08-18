@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -8,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { ContainerView } from "@/types/domain";
+import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 
 type DetailResponse = {
   container: ContainerView;
@@ -19,10 +20,23 @@ type LogsResponse = {
   nodeOnline: boolean;
 };
 
+type ActionResponse = {
+  operationId: string;
+};
+
+function OperationStateBadge({ state }: { state: OperationState }): React.JSX.Element {
+  const variant =
+    state === "SUCCEEDED" ? "success" : state === "FAILED" ? "danger" : state === "RUNNING" || state === "QUEUED" || state === "REQUESTED" ? "warning" : "default";
+  return <Badge variant={variant}>{state}</Badge>;
+}
+
 export default function ContainerDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const assignmentId = params.id;
   const queryClient = useQueryClient();
+  const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const detail = useQuery({
     queryKey: ["container", assignmentId],
@@ -36,23 +50,64 @@ export default function ContainerDetailPage(): React.JSX.Element {
     refetchInterval: 12000
   });
 
+  // Poll the active operation until it reaches a terminal state.
+  const operationQuery = useQuery({
+    queryKey: ["operation", activeOperationId],
+    queryFn: () => apiFetch<{ operation: OperationView }>(`/api/client/operations/${activeOperationId}`),
+    enabled: Boolean(activeOperationId),
+    refetchInterval: 1500,
+    refetchIntervalInBackground: false
+  });
+
+  const operation = operationQuery.data?.operation ?? null;
+
+  useEffect(() => {
+    if (!operation) {
+      return;
+    }
+    if (["SUCCEEDED", "FAILED", "CANCELLED"].includes(operation.state)) {
+      setPollError(operation.state === "FAILED" ? operation.error ?? "Operation failed" : null);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setActiveOperationId(null);
+      queryClient.invalidateQueries({ queryKey: ["container", assignmentId] });
+      queryClient.invalidateQueries({ queryKey: ["client-containers"] });
+      queryClient.invalidateQueries({ queryKey: ["client-operations"] });
+      if (operation.state === "SUCCEEDED") {
+        toast.success("Operation completed");
+      }
+    }
+  }, [operation, assignmentId, queryClient]);
+
+  useEffect(() => () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+    }
+  }, []);
+
   const actionMutation = useMutation({
     mutationFn: async (action: "start" | "stop" | "restart") =>
-      apiFetch<{ success: boolean }>(`/api/client/containers/${assignmentId}/action`, {
+      apiFetch<ActionResponse>(`/api/client/containers/${assignmentId}/action`, {
         method: "POST",
         body: JSON.stringify({ action })
       }),
-    onSuccess: () => {
-      toast.success("Action submitted");
-      queryClient.invalidateQueries({ queryKey: ["container", assignmentId] });
-      queryClient.invalidateQueries({ queryKey: ["client-containers"] });
+    onSuccess: (data) => {
+      toast.success("Action requested — waiting for agent…");
+      setPollError(null);
+      setActiveOperationId(data.operationId);
+      queryClient.invalidateQueries({ queryKey: ["client-operations"] });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Action failed");
+      const message = error instanceof Error ? error.message : "Action failed";
+      toast.error(message);
+      setPollError(message);
     }
   });
 
   const container = detail.data?.container;
+  const busy = Boolean(operation && !["SUCCEEDED", "FAILED", "CANCELLED"].includes(operation.state));
 
   return (
     <div className="space-y-6">
@@ -69,13 +124,13 @@ export default function ContainerDetailPage(): React.JSX.Element {
             </CardContent>
           </Card>
         ) : (
-        <Card className="panel">
-          <CardContent className="space-y-3 p-6">
-            <div className="h-8 animate-pulse rounded bg-panelAlt" />
-            <div className="h-8 animate-pulse rounded bg-panelAlt" />
-            <div className="h-8 animate-pulse rounded bg-panelAlt" />
-          </CardContent>
-        </Card>
+          <Card className="panel">
+            <CardContent className="space-y-3 p-6">
+              <div className="h-8 animate-pulse rounded bg-panelAlt" />
+              <div className="h-8 animate-pulse rounded bg-panelAlt" />
+              <div className="h-8 animate-pulse rounded bg-panelAlt" />
+            </CardContent>
+          </Card>
         )
       ) : (
         <>
@@ -89,6 +144,18 @@ export default function ContainerDetailPage(): React.JSX.Element {
                 <StatusBadge status={container.status} />
                 {!container.nodeOnline ? <Badge variant="danger">Node offline</Badge> : <Badge variant="success">Node online</Badge>}
               </div>
+
+              {operation && (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-panelAlt p-3">
+                  <span className="text-sm">Operation {operation.type.replace("CONTAINER_", "").toLowerCase()}</span>
+                  <OperationStateBadge state={operation.state} />
+                  {operation.state === "FAILED" && (
+                    <span className="text-sm text-red-400">{operation.error ?? "Unknown failure"}</span>
+                  )}
+                </div>
+              )}
+              {pollError && !operation && <p className="text-sm text-red-400">{pollError}</p>}
+
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Info label="Container ID" value={container.containerId} />
                 <Info label="Node" value={container.nodeName} />
@@ -101,14 +168,14 @@ export default function ContainerDetailPage(): React.JSX.Element {
                 <Info label="Updated" value={container.lastUpdatedAt} />
               </div>
               <div className="flex gap-2">
-                <Button disabled={actionMutation.isPending} onClick={() => actionMutation.mutate("start")}>
-                  Start
+                <Button disabled={busy} onClick={() => actionMutation.mutate("start")}>
+                  {busy ? "Working…" : "Start"}
                 </Button>
-                <Button disabled={actionMutation.isPending} variant="secondary" onClick={() => actionMutation.mutate("restart")}>
-                  Restart
+                <Button disabled={busy} variant="secondary" onClick={() => actionMutation.mutate("restart")}>
+                  {busy ? "Working…" : "Restart"}
                 </Button>
                 <Button
-                  disabled={actionMutation.isPending}
+                  disabled={busy}
                   variant="danger"
                   onClick={() => {
                     if (window.confirm("Stop this container?")) {
@@ -116,7 +183,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
                     }
                   }}
                 >
-                  Stop
+                  {busy ? "Working…" : "Stop"}
                 </Button>
               </div>
             </CardContent>

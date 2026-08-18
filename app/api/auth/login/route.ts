@@ -1,13 +1,35 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
-import { createSession, setSessionCookie } from "@/server/auth/session";
+import { createSession, setSessionCookie, setCsrfCookie } from "@/server/auth/session";
 import { verifyPassword } from "@/server/auth/password";
 import { pamAuthenticate } from "@/server/auth/pam";
 import { fromError, fail, ok } from "@/server/http";
 import { loginSchema } from "@/server/validation/auth";
+import { isClientRole } from "@/types/domain";
 
 const LINUX_USERNAME_RE = /^[a-z_][a-z0-9_-]{1,31}$/;
+
+/**
+ * Brute-force protection: fixed-window rate limiter keyed by
+ * (source-ip + identifier). In-memory is acceptable for a single-instance
+ * control plane; documented in ARCHITECTURE.md.
+ */
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function loginRateLimited(ip: string, identifier: string): boolean {
+  const key = `${ip}|${identifier.toLowerCase()}`;
+  const now = Date.now();
+  const entry = loginAttempts.get(key);
+  if (!entry || entry.resetAt < now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > LOGIN_MAX_ATTEMPTS;
+}
 
 function adminUsernames(): Set<string> {
   return new Set(
@@ -18,11 +40,6 @@ function adminUsernames(): Set<string> {
   );
 }
 
-/**
- * Find or create the "Linux Users" client account that auto-provisioned
- * PAM CLIENT accounts are attached to by default (so they land with zero
- * container access until an admin explicitly assigns containers).
- */
 async function getOrCreateLinuxUsersClient() {
   const existing = await prisma.clientAccount.findUnique({ where: { slug: "linux-users" } });
   if (existing) {
@@ -33,12 +50,6 @@ async function getOrCreateLinuxUsersClient() {
   });
 }
 
-/**
- * Authenticate against the host's PAM stack via the hostpanel-pam bridge.
- * On first successful auth for a given Linux username, auto-provisions a
- * User row (ADMIN if the username is in PAM_ADMIN_USERS, else CLIENT under
- * the auto-created "Linux Users" client account).
- */
 async function authenticateViaPam(username: string, password: string, sourceIp: string | null) {
   const result = await pamAuthenticate(username, password);
   if (!result.ok) {
@@ -69,7 +80,7 @@ async function authenticateViaPam(username: string, password: string, sourceIp: 
         passwordHash: "PAM_MANAGED",
         authSource: "PAM",
         pamUsername: username,
-        role: isAdmin ? "ADMIN" : "CLIENT",
+        role: isAdmin ? "ADMIN" : "CLIENT_OPERATOR",
         clientAccountId: clientAccount?.id ?? null,
         isActive: true
       },
@@ -97,17 +108,29 @@ async function authenticateViaPam(username: string, password: string, sourceIp: 
 export async function POST(request: NextRequest): Promise<Response> {
   try {
     const body = loginSchema.parse(await request.json());
-    const sourceIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+    const sourceIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
     const identifier = body.email.trim();
 
     const invalidCreds = fail("INVALID_CREDENTIALS", "Invalid email or password", 401);
 
-    let user: Awaited<ReturnType<typeof prisma.user.findUnique>> & {
-      clientAccount?: { id: string; isActive: boolean } | null;
-    } | null = null;
+    if (loginRateLimited(sourceIp, identifier)) {
+      await logAuditEvent({
+        action: "LOGIN_RATE_LIMITED",
+        targetType: "USER",
+        actorEmail: identifier,
+        result: "FAILURE",
+        sourceIp
+      });
+      return fail("RATE_LIMITED", "Too many login attempts. Try again later.", 429);
+    }
+
+    let user:
+      | (Awaited<ReturnType<typeof prisma.user.findUnique>> & {
+          clientAccount?: { id: string; isActive: boolean } | null;
+        })
+      | null = null;
 
     if (identifier.includes("@") && !identifier.endsWith("@pam.local")) {
-      // Local (email + bcrypt hash) account path — unchanged behavior.
       const localUser = await prisma.user.findUnique({
         where: { email: identifier.toLowerCase() },
         include: { clientAccount: true }
@@ -123,6 +146,20 @@ export async function POST(request: NextRequest): Promise<Response> {
           sourceIp
         });
         return invalidCreds;
+      }
+
+      // Pending accounts (no password set yet) cannot log in.
+      if (!localUser.passwordHash) {
+        await logAuditEvent({
+          action: "LOGIN_FAILED",
+          targetType: "USER",
+          targetId: localUser.id,
+          actorEmail: localUser.email,
+          metadata: { reason: "pending_activation" },
+          result: "FAILURE",
+          sourceIp
+        });
+        return fail("ACCOUNT_PENDING", "Account is pending activation. Check your activation link.", 403);
       }
 
       const passwordMatches = await verifyPassword(body.password, localUser.passwordHash);
@@ -141,7 +178,6 @@ export async function POST(request: NextRequest): Promise<Response> {
 
       user = localUser;
     } else if (LINUX_USERNAME_RE.test(identifier)) {
-      // PAM path: identifier is a bare Linux username, not an email.
       user = await authenticateViaPam(identifier, body.password, sourceIp);
       if (!user) {
         return invalidCreds;
@@ -157,7 +193,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       return invalidCreds;
     }
 
-    if (user.role === "CLIENT" && (!user.clientAccount || !user.clientAccount.isActive)) {
+    if (isClientRole(user.role) && (!user.clientAccount || !user.clientAccount.isActive)) {
       await logAuditEvent({
         action: "LOGIN_FAILED",
         targetType: "USER",
@@ -200,6 +236,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
 
     setSessionCookie(response, session.token, session.expiresAt);
+    setCsrfCookie(response);
     return response;
   } catch (error) {
     return fromError(error);

@@ -1,7 +1,9 @@
 import { requireApiRole } from "@/server/auth/guards";
-import { runContainerAction } from "@/server/services/containers";
-import { containerActionSchema, cuidParamSchema } from "@/server/validation/admin";
+import { resolveActionTarget } from "@/server/services/containers";
+import { requestOperation, OperationConflictError } from "@/server/services/operations";
 import { fail, fromError, ok } from "@/server/http";
+import { containerActionSchema, cuidParamSchema } from "@/server/validation/admin";
+import { getSourceIpFromRequest } from "@/server/request";
 
 export async function POST(
   request: Request,
@@ -12,14 +14,32 @@ export async function POST(
     const session = await requireApiRole("ADMIN");
 
     const body = containerActionSchema.parse(await request.json());
-    const sourceIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+    const sourceIp = getSourceIpFromRequest(request);
 
-    const success = await runContainerAction(session, id, body.action, sourceIp);
-    if (!success) {
-      return fail("ACTION_DENIED", "Action denied", 403);
+    const target = await resolveActionTarget(session, id, body.action);
+    if (!target) {
+      return fail("NOT_FOUND", "Container not found", 404);
     }
 
-    return ok({ success: true });
+    try {
+      const operationId = await requestOperation({
+        type: `CONTAINER_${body.action.toUpperCase()}` as "CONTAINER_START" | "CONTAINER_STOP" | "CONTAINER_RESTART",
+        actor: session,
+        clientAccountId: session.clientAccountId,
+        nodeId: target.nodeId,
+        dockerContainerId: target.dockerContainerId,
+        targetAssignmentId: id,
+        sourceIp
+      });
+      return ok({ operationId }, 202);
+    } catch (error) {
+      if (error instanceof OperationConflictError) {
+        return fail("OPERATION_CONFLICT", "An operation is already in progress for this container", 409, {
+          operationId: error.existingOperationId
+        });
+      }
+      throw error;
+    }
   } catch (error) {
     return fromError(error);
   }

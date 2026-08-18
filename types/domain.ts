@@ -1,8 +1,23 @@
-export type UserRole = "ADMIN" | "CLIENT";
+export type UserRole = "ADMIN" | "CLIENT" | "CLIENT_ADMIN" | "CLIENT_OPERATOR" | "CLIENT_VIEWER";
+
+/** Roles that represent tenant-scoped (non-platform) users. */
+export const CLIENT_ROLES: UserRole[] = ["CLIENT_ADMIN", "CLIENT_OPERATOR", "CLIENT_VIEWER"];
+
+export function isClientRole(role: UserRole): boolean {
+  return CLIENT_ROLES.includes(role);
+}
 
 export type NodeStatus = "ONLINE" | "OFFLINE" | "UNKNOWN" | "INACTIVE";
 
 export type AuditResult = "SUCCESS" | "FAILURE";
+
+export type OperationState =
+  | "REQUESTED"
+  | "QUEUED"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED";
 
 export type ContainerStatus =
   | "running"
@@ -30,6 +45,22 @@ export type ContainerView = {
   clientName: string;
   allowedActions: string[];
   lastUpdatedAt: string;
+};
+
+export type OperationView = {
+  id: string;
+  type: string;
+  state: OperationState;
+  requestId: string;
+  actorEmail: string | null;
+  actorRole: UserRole | null;
+  nodeName: string;
+  dockerContainerId: string;
+  error: string | null;
+  requestedAt: string;
+  queuedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
 };
 
 export type OverviewStats = {
@@ -65,7 +96,7 @@ export type ClientRecord = {
   name: string;
   slug: string;
   isActive: boolean;
-  _count: { users: number; assignments: number };
+  _count: { users: number; assignments: number; grants: number };
 };
 
 /** Admin node list record */
@@ -76,6 +107,9 @@ export type NodeRecord = {
   apiBaseUrl: string;
   status: NodeStatus;
   isActive: boolean;
+  agentVersion: string | null;
+  dockerVersion: string | null;
+  lastHeartbeatAt: string | null;
   _count: { assignments: number };
 };
 
@@ -104,6 +138,28 @@ export type AssignmentRecord = {
   node: { name: string };
   project: { name: string } | null;
   allowedActions: string[];
+};
+
+/** Admin project/stack list record */
+export type ProjectRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  isActive: boolean;
+  node: { id: string; name: string };
+  clientAccount: { id: string; name: string };
+  _count: { assignments: number; grants: number; containers: number };
+};
+
+/** Discovered container inventory entry offered to admins when granting access */
+export type DiscoveredContainer = {
+  dockerContainerId: string;
+  dockerName: string;
+  image: string;
+  status: string | null;
+  nodeId: string;
+  nodeName: string;
 };
 
 /** Single audit log entry */

@@ -2,20 +2,19 @@
  * Container service — primary business-logic layer.
  *
  * Security invariants:
- *  - CLIENT sessions are automatically scoped to their `clientAccountId`
- *    via the Prisma WHERE clause built in `buildWhereClause()`.
- *  - ADMIN sessions omit the client filter, granting full cross-client access.
+ *  - CLIENT sessions are automatically scoped to their `clientAccountId` in
+ *    every query (tenant isolation lives here, never in the frontend).
+ *  - ADMIN sessions omit the client filter.
+ *  - Visibility is computed from AccessGrant rows (project-level or
+ *    container-level) plus legacy ContainerAssignment rows (pre-refactor).
  *  - Every action mutation is audited through `logAuditEvent`.
- *
- * Callers MUST validate session and role *before* invoking these functions
- * (enforced by the `requireApiRole` guard in each route handler).
  */
-import { ContainerAssignment, Prisma, Role } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import { type AuthSession } from "@/server/auth/session";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
-import { ContainerView, OverviewStats } from "@/types/domain";
+import { ContainerView, OverviewStats, DiscoveredContainer } from "@/types/domain";
 
 function mapStatus(value?: string): ContainerView["status"] {
   if (!value) {
@@ -38,12 +37,16 @@ function mapStatus(value?: string): ContainerView["status"] {
   return "unknown";
 }
 
+type AssignmentWithRelations = Prisma.ContainerAssignmentGetPayload<{
+  include: {
+    node: { select: { id: true; name: true } };
+    project: { select: { name: true } };
+    clientAccount: { select: { name: true } };
+  };
+}>;
+
 function toContainerView(
-  assignment: ContainerAssignment & {
-    node: { id: string; name: string };
-    project: { name: string } | null;
-    clientAccount: { name: string };
-  },
+  assignment: AssignmentWithRelations,
   runtime: {
     id: string;
     name: string;
@@ -81,41 +84,168 @@ function toContainerView(
   };
 }
 
-async function getAssignmentsForSession(session: AuthSession) {
-  const where: Prisma.ContainerAssignmentWhereInput = {
-    isActive: true,
-    ...(session.role === Role.CLIENT
-      ? {
-          clientAccountId: session.clientAccountId ?? "__invalid__"
-        }
-      : {})
-  };
+/** Tenant scope predicate shared by every client-facing query. */
+function tenantScope(session: AuthSession): Prisma.ContainerAssignmentWhereInput {
+  return session.role === Role.ADMIN
+    ? {}
+    : { clientAccountId: session.clientAccountId ?? "__invalid__" };
+}
 
-  return prisma.containerAssignment.findMany({
-    where,
-    include: {
-      node: true,
-      project: true,
-      clientAccount: true
-    },
-    orderBy: { createdAt: "desc" }
-  });
+type GrantContainerRow = {
+  dockerContainerId: string;
+  dockerName: string;
+  image: string | null;
+  friendlyLabel: string | null;
+  allowedActions: string[];
+  nodeId: string;
+  node: { id: string; name: string };
+  project: { id: string; name: string } | null;
+  clientAccount: { id: string; name: string };
+  grantId: string;
+};
+
+/** Build an AssignmentWithRelations-shaped object from a resolved grant row. */
+function grantToAssignment(row: GrantContainerRow): AssignmentWithRelations {
+  return {
+    id: row.grantId,
+    clientAccountId: row.clientAccount.id,
+    nodeId: row.nodeId,
+    projectId: row.project?.id ?? null,
+    dockerContainerId: row.dockerContainerId,
+    dockerName: row.dockerName,
+    image: row.image,
+    friendlyLabel: row.friendlyLabel,
+    allowedActions: row.allowedActions,
+    isActive: true,
+    containerId: null,
+    metadata: null,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    node: row.node,
+    project: row.project,
+    clientAccount: row.clientAccount
+  };
+}
+
+/**
+ * Resolve every container the session may see, with the effective allowed
+ * actions for each. Sources:
+ *   1. Legacy ContainerAssignment rows (pre-refactor grants).
+ *   2. AccessGrant rows targeting a specific container.
+ *   3. AccessGrant rows targeting a Project (its containers via
+ *      Container.projectId), which also auto-includes containers granted to
+ *      the project's client account.
+ * Returns a de-duplicated map keyed by nodeId:dockerContainerId.
+ */
+export async function resolveVisibleContainersForSession(session: AuthSession): Promise<Map<string, GrantContainerRow>> {
+  const result = new Map<string, GrantContainerRow>();
+  const clientId = session.role === Role.ADMIN ? null : (session.clientAccountId ?? "__invalid__");
+
+  const whereClient = clientId ? { clientAccountId: clientId } : {};
+
+  const [assignments, containerGrants, projectGrants] = await Promise.all([
+    prisma.containerAssignment.findMany({
+      where: { isActive: true, ...whereClient },
+      include: {
+        node: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+        clientAccount: { select: { id: true, name: true } }
+      }
+    }),
+    prisma.accessGrant.findMany({
+      where: { isActive: true, ...whereClient, projectId: null, containerId: { not: null } },
+      include: {
+        container: true,
+        node: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+        clientAccount: { select: { id: true, name: true } }
+      }
+    }),
+    prisma.accessGrant.findMany({
+      where: { isActive: true, ...whereClient, containerId: null, projectId: { not: null } },
+      include: {
+        project: { include: { containers: true } },
+        node: { select: { id: true, name: true } },
+        clientAccount: { select: { id: true, name: true } }
+      }
+    })
+  ]);
+
+  for (const a of assignments) {
+    const key = `${a.nodeId}:${a.dockerContainerId}`;
+    result.set(key, {
+      dockerContainerId: a.dockerContainerId,
+      dockerName: a.dockerName,
+      image: a.image,
+      friendlyLabel: a.friendlyLabel,
+      allowedActions: a.allowedActions,
+      nodeId: a.nodeId,
+      node: a.node,
+      project: a.project,
+      clientAccount: a.clientAccount,
+      grantId: a.id
+    });
+  }
+
+  for (const g of containerGrants) {
+    if (!g.container) continue;
+    const key = `${g.nodeId}:${g.container.dockerContainerId}`;
+    const existing = result.get(key);
+    result.set(key, {
+      dockerContainerId: g.container.dockerContainerId,
+      dockerName: g.container.dockerName,
+      image: g.container.image,
+      friendlyLabel: existing?.friendlyLabel ?? null,
+      allowedActions: existing
+        ? Array.from(new Set([...existing.allowedActions, ...g.allowedActions]))
+        : g.allowedActions,
+      nodeId: g.nodeId,
+      node: g.node,
+      project: g.project ?? existing?.project ?? null,
+      clientAccount: g.clientAccount,
+      grantId: g.id
+    });
+  }
+
+  for (const g of projectGrants) {
+    if (!g.project) continue;
+    for (const container of g.project.containers) {
+      const key = `${g.nodeId}:${container.dockerContainerId}`;
+      const existing = result.get(key);
+      result.set(key, {
+        dockerContainerId: container.dockerContainerId,
+        dockerName: container.dockerName,
+        image: container.image,
+        friendlyLabel: existing?.friendlyLabel ?? null,
+        allowedActions: existing
+          ? Array.from(new Set([...existing.allowedActions, ...g.allowedActions]))
+          : g.allowedActions,
+        nodeId: g.nodeId,
+        node: g.node,
+        project: g.project,
+        clientAccount: g.clientAccount,
+        grantId: g.id
+      });
+    }
+  }
+
+  return result;
 }
 
 export async function listContainersForSession(session: AuthSession): Promise<ContainerView[]> {
-  const assignments = await getAssignmentsForSession(session);
-  const groupedByNode = new Map<string, typeof assignments>();
-
-  for (const assignment of assignments) {
-    const list = groupedByNode.get(assignment.nodeId) ?? [];
-    list.push(assignment);
-    groupedByNode.set(assignment.nodeId, list);
+  const visible = await resolveVisibleContainersForSession(session);
+  const byNode = new Map<string, GrantContainerRow[]>();
+  for (const row of visible.values()) {
+    const list = byNode.get(row.nodeId) ?? [];
+    list.push(row);
+    byNode.set(row.nodeId, list);
   }
 
   const results: ContainerView[] = [];
 
-  for (const [, nodeAssignments] of groupedByNode) {
-    const node = nodeAssignments[0].node;
+  for (const [nodeId, rows] of byNode) {
+    const node = await prisma.node.findUnique({ where: { id: nodeId } });
+    if (!node) continue;
     const runtimePayload = await nodeAgentClient.listContainers(node);
     await prisma.node
       .update({
@@ -128,146 +258,99 @@ export async function listContainersForSession(session: AuthSession): Promise<Co
       .catch(() => undefined);
     const runtimeMap = new Map(runtimePayload.containers.map((entry) => [entry.id, entry]));
 
-    for (const assignment of nodeAssignments) {
-      const live = runtimeMap.get(assignment.dockerContainerId);
-      const mapped = live
-        ? {
-            ...live,
-            status: mapStatus(live.status)
-          }
-        : null;
-      results.push(toContainerView(assignment, mapped, runtimePayload.nodeOnline));
+    for (const row of rows) {
+      const live = runtimeMap.get(row.dockerContainerId);
+      const mapped = live ? { ...live, status: mapStatus(live.status) } : null;
+      results.push(toContainerView(grantToAssignment(row), mapped, runtimePayload.nodeOnline));
     }
   }
 
   return results;
 }
 
-export async function getContainerByAssignmentId(
+export async function getContainerByGrant(
   session: AuthSession,
-  assignmentId: string
-): Promise<ContainerView | null> {
-  const assignment = await prisma.containerAssignment.findFirst({
-    where: {
-      id: assignmentId,
-      isActive: true,
-      ...(session.role === Role.CLIENT
-        ? { clientAccountId: session.clientAccountId ?? "__invalid__" }
-        : {})
-    },
-    include: {
-      node: true,
-      project: true,
-      clientAccount: true
-    }
-  });
-
-  if (!assignment) {
-    return null;
+  grantId: string
+): Promise<{ container: ContainerView | null; grant: GrantContainerRow | null }> {
+  const visible = await resolveVisibleContainersForSession(session);
+  const row = Array.from(visible.values()).find((r) => r.grantId === grantId);
+  if (!row) {
+    return { container: null, grant: null };
   }
 
-  const runtime = await nodeAgentClient.getContainer(assignment.node, assignment.dockerContainerId);
-  return toContainerView(
-    assignment,
-    runtime.container
-      ? {
-          ...runtime.container,
-          status: mapStatus(runtime.container.status)
-        }
-      : null,
-    runtime.nodeOnline
-  );
+  const node = await prisma.node.findUnique({ where: { id: row.nodeId } });
+  if (!node) {
+    return { container: null, grant: row };
+  }
+
+  const runtimePayload = await nodeAgentClient.listContainers(node);
+  const live = runtimePayload.containers.find((c) => c.id === row.dockerContainerId) ?? null;
+  const mapped = live ? { ...live, status: mapStatus(live.status) } : null;
+
+  const container = toContainerView(grantToAssignment(row), mapped, runtimePayload.nodeOnline);
+
+  return { container, grant: row };
 }
 
 export async function getContainerLogs(
   session: AuthSession,
-  assignmentId: string,
+  grantId: string,
   tail = 200
-): Promise<{ logs: string[]; nodeOnline: boolean } | null> {
-  const assignment = await prisma.containerAssignment.findFirst({
-    where: {
-      id: assignmentId,
-      isActive: true,
-      ...(session.role === Role.CLIENT
-        ? { clientAccountId: session.clientAccountId ?? "__invalid__" }
-        : {})
-    },
-    include: {
-      node: true
-    }
-  });
-
-  if (!assignment) {
+): Promise<{ logs: string[]; nodeOnline: boolean; allowed: boolean } | null> {
+  const { grant } = await getContainerByGrant(session, grantId);
+  if (!grant) {
     return null;
   }
-
-  const logResponse = await nodeAgentClient.getLogs(assignment.node, assignment.dockerContainerId, tail);
-  return logResponse;
+  if (!grant.allowedActions.includes("view_logs") && session.role !== Role.ADMIN) {
+    return { logs: [], nodeOnline: false, allowed: false };
+  }
+  const node = await prisma.node.findUnique({ where: { id: grant.nodeId } });
+  if (!node) {
+    return null;
+  }
+  const logResponse = await nodeAgentClient.getLogs(node, grant.dockerContainerId, tail);
+  return { logs: logResponse.logs, nodeOnline: logResponse.nodeOnline, allowed: true };
 }
 
-export async function runContainerAction(
+/**
+ * Check that the session may perform `action` on the container referenced by
+ * grantId, and return the resolved node + docker id if allowed.
+ */
+export async function resolveActionTarget(
   session: AuthSession,
-  assignmentId: string,
-  action: "start" | "stop" | "restart",
-  sourceIp: string | null
-): Promise<boolean> {
-  const assignment = await prisma.containerAssignment.findFirst({
-    where: {
-      id: assignmentId,
-      isActive: true,
-      ...(session.role === Role.CLIENT
-        ? { clientAccountId: session.clientAccountId ?? "__invalid__" }
-        : {})
-    },
-    include: {
-      node: true,
-      clientAccount: true
+  grantId: string,
+  action: "start" | "stop" | "restart"
+): Promise<{ nodeId: string; dockerContainerId: string; allowedActions: string[] } | null> {
+  const { grant } = await getContainerByGrant(session, grantId);
+  if (!grant) {
+    return null;
+  }
+  if (session.role === Role.ADMIN) {
+    return { nodeId: grant.nodeId, dockerContainerId: grant.dockerContainerId, allowedActions: grant.allowedActions };
+  }
+  if (!grant.allowedActions.includes(action)) {
+    return null;
+  }
+  return { nodeId: grant.nodeId, dockerContainerId: grant.dockerContainerId, allowedActions: grant.allowedActions };
+}
+
+export async function listDiscoveredContainersForAdmin(): Promise<DiscoveredContainer[]> {
+  const nodes = await prisma.node.findMany({ where: { isActive: true } });
+  const out: DiscoveredContainer[] = [];
+  for (const node of nodes) {
+    const payload = await nodeAgentClient.listContainers(node);
+    for (const c of payload.containers) {
+      out.push({
+        dockerContainerId: c.id,
+        dockerName: c.name,
+        image: c.image,
+        status: c.status,
+        nodeId: node.id,
+        nodeName: node.name
+      });
     }
-  });
-
-  if (!assignment) {
-    return false;
   }
-
-  if (!assignment.allowedActions.includes(action)) {
-    await logAuditEvent({
-      actorUserId: session.userId,
-      actorEmail: session.email,
-      actorRole: session.role,
-      action: `CONTAINER_${action.toUpperCase()}`,
-      targetType: "CONTAINER_ASSIGNMENT",
-      targetId: assignmentId,
-      metadata: { reason: "action_not_allowed" },
-      result: "FAILURE",
-      sourceIp
-    });
-    return false;
-  }
-
-  const success = await nodeAgentClient.runAction(
-    assignment.node,
-    assignment.dockerContainerId,
-    action
-  );
-
-  await logAuditEvent({
-    actorUserId: session.userId,
-    actorEmail: session.email,
-    actorRole: session.role,
-    action: `CONTAINER_${action.toUpperCase()}`,
-    targetType: "CONTAINER_ASSIGNMENT",
-    targetId: assignment.id,
-    metadata: {
-      assignmentId: assignment.id,
-      dockerContainerId: assignment.dockerContainerId,
-      nodeId: assignment.nodeId,
-      client: assignment.clientAccount.name
-    },
-    result: success ? "SUCCESS" : "FAILURE",
-    sourceIp
-  });
-
-  return success;
+  return out;
 }
 
 export function buildOverview(containers: ContainerView[]): OverviewStats {
@@ -295,7 +378,6 @@ export function buildOverview(containers: ContainerView[]): OverviewStats {
   };
 }
 
-
 /**
  * ADMIN-only: return every container running on every active node,
  * regardless of assignment. Containers that have an assignment carry its
@@ -311,12 +393,12 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
   const assignments = await prisma.containerAssignment.findMany({
     where: { isActive: true },
     include: {
-      node: true,
-      project: true,
-      clientAccount: true
+      node: { select: { id: true, name: true } },
+      project: { select: { name: true } },
+      clientAccount: { select: { name: true } }
     }
   });
-  const assignmentByNodeContainer = new Map<string, (typeof assignments)[number]>();
+  const assignmentByNodeContainer = new Map<string, AssignmentWithRelations>();
   for (const assignment of assignments) {
     assignmentByNodeContainer.set(`${assignment.nodeId}:${assignment.dockerContainerId}`, assignment);
   }
@@ -337,10 +419,7 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
 
     for (const live of runtimePayload.containers) {
       const assignment = assignmentByNodeContainer.get(`${node.id}:${live.id}`);
-      const mapped = {
-        ...live,
-        status: mapStatus(live.status)
-      };
+      const mapped = { ...live, status: mapStatus(live.status) };
 
       if (assignment) {
         results.push(toContainerView(assignment, mapped, runtimePayload.nodeOnline));
@@ -373,4 +452,3 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
     (a, b) => a.nodeName.localeCompare(b.nodeName) || a.name.localeCompare(b.name)
   );
 }
-

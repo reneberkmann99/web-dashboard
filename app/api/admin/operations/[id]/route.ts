@@ -1,5 +1,5 @@
 import { requireApiRole } from "@/server/auth/guards";
-import { getContainerByGrant } from "@/server/services/containers";
+import { getOperationForSession } from "@/server/services/operations";
 import { cuidParamSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 
@@ -9,14 +9,14 @@ export async function GET(
 ): Promise<Response> {
   try {
     const id = cuidParamSchema.parse((await params).id);
-    const session = await requireApiRole("CLIENT");
+    const session = await requireApiRole("ADMIN");
 
-    const { container } = await getContainerByGrant(session, id);
-    if (!container) {
-      return fail("NOT_FOUND", "Container not found", 404);
+    const operation = await getOperationForSession(session, id);
+    if (!operation) {
+      return fail("NOT_FOUND", "Operation not found", 404);
     }
 
-    return ok({ container });
+    return ok({ operation });
   } catch (error) {
     return fromError(error);
   }

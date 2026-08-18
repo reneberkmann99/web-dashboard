@@ -12,13 +12,16 @@ export async function GET(
     const session = await requireApiRole("CLIENT");
 
     const tail = Number(new URL(request.url).searchParams.get("tail") ?? "200");
-    const logs = await getContainerLogs(session, id, Number.isNaN(tail) ? 200 : Math.min(tail, 500));
+    const result = await getContainerLogs(session, id, Number.isNaN(tail) ? 200 : Math.min(tail, 500));
 
-    if (!logs) {
+    if (!result) {
       return fail("NOT_FOUND", "Container not found", 404);
     }
+    if (!result.allowed) {
+      return fail("ACTION_DENIED", "Viewing logs is not permitted for this container", 403);
+    }
 
-    return ok(logs);
+    return ok({ logs: result.logs, nodeOnline: result.nodeOnline });
   } catch (error) {
     return fromError(error);
   }

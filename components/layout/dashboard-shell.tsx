@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 type ShellSession = {
   displayName: string;
   email: string;
-  role: "ADMIN" | "CLIENT";
+  role: string;
   clientAccountName: string | null;
 };
 
