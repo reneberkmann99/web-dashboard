@@ -136,7 +136,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         include: { clientAccount: true }
       });
 
-      if (!localUser || !localUser.isActive || localUser.authSource !== "LOCAL") {
+      if (!localUser || localUser.authSource !== "LOCAL") {
         await logAuditEvent({
           action: "LOGIN_FAILED",
           targetType: "USER",
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         return invalidCreds;
       }
 
-      // Pending accounts (no password set yet) cannot log in.
+      // Pending accounts (no password set yet) cannot log in — must activate first.
       if (!localUser.passwordHash) {
         await logAuditEvent({
           action: "LOGIN_FAILED",
@@ -160,6 +160,19 @@ export async function POST(request: NextRequest): Promise<Response> {
           sourceIp
         });
         return fail("ACCOUNT_PENDING", "Account is pending activation. Check your activation link.", 403);
+      }
+
+      if (!localUser.isActive) {
+        await logAuditEvent({
+          action: "LOGIN_FAILED",
+          targetType: "USER",
+          targetId: localUser.id,
+          actorEmail: localUser.email,
+          metadata: { reason: "disabled" },
+          result: "FAILURE",
+          sourceIp
+        });
+        return fail("ACCOUNT_DISABLED", "Account is disabled", 403);
       }
 
       const passwordMatches = await verifyPassword(body.password, localUser.passwordHash);

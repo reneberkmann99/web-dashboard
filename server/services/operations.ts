@@ -149,6 +149,14 @@ export async function executeOperation(operationId: string): Promise<void> {
     return;
   }
 
+  if (!operation.node.isActive || operation.node.status === "INACTIVE") {
+    await prisma.operation.update({
+      where: { id: operation.id },
+      data: { state: "FAILED", finishedAt: new Date(), error: "Node is disabled or inactive" }
+    });
+    return;
+  }
+
   const action = operation.type.replace("CONTAINER_", "").toLowerCase() as "start" | "stop" | "restart";
 
   await prisma.operation.update({
@@ -212,6 +220,39 @@ export async function getOperationForSession(session: AuthSession, operationId: 
     include: { node: { select: { name: true } } }
   });
   return op ? toOperationView(op) : null;
+}
+
+/**
+ * Recovery sweep: drive any operation stuck in a non-terminal state to
+ * completion. Called on server start and periodically while the process is
+ * alive, so a crashed deploy cannot strand operations forever.
+ */
+export async function sweepStaleOperations(): Promise<number> {
+  const stale = await prisma.operation.findMany({
+    where: { state: { in: ["REQUESTED", "QUEUED", "RUNNING"] } },
+    select: { id: true }
+  });
+  for (const op of stale) {
+    await executeOperation(op.id).catch(() => undefined);
+  }
+  return stale.length;
+}
+
+let sweeperTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startOperationSweeper(intervalMs = 30_000): void {
+  if (sweeperTimer) {
+    return;
+  }
+  void sweepStaleOperations();
+  sweeperTimer = setInterval(() => {
+    void sweepStaleOperations();
+  }, intervalMs);
+  // Do not keep the process alive purely for the sweeper in serverless-like
+  // environments; in our long-running deployment this is a no-op distinction.
+  if (typeof sweeperTimer.unref === "function") {
+    sweeperTimer.unref();
+  }
 }
 
 export async function listOperationsForSession(

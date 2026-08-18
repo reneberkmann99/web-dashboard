@@ -102,6 +102,8 @@ type GrantContainerRow = {
   project: { id: string; name: string } | null;
   clientAccount: { id: string; name: string };
   grantId: string;
+  /** Alternative ids that resolve to this row (legacy assignment ids). */
+  aliasIds: string[];
 };
 
 /** Build an AssignmentWithRelations-shaped object from a resolved grant row. */
@@ -127,6 +129,10 @@ function grantToAssignment(row: GrantContainerRow): AssignmentWithRelations {
   };
 }
 
+function rowMatchesGrant(row: GrantContainerRow, grantId: string): boolean {
+  return row.grantId === grantId || row.aliasIds.includes(grantId);
+}
+
 /**
  * Resolve every container the session may see, with the effective allowed
  * actions for each. Sources:
@@ -140,6 +146,19 @@ function grantToAssignment(row: GrantContainerRow): AssignmentWithRelations {
 export async function resolveVisibleContainersForSession(session: AuthSession): Promise<Map<string, GrantContainerRow>> {
   const result = new Map<string, GrantContainerRow>();
   const clientId = session.role === Role.ADMIN ? null : (session.clientAccountId ?? "__invalid__");
+
+  // Tenant isolation: a session whose client account was deactivated sees
+  // nothing, even if the user row is still active (the login gate catches
+  // this too, but mid-session deactivation must also take effect).
+  if (clientId) {
+    const client = await prisma.clientAccount.findUnique({
+      where: { id: clientId },
+      select: { isActive: true }
+    });
+    if (!client?.isActive) {
+      return result;
+    }
+  }
 
   const whereClient = clientId ? { clientAccountId: clientId } : {};
 
@@ -183,7 +202,8 @@ export async function resolveVisibleContainersForSession(session: AuthSession): 
       node: a.node,
       project: a.project,
       clientAccount: a.clientAccount,
-      grantId: a.id
+      grantId: a.id,
+      aliasIds: [a.id]
     });
   }
 
@@ -203,7 +223,8 @@ export async function resolveVisibleContainersForSession(session: AuthSession): 
       node: g.node,
       project: g.project ?? existing?.project ?? null,
       clientAccount: g.clientAccount,
-      grantId: g.id
+      grantId: existing?.grantId ?? g.id,
+      aliasIds: existing ? [...existing.aliasIds, g.id] : [g.id]
     });
   }
 
@@ -224,7 +245,8 @@ export async function resolveVisibleContainersForSession(session: AuthSession): 
         node: g.node,
         project: g.project,
         clientAccount: g.clientAccount,
-        grantId: g.id
+        grantId: existing?.grantId ?? g.id,
+        aliasIds: existing ? [...existing.aliasIds, g.id] : [g.id]
       });
     }
   }
@@ -278,7 +300,7 @@ export async function getContainerByGrant(
   grantId: string
 ): Promise<{ container: ContainerView | null; grant: GrantContainerRow | null }> {
   const visible = await resolveVisibleContainersForSession(session);
-  const row = Array.from(visible.values()).find((r) => r.grantId === grantId);
+  const row = Array.from(visible.values()).find((r) => rowMatchesGrant(r, grantId));
   if (!row) {
     return { container: null, grant: null };
   }
@@ -427,7 +449,9 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
       })
       .catch(() => undefined);
 
+    const seenIds = new Set<string>();
     for (const live of runtimePayload.containers) {
+      seenIds.add(live.id);
       const assignment = assignmentByNodeContainer.get(`${node.id}:${live.id}`);
       const mapped = { ...live, status: mapStatus(live.status) };
 
@@ -456,6 +480,16 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
         });
       }
     }
+
+    // Data consistency: containers no longer reported by the agent are marked
+    // inactive (kept for history, never deleted). Their grants remain but
+    // resolve to nothing until the container reappears.
+    await prisma.container
+      .updateMany({
+        where: { nodeId: node.id, isActive: true, dockerContainerId: { notIn: Array.from(seenIds) } },
+        data: { isActive: false, lastSeenAt: new Date() }
+      })
+      .catch(() => undefined);
   }
 
   return results.sort(
