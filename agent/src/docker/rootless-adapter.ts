@@ -164,7 +164,7 @@ export class RootlessDockerAdapter implements DockerAdapter {
         id: row.ID,
         name: row.Names,
         image: row.Image,
-        status: parseStatus(row.Status || row.State),
+        status: parseStatus(row.State || row.Status),
         uptime: row.Status,
         ports: row.Ports || "-",
         createdAt: detail.Created ?? null,

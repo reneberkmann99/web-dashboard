@@ -3,7 +3,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN apk add --no-cache docker-cli && npm ci --omit=dev
 
 COPY agent/ ./agent/
 COPY tsconfig.json ./
