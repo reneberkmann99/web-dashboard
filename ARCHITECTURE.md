@@ -366,3 +366,90 @@ spec has ever been written. This is the most significant gap the refactor must c
 | Manual node enrollment (paste name/hostname/URL/key) | Step 7 |
 | No DB constraints preventing CLIENT-without-client, orphaned assignments, etc. | Step 8 |
 | Zero application tests | Step 9 |
+
+---
+
+# Post-refactor state (2026-08-18) — production foundation
+
+The sections above document the pre-refactor baseline. This section records what
+the production-foundation refactor changed and the architecture as it stands now.
+Everything below is deployed and verified in production (commits `79e1c50`,
+`0ea2ed8`, `f5131f2` on `main`).
+
+## Domain model (current)
+
+```
+ClientAccount — tenant (name, slug, isActive)
+  1—* User (role: ADMIN | CLIENT_ADMIN | CLIENT_OPERATOR | CLIENT_VIEWER)
+  1—* Project          — logical stack (Home Assistant, Mailcow, BookStack, …)
+  1—* AccessGrant      — unified grant (project-level or container-level)
+  1—* Operation        — async action records
+
+Node — Docker daemon under control-plane management
+  1—* Container        — discovered inventory (nodeId+dockerContainerId unique)
+  1—* AccessGrant / Operation / Project / ContainerAssignment (legacy)
+
+AccessGrant — exactly one target: projectId XOR containerId
+  - unique (clientAccountId, projectId) and (clientAccountId, containerId)
+  - allowedActions[] per grant (start/stop/restart/view_logs)
+
+ContainerAssignment — legacy pre-refactor grant, retained; its rows were
+  backfilled into Container + AccessGrant and both id spaces resolve in the
+  client APIs (aliasIds), so old URLs keep working.
+
+Operation — container actions are now asynchronous:
+  REQUESTED → QUEUED → RUNNING → SUCCEEDED | FAILED | CANCELLED
+  - partial unique index: at most one active operation per docker container
+  - recovery sweeper (instrumentation.ts) resumes stale ops after restart
+```
+
+## What changed, by concern
+
+| Concern | Before | After |
+|---|---|---|
+| Container access | hand-typed docker IDs into ContainerAssignment | admin picks from agent-discovered inventory (Container rows); grants reference discovered objects |
+| Stacks | Project table existed, 0 rows, no routes | full CRUD API + UI; containers attach via Container.projectId |
+| Roles | ADMIN / CLIENT (flat) | 4 roles with a capability matrix (`server/auth/policy.ts`); node.manage never granted to client roles |
+| Container actions | synchronous HTTP→docker | Operation lifecycle + polling UI + conflict 409 + recovery sweeper |
+| User creation | admin set password (UI defaulted to `ClientPass123!`) | invite → pending user → one-time activation token (72h) → user sets own password; URL shown once |
+| Login brute force | none | fixed-window rate limiter (10/15min per IP+identifier) |
+| CSRF | none (SameSite=Lax only) | double-submit cookie `hostpanel_csrf` + `X-CSRF-Token` header, enforced in middleware for all mutating /api routes |
+| Node registration | admin pasted API URL + invented key | enrollment tokens (15 min, single-use, hashed at rest); agent self-registers and receives a generated key; key persisted to AGENT_KEY_FILE |
+| Node metadata | name/hostname/url only | agent /info → version, docker version, OS, CPU, RAM, heartbeat (captured on every inventory listing) |
+| Data consistency | CLIENT users could lose their client link (observed in prod) | DB CHECK (client roles require clientAccountId) + route-level invariant; stale containers marked inactive (never deleted); deactivated clients lose visibility immediately |
+
+## Secrets & key handling (current)
+
+- Node API keys: AES-256-GCM at rest (`Node.apiKeyEncrypted`), key from
+  `NODE_CREDENTIALS_KEY` (64-hex). Rotation = re-enroll with a fresh token
+  (endpoint rotates the stored key; old key stops working immediately).
+- Enrollment tokens: sha256-hashed at rest, 15-min TTL, single-use.
+- Activation tokens: sha256-hashed at rest, 72-h TTL, single-use.
+- Passwords: bcryptjs cost 12; never displayed; PAM accounts use sentinel
+  `PAM_MANAGED` and re-verify via the host PAM bridge on every login.
+- No custom cryptography anywhere — node crypto + bcryptjs + AES-GCM only.
+
+## Known limitations after this phase
+
+1. **CSRF cookie is non-HttpOnly by design** (double-submit pattern). If the
+   mesh-only deployment is ever exposed publicly behind a proxy that does not
+   set `COOKIE_SECURE=true`, this should be revisited (see middleware.ts).
+2. **Login rate limiter is in-memory** — resets on process restart; adequate
+   for the single-instance control plane, not for a horizontally scaled one.
+3. **Operation executor is in-process** (fire-and-forget + sweeper). A
+   multi-instance deployment would need a shared queue (DB-backed claim) —
+   the Operation row + partial unique index already give the needed
+   primitives.
+4. **Agent↔control-plane transport is plain HTTP** on the internal Docker
+   bridge. Safe for same-host agents; a genuinely remote node requires TLS
+   (see SECURITY-REVIEW.md §6).
+5. **`docker ps` short-ID identity** is used for containers; long IDs would be
+   more collision-resistant but short IDs are unique per daemon and stable for
+   the lifetime of a container.
+
+## Tests (current)
+
+33 automated tests (`npm test`, vitest, isolated `hostpanel_test` database):
+auth, tenant isolation (incl. cross-tenant ID-swap negative tests),
+authorization matrix, operation lifecycle + conflict, node enrollment,
+consistency guards. See `tests/`.
