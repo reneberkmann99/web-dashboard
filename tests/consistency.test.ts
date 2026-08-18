@@ -37,6 +37,18 @@ describe("data consistency guards", () => {
     await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { isActive: true } });
   });
 
+  it("does NOT sweep containers when the agent is offline or returns nothing", async () => {
+    const world = await seedWorld();
+    vi.mocked(nodeAgentClient.listContainers).mockResolvedValue({ nodeOnline: false, containers: [] });
+
+    await listAllContainersForAdmin();
+
+    // All containers must remain active — an unreachable agent is not evidence
+    // that containers disappeared.
+    const rows = await prisma.container.findMany({ where: { nodeId: world.node1.id } });
+    expect(rows.every((r) => r.isActive)).toBe(true);
+  });
+
   it("stale containers (no longer reported by the agent) are marked inactive, not deleted", async () => {
     const world = await seedWorld();
     // Agent reports only 'web'; 'worker' and 'api' have vanished.

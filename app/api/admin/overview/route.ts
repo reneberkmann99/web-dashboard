@@ -1,8 +1,8 @@
 import { requireApiRole } from "@/server/auth/guards";
 import {
+  collectOverviewSnapshot,
+  computeUtilization,
   collectAttentionItems,
-  collectNodesOperational,
-  collectUtilization,
   collectWorkloads,
   humanizeAction
 } from "@/server/services/overview";
@@ -13,11 +13,12 @@ export async function GET(): Promise<Response> {
   try {
     await requireApiRole("ADMIN");
 
-    const [utilization, nodes, attention, workloads, recentActivity] = await Promise.all([
-      collectUtilization(),
-      collectNodesOperational(),
-      collectAttentionItems(),
-      collectWorkloads(),
+    const snapshot = await collectOverviewSnapshot();
+    const utilization = computeUtilization(snapshot.containersByNode);
+
+    const [attention, workloads, recentActivity] = await Promise.all([
+      collectAttentionItems(snapshot, utilization),
+      collectWorkloads(snapshot),
       prisma.auditLog.findMany({
         orderBy: { createdAt: "desc" },
         take: 12,
@@ -35,7 +36,7 @@ export async function GET(): Promise<Response> {
 
     return ok({
       utilization,
-      nodes: nodes.map((n) => ({
+      nodes: snapshot.nodes.map((n) => ({
         id: n.id,
         name: n.name,
         hostname: n.hostname,

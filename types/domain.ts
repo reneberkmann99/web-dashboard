@@ -153,7 +153,10 @@ export type NodeRecord = {
   lastHeartbeatAt: string | null;
   osInfo: Record<string, unknown> | null;
   systemInfo: Record<string, unknown> | null;
-  _count: { assignments: number; containers: number };
+  liveContainerCount: number;
+  liveRunningCount: number;
+  staleHeartbeat: boolean;
+  _count: { assignments: number; containers?: number };
 };
 
 /** Admin user list record */

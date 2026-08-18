@@ -1,5 +1,5 @@
 import { requireApiRole } from "@/server/auth/guards";
-import { collectWorkloads } from "@/server/services/overview";
+import { collectOverviewSnapshot, collectWorkloads } from "@/server/services/overview";
 import { fromError, ok } from "@/server/http";
 
 export async function GET(request: Request): Promise<Response> {
@@ -9,7 +9,8 @@ export async function GET(request: Request): Promise<Response> {
     const clientId = url.searchParams.get("clientId") ?? undefined;
     const nodeId = url.searchParams.get("nodeId") ?? undefined;
 
-    let workloads = await collectWorkloads();
+    const snapshot = await collectOverviewSnapshot();
+    let workloads = await collectWorkloads(snapshot);
     if (clientId) workloads = workloads.filter((w) => w.clientId === clientId);
     if (nodeId) workloads = workloads.filter((w) => w.nodeId === nodeId);
 

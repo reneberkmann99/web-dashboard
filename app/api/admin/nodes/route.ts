@@ -5,10 +5,14 @@ import { encryptSecret } from "@/server/security/crypto";
 import { fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
+import { collectOverviewSnapshot } from "@/server/services/overview";
 
 export async function GET(): Promise<Response> {
   try {
-    const session = await requireApiRole("ADMIN");
+    await requireApiRole("ADMIN");
+
+    const snapshot = await collectOverviewSnapshot();
+    const live = new Map(snapshot.nodes.map((n) => [n.id, n]));
 
     const nodes = await prisma.node.findMany({
       orderBy: { createdAt: "desc" },
@@ -24,16 +28,23 @@ export async function GET(): Promise<Response> {
         lastHeartbeatAt: true,
         osInfo: true,
         systemInfo: true,
-        _count: {
-          select: {
-            assignments: true,
-            containers: true
-          }
-        }
+        _count: { select: { assignments: true } }
       }
     });
 
-    return ok({ nodes });
+    return ok({
+      nodes: nodes.map((n) => {
+        const op = live.get(n.id);
+        return {
+          ...n,
+          status: op?.status ?? n.status,
+          lastHeartbeatAt: op?.lastHeartbeatAt ?? n.lastHeartbeatAt,
+          liveContainerCount: op?.containerCount ?? 0,
+          liveRunningCount: op?.runningCount ?? 0,
+          staleHeartbeat: op?.staleHeartbeat ?? false
+        };
+      })
+    });
   } catch (error) {
     return fromError(error);
   }
@@ -65,10 +76,7 @@ export async function POST(request: Request): Promise<Response> {
       action: "NODE_CREATE",
       targetType: "NODE",
       targetId: created.id,
-      metadata: {
-        hostname: created.hostname,
-        apiBaseUrl: created.apiBaseUrl
-      },
+      metadata: { hostname: created.hostname, apiBaseUrl: created.apiBaseUrl },
       result: "SUCCESS",
       sourceIp
     });

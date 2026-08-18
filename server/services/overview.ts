@@ -1,23 +1,21 @@
 import { prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
+import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { AttentionItem, WorkloadSummary } from "@/types/domain";
+import { humanizeAction } from "@/lib/format";
+
+export { humanizeAction };
 
 /**
  * Overview + Workloads data assembly for the operations dashboards.
+ *
+ * All data derives from a single snapshot pass: each node's agent is queried
+ * exactly once, then utilization, attention items, and workload summaries are
+ * computed from that snapshot. This avoids hammering the Docker CLI on rapid
+ * dashboard refreshes.
  */
 
-const STALE_HEARTBEAT_MS = 5 * 60 * 1000; // no heartbeat in 5 minutes = stale
-
-export type UtilizationTotals = {
-  cpuPercent: number | null;
-  memoryUsage: string | null;
-  memoryBytes: number | null;
-  totalContainers: number;
-  runningContainers: number;
-  stoppedContainers: number;
-  unhealthyContainers: number;
-  restartingContainers: number;
-};
+const STALE_HEARTBEAT_MS = 5 * 60 * 1000;
 
 export type NodeOperationalView = {
   id: string;
@@ -34,55 +32,79 @@ export type NodeOperationalView = {
   staleHeartbeat: boolean;
 };
 
-export async function collectNodesOperational(): Promise<NodeOperationalView[]> {
+export type OverviewSnapshot = {
+  nodes: NodeOperationalView[];
+  containersByNode: Map<string, RuntimeContainer[]>;
+};
+
+export async function collectOverviewSnapshot(): Promise<OverviewSnapshot> {
   const nodes = await prisma.node.findMany({ orderBy: { name: "asc" } });
   const views: NodeOperationalView[] = [];
+  const containersByNode = new Map<string, RuntimeContainer[]>();
 
   for (const node of nodes) {
-    let containerCount = 0;
-    let runningCount = 0;
+    let containers: RuntimeContainer[] = [];
+    let online = false;
     try {
       const payload = await nodeAgentClient.listContainers(node);
-      containerCount = payload.containers.length;
-      runningCount = payload.containers.filter((c) => c.status === "running").length;
-      if (payload.nodeOnline) {
-        await prisma.node
-          .update({
-            where: { id: node.id },
-            data: { status: "ONLINE", lastHeartbeatAt: new Date() }
-          })
-          .catch(() => undefined);
-        node.status = "ONLINE";
-        node.lastHeartbeatAt = new Date();
-      }
+      containers = payload.containers;
+      online = payload.nodeOnline;
     } catch {
-      // agent unreachable — keep stored state
+      online = false;
     }
-    const offline = node.status === "OFFLINE" || node.status === "UNKNOWN";
+    containersByNode.set(node.id, containers);
+
+    let status: string = node.status;
+    let lastHeartbeatAt: Date | null = node.lastHeartbeatAt;
+    if (online) {
+      await prisma.node
+        .update({ where: { id: node.id }, data: { status: "ONLINE", lastHeartbeatAt: new Date() } })
+        .catch(() => undefined);
+      status = "ONLINE";
+      lastHeartbeatAt = new Date();
+    } else if (node.status !== "INACTIVE") {
+      await prisma.node
+        .update({ where: { id: node.id }, data: { status: "OFFLINE" } })
+        .catch(() => undefined);
+      status = "OFFLINE";
+    }
+
+    const running = containers.filter((c) => c.status === "running").length;
+    const offline = status === "OFFLINE" || status === "UNKNOWN";
     const staleHeartbeat =
-      !!node.lastHeartbeatAt && Date.now() - node.lastHeartbeatAt.getTime() > STALE_HEARTBEAT_MS;
+      !!lastHeartbeatAt && Date.now() - lastHeartbeatAt.getTime() > STALE_HEARTBEAT_MS;
 
     views.push({
       id: node.id,
       name: node.name,
       hostname: node.hostname,
-      status: node.status,
+      status,
       isActive: node.isActive,
-      lastHeartbeatAt: node.lastHeartbeatAt,
+      lastHeartbeatAt,
       agentVersion: node.agentVersion,
       dockerVersion: node.dockerVersion,
-      containerCount,
-      runningCount,
+      containerCount: containers.length,
+      runningCount: running,
       offline,
       staleHeartbeat
     });
   }
 
-  return views;
+  return { nodes: views, containersByNode };
 }
 
-export async function collectUtilization(): Promise<UtilizationTotals> {
-  const nodes = await prisma.node.findMany({ where: { isActive: true } });
+export type UtilizationTotals = {
+  cpuPercent: number | null;
+  memoryUsage: string | null;
+  memoryBytes: number;
+  totalContainers: number;
+  runningContainers: number;
+  stoppedContainers: number;
+  unhealthyContainers: number;
+  restartingContainers: number;
+};
+
+export function computeUtilization(containersByNode: Map<string, RuntimeContainer[]>): UtilizationTotals {
   const totals: UtilizationTotals = {
     cpuPercent: 0,
     memoryUsage: null,
@@ -94,32 +116,25 @@ export async function collectUtilization(): Promise<UtilizationTotals> {
     restartingContainers: 0
   };
   let cpuSum = 0;
-  let memBytes = 0;
   let measured = 0;
+  let memBytes = 0;
 
-  for (const node of nodes) {
-    try {
-      const payload = await nodeAgentClient.listContainers(node);
-      totals.totalContainers += payload.containers.length;
-      for (const c of payload.containers) {
-        if (c.status === "running") totals.runningContainers += 1;
-        if (c.status === "stopped") totals.stoppedContainers += 1;
-        if (c.status === "unhealthy") totals.unhealthyContainers += 1;
-        if (c.status === "restarting") totals.restartingContainers += 1;
-        if (typeof c.cpuPercent === "number") {
-          cpuSum += c.cpuPercent;
-          measured += 1;
-        }
-        if (typeof c.memoryUsage === "string" && c.memoryUsage.includes("MiB")) {
-          const raw = c.memoryUsage.split("/")[0]?.trim().replace("MiB", "");
-          const mb = Number(raw);
-          if (!Number.isNaN(mb)) {
-            memBytes += mb * 1024 * 1024;
-          }
-        }
+  for (const containers of containersByNode.values()) {
+    totals.totalContainers += containers.length;
+    for (const c of containers) {
+      if (c.status === "running") totals.runningContainers += 1;
+      if (c.status === "stopped") totals.stoppedContainers += 1;
+      if (c.status === "unhealthy") totals.unhealthyContainers += 1;
+      if (c.status === "restarting") totals.restartingContainers += 1;
+      if (typeof c.cpuPercent === "number") {
+        cpuSum += c.cpuPercent;
+        measured += 1;
       }
-    } catch {
-      // node offline — skip
+      if (typeof c.memoryUsage === "string") {
+        const raw = c.memoryUsage.split("/")[0]?.trim();
+        const mb = raw?.endsWith("MiB") ? Number(raw.slice(0, -3)) : raw?.endsWith("GiB") ? Number(raw.slice(0, -3)) * 1024 : Number(raw);
+        if (!Number.isNaN(mb)) memBytes += mb * 1024 * 1024;
+      }
     }
   }
 
@@ -129,15 +144,12 @@ export async function collectUtilization(): Promise<UtilizationTotals> {
   return totals;
 }
 
-/**
- * Compute the "Needs attention" list. Only returns items when something is
- * actually wrong — a healthy system yields an empty array and the UI hides
- * the section entirely.
- */
-export async function collectAttentionItems(): Promise<AttentionItem[]> {
+export async function collectAttentionItems(
+  snapshot: OverviewSnapshot,
+  utilization: UtilizationTotals
+): Promise<AttentionItem[]> {
   const items: AttentionItem[] = [];
-  const nodes = await collectNodesOperational();
-  const utilization = await collectUtilization();
+  const { nodes, containersByNode } = snapshot;
   const now = Date.now();
 
   for (const node of nodes) {
@@ -167,7 +179,6 @@ export async function collectAttentionItems(): Promise<AttentionItem[]> {
     }
   }
 
-  // Failed operations in the last 24h.
   const failedOps = await prisma.operation.findMany({
     where: { state: "FAILED", finishedAt: { gte: new Date(now - 24 * 3600_000) } },
     orderBy: { finishedAt: "desc" },
@@ -186,121 +197,88 @@ export async function collectAttentionItems(): Promise<AttentionItem[]> {
     });
   }
 
-  // Container-level issues come from the agents.
-  const nodesOnline = nodes.filter((n) => !n.offline);
-  for (const node of nodesOnline) {
-    try {
-      const nodeRow = await prisma.node.findUnique({ where: { id: node.id } });
-      if (!nodeRow) continue;
-      const payload = await nodeAgentClient.listContainers(nodeRow);
-      for (const c of payload.containers) {
-        if (c.status === "unhealthy") {
-          items.push({
-            severity: "critical",
-            category: "container",
-            title: `${c.name} is unhealthy`,
-            detail: `On ${node.name}. Health check failing.`,
-            resourceType: "container",
-            resourceId: c.id,
-            nodeId: node.id
-          });
-        } else if (c.status === "restarting" || (c.restartCount ?? 0) >= 3) {
-          items.push({
-            severity: "warning",
-            category: "container",
-            title: `${c.name} is crash-looping`,
-            detail: `On ${node.name}. Restart count: ${c.restartCount ?? "?"}.`,
-            resourceType: "container",
-            resourceId: c.id,
-            nodeId: node.id
-          });
-        } else if (c.status === "stopped") {
-          items.push({
-            severity: "info",
-            category: "container",
-            title: `${c.name} is stopped`,
-            detail: `On ${node.name}. ${c.uptime ?? "Not running"}.`,
-            resourceType: "container",
-            resourceId: c.id,
-            nodeId: node.id
-          });
-        }
+  for (const node of nodes) {
+    if (node.offline) continue;
+    const containers = containersByNode.get(node.id) ?? [];
+    for (const c of containers) {
+      if (c.status === "unhealthy") {
+        items.push({
+          severity: "critical",
+          category: "container",
+          title: `${c.name} is unhealthy`,
+          detail: `On ${node.name}. Health check failing.`,
+          resourceType: "container",
+          resourceId: c.id,
+          nodeId: node.id
+        });
+      } else if (c.status === "restarting" || (c.restartCount ?? 0) >= 3) {
+        items.push({
+          severity: "warning",
+          category: "container",
+          title: `${c.name} is crash-looping`,
+          detail: `On ${node.name}. Restart count: ${c.restartCount ?? "?"}.`,
+          resourceType: "container",
+          resourceId: c.id,
+          nodeId: node.id
+        });
+      } else if (c.status === "stopped") {
+        items.push({
+          severity: "info",
+          category: "container",
+          title: `${c.name} is stopped`,
+          detail: `On ${node.name}.`,
+          resourceType: "container",
+          resourceId: c.id,
+          nodeId: node.id
+        });
       }
-    } catch {
-      // skip unreachable nodes (already flagged)
     }
   }
 
-  // Severe utilization: any single container above 90% CPU.
-  if (utilization.cpuPercent !== null && utilization.cpuPercent > 90) {
-    items.push({
-      severity: "warning",
-      category: "resource",
-      title: `High CPU utilization (${utilization.cpuPercent}%)`,
-      detail: "A container is saturating a CPU core.",
-      resourceType: "container",
-      resourceId: null,
-      nodeId: null
-    });
-  }
-
-  // Cap for readability.
   return items.slice(0, 25);
 }
 
-export async function collectWorkloads(): Promise<WorkloadSummary[]> {
+export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<WorkloadSummary[]> {
   const projects = await prisma.project.findMany({
     where: { isActive: true },
     include: {
       node: { select: { id: true, name: true } },
       clientAccount: { select: { id: true, name: true } },
-      containers: {
-        where: { isActive: true },
-        select: { dockerContainerId: true, dockerName: true, lastKnownStatus: true }
-      },
+      containers: { where: { isActive: true }, select: { dockerContainerId: true, dockerName: true } },
       _count: { select: { containers: true, grants: true } }
     }
   });
 
   const summaries: WorkloadSummary[] = [];
   for (const project of projects) {
-    // Live statuses from the node agent.
-    const node = await prisma.node.findUnique({ where: { id: project.nodeId } });
+    const node = snapshot.nodes.find((n) => n.id === project.nodeId);
+    const live = snapshot.containersByNode.get(project.nodeId) ?? [];
+    const projectIds = new Set(project.containers.map((c) => c.dockerContainerId));
+    const inProject = live.filter((c) => projectIds.has(c.id));
+
     let running = 0;
     let stopped = 0;
     let unhealthy = 0;
     let cpuSum = 0;
     let cpuCount = 0;
     let memSum = 0;
-    let nodeOnline = false;
-
-    if (node) {
-      try {
-        const payload = await nodeAgentClient.listContainers(node);
-        nodeOnline = payload.nodeOnline;
-        const live = payload.containers;
-        for (const c of live) {
-          const inProject = project.containers.some((pc) => pc.dockerContainerId === c.id);
-          if (!inProject) continue;
-          if (c.status === "running") running += 1;
-          if (c.status === "stopped") stopped += 1;
-          if (c.status === "unhealthy") unhealthy += 1;
-          if (typeof c.cpuPercent === "number") {
-            cpuSum += c.cpuPercent;
-            cpuCount += 1;
-          }
-          if (typeof c.memoryUsage === "string") {
-            const raw = c.memoryUsage.split("/")[0]?.trim().replace("MiB", "");
-            const mb = Number(raw);
-            if (!Number.isNaN(mb)) memSum += mb;
-          }
-        }
-      } catch {
-        nodeOnline = false;
+    for (const c of inProject) {
+      if (c.status === "running") running += 1;
+      if (c.status === "stopped") stopped += 1;
+      if (c.status === "unhealthy") unhealthy += 1;
+      if (typeof c.cpuPercent === "number") {
+        cpuSum += c.cpuPercent;
+        cpuCount += 1;
+      }
+      if (typeof c.memoryUsage === "string") {
+        const raw = c.memoryUsage.split("/")[0]?.trim();
+        const mb = raw?.endsWith("MiB") ? Number(raw.slice(0, -3)) : raw?.endsWith("GiB") ? Number(raw.slice(0, -3)) * 1024 : Number(raw);
+        if (!Number.isNaN(mb)) memSum += mb;
       }
     }
 
     const total = project.containers.length;
+    const nodeOnline = node ? !node.offline : false;
     const health: WorkloadSummary["health"] = !nodeOnline
       ? "unknown"
       : unhealthy > 0
@@ -312,12 +290,7 @@ export async function collectWorkloads(): Promise<WorkloadSummary[]> {
             : "degraded";
 
     const lastEvent = await prisma.auditLog.findFirst({
-      where: {
-        OR: [
-          { targetType: "PROJECT", targetId: project.id },
-          { action: { in: ["ASSIGNMENT_CREATE", "GRANT_CREATE", "GRANT_UPDATE"] } }
-        ]
-      },
+      where: { targetType: "PROJECT", targetId: project.id },
       orderBy: { createdAt: "desc" },
       select: { action: true, createdAt: true, result: true }
     });
@@ -345,50 +318,6 @@ export async function collectWorkloads(): Promise<WorkloadSummary[]> {
   }
 
   return summaries.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function humanizeAction(action: string): string {
-  const map: Record<string, string> = {
-    CONTAINER_RESTART: "Restarted container",
-    CONTAINER_START: "Started container",
-    CONTAINER_STOP: "Stopped container",
-    LOGIN_SUCCESS: "Signed in",
-    LOGIN_FAILED: "Failed sign-in",
-    USER_CREATE: "Created user",
-    USER_UPDATE: "Updated user",
-    CLIENT_CREATE: "Created client",
-    CLIENT_UPDATE: "Updated client",
-    CLIENT_DEACTIVATE: "Deactivated client",
-    PROJECT_CREATE: "Created workload",
-    PROJECT_UPDATE: "Updated workload",
-    PROJECT_DEACTIVATE: "Deactivated workload",
-    ASSIGNMENT_CREATE: "Granted container access",
-    ASSIGNMENT_UPDATE: "Updated container grant",
-    ASSIGNMENT_DELETE: "Revoked container access",
-    GRANT_CREATE: "Granted access",
-    GRANT_UPDATE: "Updated grant",
-    GRANT_DEACTIVATE: "Revoked grant",
-    NODE_CREATE: "Registered node",
-    NODE_UPDATE: "Updated node",
-    NODE_DEACTIVATE: "Disabled node",
-    NODE_ENROLLED: "Enrolled node",
-    NODE_ENROLLMENT_TOKEN_CREATED: "Created enrollment token",
-    NODE_ENROLL_FAILED: "Node enrollment failed",
-    LOGOUT: "Signed out",
-    ACCOUNT_ACTIVATED: "Activated account",
-    ACCOUNT_ACTIVATE_FAILED: "Account activation failed",
-    LOGIN_RATE_LIMITED: "Sign-in rate limited"
-  };
-  if (map[action]) {
-    return map[action];
-  }
-  // Fall back to stripping prefixes and lowercasing: CONTAINER_RESTART_REQUESTED -> Restart requested
-  const cleaned = action
-    .replace(/^CONTAINER_/, "")
-    .replace(/_REQUESTED$/, " requested")
-    .replace(/_SUCCEEDED$/, " succeeded")
-    .replace(/_FAILED$/, " failed");
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
 }
 
 function timeAgo(date: Date): string {

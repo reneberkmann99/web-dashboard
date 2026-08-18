@@ -312,8 +312,8 @@ export async function getContainerByGrant(
     return { container: null, grant: row };
   }
 
-  const runtimePayload = await nodeAgentClient.listContainers(node);
-  const live = runtimePayload.containers.find((c) => c.id === row.dockerContainerId) ?? null;
+  const runtimePayload = await nodeAgentClient.getContainer(node, row.dockerContainerId);
+  const live = runtimePayload.container ?? null;
   const mapped = live ? { ...live, status: mapStatus(live.status) } : null;
 
   const container = toContainerView(grantToAssignment(row), mapped, runtimePayload.nodeOnline);
@@ -554,12 +554,18 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
     // Data consistency: containers no longer reported by the agent are marked
     // inactive (kept for history, never deleted). Their grants remain but
     // resolve to nothing until the container reappears.
-    await prisma.container
-      .updateMany({
-        where: { nodeId: node.id, isActive: true, dockerContainerId: { notIn: Array.from(seenIds) } },
-        data: { isActive: false, lastSeenAt: new Date() }
-      })
-      .catch(() => undefined);
+    //
+    // Guard: only sweep when the agent actually answered with an inventory.
+    // An offline/timed-out agent returns an empty list, and sweeping on that
+    // would wrongly deactivate every container on the node.
+    if (runtimePayload.nodeOnline && seenIds.size > 0) {
+      await prisma.container
+        .updateMany({
+          where: { nodeId: node.id, isActive: true, dockerContainerId: { notIn: Array.from(seenIds) } },
+          data: { isActive: false, lastSeenAt: new Date() }
+        })
+        .catch(() => undefined);
+    }
   }
 
   return results.sort(

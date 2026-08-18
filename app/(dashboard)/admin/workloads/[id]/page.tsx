@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { timeAgo } from "@/lib/format";
-import { humanizeAction } from "@/server/services/overview";
+import { humanizeAction } from "@/lib/format";
 
 type WorkloadDetailPayload = {
   workload: {

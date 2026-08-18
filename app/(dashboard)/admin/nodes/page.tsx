@@ -110,8 +110,8 @@ export default function AdminNodesPage(): React.JSX.Element {
     {
       key: "containers",
       header: "Containers",
-      sortValue: (n) => n._count.containers,
-      render: (n) => <span className="text-sm">{n._count.containers}</span>
+      sortValue: (n) => n.liveContainerCount,
+      render: (n) => <span className="text-sm">{n.liveContainerCount}</span>
     },
     {
       key: "actions",
