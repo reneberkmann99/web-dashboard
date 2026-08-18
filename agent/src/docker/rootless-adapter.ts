@@ -172,7 +172,20 @@ export class RootlessDockerAdapter implements DockerAdapter {
     }
   }
 
+  private listCache: { at: number; value: RuntimeContainer[] } | null = null;
+  private listCacheTtlMs = 15000;
+
   async listContainers(): Promise<RuntimeContainer[]> {
+    const now = Date.now();
+    if (this.listCache && now - this.listCache.at < this.listCacheTtlMs) {
+      return this.listCache.value;
+    }
+    const value = await this.listContainersUncached();
+    this.listCache = { at: now, value };
+    return value;
+  }
+
+  private async listContainersUncached(): Promise<RuntimeContainer[]> {
     const [{ stdout: psOutput }, { stdout: statsOutput }] = await Promise.all([
       this.runDocker(["ps", "-a", "--format", "{{json .}}"]),
       this.runDocker(["stats", "--no-stream", "--format", "{{json .}}"])
@@ -219,8 +232,7 @@ export class RootlessDockerAdapter implements DockerAdapter {
         cpuPercent: parseCpuPercent(stat?.CPUPerc),
         memoryUsage: stat?.MemUsage ?? null,
         restartCount: detail.RestartCount ?? null,
-        lastUpdatedAt: new Date().toISOString(),
-        details: await this.inspectDetails(row.ID)
+        lastUpdatedAt: new Date().toISOString()
       });
     }
 
@@ -230,7 +242,10 @@ export class RootlessDockerAdapter implements DockerAdapter {
   async getContainer(containerId: string): Promise<RuntimeContainer | null> {
     const safeId = sanitizeContainerId(containerId);
     const containers = await this.listContainers();
-    return containers.find((container) => container.id === safeId || container.name === safeId) ?? null;
+    const container = containers.find((container) => container.id === safeId || container.name === safeId);
+    if (!container) return null;
+    container.details = await this.inspectDetails(safeId);
+    return container;
   }
 
   async getContainerLogs(containerId: string, tail: number): Promise<string[]> {
