@@ -292,12 +292,18 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       )}
 
       {/* Deployments */}
-      {tab === "Deployments" && <DeploymentsTab workloadId={workload.id} />}
+      {tab === "Deployments" && deployment?.managed && deployment.deploymentId && (
+        <DeploymentsTab
+          deploymentId={deployment.deploymentId}
+          editHref={`/admin/workloads/${workload.id}/deployment/edit`}
+          activeOperation={deployment.activeOperation}
+        />
+      )}
 
       {/* Secrets */}
       {tab === "Secrets" &&
         (deployment?.managed && deployment.deploymentId ? (
-          <SecretsTab deploymentId={deployment.deploymentId} workloadId={workload.id} />
+          <SecretsTab deploymentId={deployment.deploymentId} />
         ) : (
           <p className="text-sm text-muted">This workload has no HostPanel-managed secrets.</p>
         ))}
@@ -349,7 +355,6 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       {rollbackOpen && deployment?.managed && deployment.deploymentId && (
         <RollbackFlow
           deploymentId={deployment.deploymentId}
-          workloadId={workload.id}
           onDone={() => setRollbackOpen(false)}
         />
       )}

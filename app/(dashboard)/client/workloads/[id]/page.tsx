@@ -1,24 +1,45 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { WorkloadNetworksTab, WorkloadVolumesTab } from "@/components/workloads/networks-volumes-tabs";
 import { TabBar } from "@/components/ui/tab-bar";
+import { DeploymentsTab } from "@/components/workloads/deployment/deployments-tab";
+import { SecretsTab } from "@/components/workloads/deployment/secrets-tab";
+import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type ContainersPayload = { containers: ContainerView[] };
+type ClientDeploymentStatus = {
+  managed: boolean;
+  deploymentId: string | null;
+  isOwner: boolean;
+  runtimeState: string | null;
+  activeOperation: { id: string; type: string; state: string; phase: string | null; actorEmail: string | null; startedAt: string | null } | null;
+};
 
-const TABS = ["Containers", "Networks", "Volumes"] as const;
+const TABS = ["Containers", "Deployments", "Secrets", "Networks", "Volumes"] as const;
+const CLIENT_API_BASE = "/api/client/deployments";
 
 export default function ClientWorkloadDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Containers");
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("rollback") === "1") {
+      setRollbackOpen(true);
+      router.replace(`/client/workloads/${params.id}`, { scroll: false });
+    }
+  }, [searchParams, params.id, router]);
 
   const workloads = useQuery({
     queryKey: ["client-workloads"],
@@ -29,6 +50,10 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
     queryFn: () => apiFetch<ContainersPayload>("/api/client/containers"),
     refetchInterval: 10000
   });
+  const deploymentStatus = useQuery({
+    queryKey: ["client-workload-deployment", params.id],
+    queryFn: () => apiFetch<ClientDeploymentStatus>(`/api/client/workloads/${params.id}/deployment`)
+  });
 
   const workload = workloads.data?.workloads.find((w) => w.id === params.id);
   const workloadContainers = useMemo(() => {
@@ -38,6 +63,10 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
 
   if (workloads.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
   if (!workload) return <p className="text-sm text-red-400">Workload not found or not accessible.</p>;
+
+  const deployment = deploymentStatus.data;
+  // Deployment lifecycle tabs only for workloads this client OWNS (not merely granted).
+  const canManageDeployment = Boolean(deployment?.managed && deployment.isOwner && deployment.deploymentId);
 
   const columns: Column<ContainerView>[] = [
     { key: "name", header: "Container", render: (c) => <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted">{c.containerId.slice(0, 12)}</p></div> },
@@ -55,6 +84,11 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         <div className="flex items-center gap-3">
           <h1 className="text-3xl font-semibold">{workload.name}</h1>
           <Badge variant={workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : "danger"}>{workload.health}</Badge>
+          {deployment?.managed && (
+            <Badge variant={deployment.runtimeState === "CONVERGED" ? "success" : deployment.runtimeState === "DEGRADED" ? "warning" : "default"}>
+              {deployment.runtimeState ?? "UNMANAGED"}
+            </Badge>
+          )}
         </div>
         <p className="text-muted">
           {workload.nodeName} · {workload.runningContainers}/{workload.totalContainers} running
@@ -75,6 +109,29 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         />
       )}
 
+      {tab === "Deployments" &&
+        (canManageDeployment && deployment?.deploymentId ? (
+          <DeploymentsTab
+            deploymentId={deployment.deploymentId}
+            apiBase={CLIENT_API_BASE}
+            editHref={`/client/workloads/${workload.id}/deployment/edit`}
+            activeOperation={deployment.activeOperation}
+          />
+        ) : (
+          <p className="text-sm text-muted">
+            {deployment?.managed
+              ? "You have access to this workload's containers, but not to manage its deployment lifecycle."
+              : "This workload is not managed by HostPanel and has no deployment lifecycle."}
+          </p>
+        ))}
+
+      {tab === "Secrets" &&
+        (canManageDeployment && deployment?.deploymentId ? (
+          <SecretsTab deploymentId={deployment.deploymentId} apiBase={CLIENT_API_BASE} />
+        ) : (
+          <p className="text-sm text-muted">This workload has no HostPanel-managed secrets you can manage.</p>
+        ))}
+
       {tab === "Networks" && (
         <WorkloadNetworksTab resourcesUrl={`/api/client/workloads/${workload.id}/resources`} />
       )}
@@ -83,7 +140,20 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         <WorkloadVolumesTab resourcesUrl={`/api/client/workloads/${workload.id}/resources`} />
       )}
 
-      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="client-workload" />
+      <TabBar
+        tabs={canManageDeployment ? TABS : TABS.filter((t) => t !== "Deployments" && t !== "Secrets")}
+        active={tab}
+        onChange={setTab}
+        idPrefix="client-workload"
+      />
+
+      {rollbackOpen && canManageDeployment && deployment?.deploymentId && (
+        <RollbackFlow
+          deploymentId={deployment.deploymentId}
+          apiBase={CLIENT_API_BASE}
+          onDone={() => setRollbackOpen(false)}
+        />
+      )}
     </div>
   );
 }

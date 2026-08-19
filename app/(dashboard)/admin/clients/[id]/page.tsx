@@ -58,7 +58,7 @@ const ROLE_OPTIONS = [
   { value: "CLIENT_ADMIN", label: "Client admin (manage users)" }
 ];
 
-const TABS = ["Overview", "Users", "Workloads", "Permissions", "Activity"] as const;
+const TABS = ["Overview", "Users", "Workloads", "Permissions", "Deployment Nodes", "Activity"] as const;
 
 export default function AdminClientDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
@@ -278,6 +278,8 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         />
       )}
 
+      {tab === "Deployment Nodes" && <ClientDeploymentNodesTab clientId={client.id} />}
+
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
           {activity.length === 0 ? (
@@ -387,6 +389,98 @@ function Metric({ label, value }: { label: string; value: string }): React.JSX.E
     <div className="rounded-lg border border-border bg-panel p-4">
       <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+type NodeOption = { id: string; name: string; hostname: string; status: string; composeSupported: boolean | null };
+type AllowedNode = { nodeId: string; name: string; hostname: string; status: string; composeSupported: boolean | null; isActive: boolean };
+
+/**
+ * Admin-managed node allowlist for tenant self-service (Phase 7). Empty list
+ * = the client cannot create workloads. Strict security policy is applied at
+ * the API layer for every client-authored deployment, independent of which
+ * nodes are allowed here.
+ */
+function ClientDeploymentNodesTab({ clientId }: { clientId: string }): React.JSX.Element {
+  const queryClient = useQueryClient();
+
+  const allowedQuery = useQuery({
+    queryKey: ["client-node-access", clientId],
+    queryFn: () => apiFetch<{ data: AllowedNode[]; total: number }>(`/api/admin/clients/${clientId}/nodes`)
+  });
+  const allNodesQuery = useQuery({
+    queryKey: ["admin-nodes-picker"],
+    queryFn: () => apiFetch<{ nodes: NodeOption[] }>("/api/admin/nodes")
+  });
+
+  const setNodes = useMutation({
+    mutationFn: (nodeIds: string[]) =>
+      apiFetch<{ nodeIds: string[] }>(`/api/admin/clients/${clientId}/nodes`, {
+        method: "PUT",
+        body: JSON.stringify({ nodeIds })
+      }),
+    onSuccess: () => {
+      toast.success("Deployment node access updated");
+      queryClient.invalidateQueries({ queryKey: ["client-node-access", clientId] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to update node access")
+  });
+
+  if (allowedQuery.isLoading || allNodesQuery.isLoading) {
+    return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
+  }
+  if (allowedQuery.isError || allNodesQuery.isError || !allowedQuery.data || !allNodesQuery.data) {
+    return <p className="text-sm text-red-400">Failed to load node access.</p>;
+  }
+
+  const allowedIds = new Set(allowedQuery.data.data.map((n) => n.nodeId));
+  const toggle = (nodeId: string, checked: boolean): void => {
+    const next = new Set(allowedIds);
+    if (checked) next.add(nodeId);
+    else next.delete(nodeId);
+    setNodes.mutate(Array.from(next));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-panel p-4 text-sm">
+        <p className="font-medium">Self-service deployment nodes</p>
+        <p className="mt-1 text-muted">
+          Nodes checked below are where this client&apos;s users may create and deploy their own managed workloads.
+          Unchecking a node does not affect workloads already deployed there — it only blocks new deployments.
+          Client-authored configurations always run under strict policy: no privileged containers, host binds, host
+          networking/PID/IPC, Docker socket mounts, extra capabilities, devices, or external network/volume
+          attachment — regardless of which nodes are allowed.
+        </p>
+      </div>
+
+      {allNodesQuery.data.nodes.length === 0 ? (
+        <p className="text-sm text-muted">No nodes registered yet.</p>
+      ) : (
+        <ul className="divide-y divide-border rounded-lg border border-border bg-panel">
+          {allNodesQuery.data.nodes.map((n) => (
+            <li key={n.id} className="flex items-center justify-between px-4 py-3">
+              <div>
+                <p className="font-medium">{n.name}</p>
+                <p className="text-xs text-muted">
+                  {n.hostname} · {n.status}
+                  {n.composeSupported === false && " · Compose unavailable"}
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={allowedIds.has(n.id)}
+                  onChange={(e) => toggle(n.id, e.target.checked)}
+                  disabled={setNodes.isPending}
+                />
+                Allowed
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

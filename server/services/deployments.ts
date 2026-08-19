@@ -136,6 +136,7 @@ export async function validateDeploymentDefinition(input: {
   compose: string;
   environment: Record<string, string>;
   secretReferences: string[];
+  policy?: "ADMIN" | "CLIENT";
 }): Promise<DeploymentValidationResult> {
   const node = await prisma.node.findUnique({ where: { id: input.nodeId } });
   if (!node) {
@@ -156,7 +157,8 @@ export async function validateDeploymentDefinition(input: {
   // Stage A — control-plane policy/input analysis (no Compose, no secrets).
   const analyzed = analyzeComposeDefinition({
     composeSource: input.compose,
-    secretReferences: input.secretReferences
+    secretReferences: input.secretReferences,
+    policy: input.policy ?? "ADMIN"
   });
 
   // Stage B — read-only `docker compose config` via the agent, using sentinels.
@@ -258,14 +260,17 @@ export async function createDeployment(input: {
   secretReferences: string[];
   acknowledgedFindings: string[];
   deployNote?: string | null;
+  policy?: "ADMIN" | "CLIENT";
   actor: AuthSession;
   sourceIp?: string | null;
 }): Promise<CreateDeploymentResult> {
+  const policy = input.policy ?? "ADMIN";
   const validation = await validateDeploymentDefinition({
     nodeId: input.nodeId,
     compose: input.compose,
     environment: input.environment,
-    secretReferences: input.secretReferences
+    secretReferences: input.secretReferences,
+    policy
   });
 
   if (!validation.nodeFound) return { status: "node_not_found" };
@@ -335,6 +340,7 @@ export async function createDeployment(input: {
         deploymentId: deployment.id,
         revisionNumber: 1,
         source: DeploymentSource.HOSTPANEL,
+        policy,
         composeSource: input.compose,
         composeCanonical: validation.composeCanonical as string,
         environmentSnapshot: envSnapshot,
@@ -392,6 +398,7 @@ export async function createRevision(input: {
   secretReferences: string[];
   acknowledgedFindings: string[];
   deployNote?: string | null;
+  policy?: "ADMIN" | "CLIENT";
   actor: AuthSession;
   sourceIp?: string | null;
 }): Promise<CreateRevisionResult> {
@@ -401,11 +408,14 @@ export async function createRevision(input: {
   });
   if (!deployment) return { status: "deployment_not_found" };
 
+  const policy = input.policy ?? "ADMIN";
+
   const validation = await validateDeploymentDefinition({
     nodeId: deployment.project.nodeId,
     compose: input.compose,
     environment: input.environment,
-    secretReferences: input.secretReferences
+    secretReferences: input.secretReferences,
+    policy
   });
 
   if (!validation.composeSupported) {
@@ -456,6 +466,7 @@ export async function createRevision(input: {
         deploymentId: deployment.id,
         revisionNumber: nextNumber,
         source: DeploymentSource.HOSTPANEL,
+        policy,
         composeSource: input.compose,
         composeCanonical: validation.composeCanonical as string,
         environmentSnapshot: envSnapshot,
@@ -653,10 +664,20 @@ export async function getClientDeploymentStatus(
   projectId: string
 ): Promise<{
   managed: boolean;
+  deploymentId: string | null;
+  isOwner: boolean;
   runtimeState: string | null;
   currentReleaseId: string | null;
   lastHealthyReleaseId: string | null;
   createdAt: string | null;
+  activeOperation: {
+    id: string;
+    type: string;
+    state: string;
+    phase: string | null;
+    actorEmail: string | null;
+    startedAt: string | null;
+  } | null;
 } | null> {
   if (!session.clientAccountId) return null;
 
@@ -665,7 +686,7 @@ export async function getClientDeploymentStatus(
     select: {
       id: true,
       clientAccountId: true,
-      deployment: { select: { currentReleaseId: true, lastHealthyReleaseId: true, runtimeState: true, createdAt: true } }
+      deployment: { select: { id: true, currentReleaseId: true, lastHealthyReleaseId: true, runtimeState: true, createdAt: true } }
     }
   });
   if (!project) return null;
@@ -679,15 +700,38 @@ export async function getClientDeploymentStatus(
   if (!ownClient && !grant) return null;
 
   if (!project.deployment) {
-    return { managed: false, runtimeState: null, currentReleaseId: null, lastHealthyReleaseId: null, createdAt: null };
+    return { managed: false, deploymentId: null, isOwner: ownClient, runtimeState: null, currentReleaseId: null, lastHealthyReleaseId: null, createdAt: null, activeOperation: null };
   }
+
+  const activeOp = ownClient
+    ? await prisma.deploymentOperation.findFirst({
+        where: { deploymentId: project.deployment.id, state: { in: ["REQUESTED", "QUEUED", "RUNNING"] } },
+        orderBy: { requestedAt: "desc" },
+        select: { id: true, type: true, state: true, phase: true, actorEmail: true, startedAt: true }
+      })
+    : null;
 
   return {
     managed: true,
+    // deploymentId is only useful to the OWNING client (grant recipients get
+    // status metadata only — the lifecycle routes independently re-check
+    // ownership, but there's no reason to hand a grant recipient the id).
+    deploymentId: ownClient ? project.deployment.id : null,
+    isOwner: ownClient,
     runtimeState: project.deployment.runtimeState,
     currentReleaseId: project.deployment.currentReleaseId,
     lastHealthyReleaseId: project.deployment.lastHealthyReleaseId,
-    createdAt: project.deployment.createdAt.toISOString()
+    createdAt: project.deployment.createdAt.toISOString(),
+    activeOperation: activeOp
+      ? {
+          id: activeOp.id,
+          type: activeOp.type,
+          state: activeOp.state,
+          phase: activeOp.phase,
+          actorEmail: activeOp.actorEmail,
+          startedAt: activeOp.startedAt?.toISOString() ?? null
+        }
+      : null
   };
 }
 
@@ -711,7 +755,8 @@ export async function reanalyzeRevision(revisionId: string): Promise<{
 
   const analyzed = analyzeComposeDefinition({
     composeSource: revision.composeSource,
-    secretReferences: revision.secretReferences
+    secretReferences: revision.secretReferences,
+    policy: revision.policy
   });
 
   const acked = new Set(revision.deploymentSecurityAcknowledgements.map((a) => a.findingFingerprint));

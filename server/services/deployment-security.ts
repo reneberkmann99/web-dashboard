@@ -448,12 +448,39 @@ export type AnalyzeResult = {
 };
 
 /**
+ * Rules that are HIGH_RISK (acknowledgeable) for platform admins but outright
+ * BLOCKED for tenant-authored (client) configurations: no acknowledgement
+ * path exists for them under CLIENT policy. This is the sandbox boundary —
+ * client workloads may never reach host namespaces, sockets, devices, kernel
+ * parameters, or other tenants' external resources.
+ */
+export const CLIENT_BLOCKED_RULES = new Set<string>([
+  "docker-socket-mount",
+  "sensitive-host-bind",
+  "privileged",
+  "host-networking",
+  "pid-host",
+  "ipc-host",
+  "cap-add",
+  "devices",
+  "security-opt",
+  "sysctls",
+  "external-networks",
+  "external-volumes"
+]);
+
+export type DeploymentSecurityPolicy = "ADMIN" | "CLIENT";
+
+/**
  * Analyze the HostPanel-authored Compose source. Returns findings (possibly
  * empty). Never touches the network, Docker, or secret values.
+ *
+ * Under CLIENT policy, the sandbox rules above are escalated to BLOCKED.
  */
 export function analyzeComposeDefinition(input: {
   composeSource: string;
   secretReferences: string[];
+  policy?: DeploymentSecurityPolicy;
 }): AnalyzeResult {
   let root: unknown;
   try {
@@ -545,6 +572,15 @@ export function analyzeComposeDefinition(input: {
 
   analyzeExternalResources(ctx, "networks", obj);
   analyzeExternalResources(ctx, "volumes", obj);
+
+  // Strict tenant policy: escalate sandbox-boundary rules to BLOCKED (no ack
+  // path). Fingerprints are severity-independent, so escalation does not
+  // invalidate stored acknowledgements or revision hashes.
+  if (input.policy === "CLIENT") {
+    ctx.findings = ctx.findings.map((f) =>
+      CLIENT_BLOCKED_RULES.has(f.ruleId) ? { ...f, severity: "BLOCKED" as const } : f
+    );
+  }
 
   return { findings: ctx.findings, parseOk: true, parseError: null };
 }

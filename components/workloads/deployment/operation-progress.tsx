@@ -27,10 +27,12 @@ const STAGES: Array<{ key: string; label: string }> = [
 export function OperationProgress({
   deploymentId,
   operationId,
+  apiBase = "/api/admin/deployments",
   onTerminal
 }: {
   deploymentId: string;
   operationId: string;
+  apiBase?: string;
   onTerminal?: (op: DeploymentOperationPayload) => void;
 }): React.JSX.Element {
   const [op, setOp] = useState<DeploymentOperationPayload | null>(null);
@@ -45,7 +47,7 @@ export function OperationProgress({
     const tick = async () => {
       try {
         const data = await apiFetch<DeploymentOperationPayload>(
-          `/api/admin/deployments/${deploymentId}/operations/${operationId}`
+          `${apiBase}/${deploymentId}/operations/${operationId}`
         );
         if (cancelled) return;
         setOp(data);
@@ -72,7 +74,7 @@ export function OperationProgress({
       if (timer) clearTimeout(timer);
       clearInterval(clock);
     };
-  }, [deploymentId, operationId, onTerminal]);
+  }, [apiBase, deploymentId, operationId, onTerminal]);
 
   const startedAt = op?.startedAt ? new Date(op.startedAt).getTime() : Date.now();
 

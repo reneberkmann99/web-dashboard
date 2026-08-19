@@ -56,6 +56,12 @@ enum DeploymentSource {
   GIT
 }
 
+/** Security policy under which a revision was authored + must be re-validated. */
+enum DeploymentPolicy {
+  ADMIN
+  CLIENT
+}
+
 enum DeploymentOperationType {
   DEPLOY
   ROLLBACK
@@ -122,10 +128,28 @@ model ClientAccount {
   grants      AccessGrant[]
   operations  Operation[]
   auditLogs   AuditLog[]
+  nodeAccess  ClientNodeAccess[]
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
 
   @@index([isActive])
+}
+
+/**
+ * Node allowlist for tenant self-service: which nodes a client may deploy
+ * workloads on. Admin-managed; empty = the client cannot create workloads.
+ */
+model ClientNodeAccess {
+  id              String        @id @default(cuid())
+  clientAccountId String
+  clientAccount   ClientAccount @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  nodeId          String
+  node            Node          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
+  @@unique([clientAccountId, nodeId])
+  @@index([clientAccountId])
+  @@index([nodeId])
 }
 
 model User {
@@ -211,6 +235,7 @@ model Node {
   containers        Container[]
   grants            AccessGrant[]
   operations        Operation[]
+  clientAccess      ClientNodeAccess[]
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 
@@ -467,6 +492,7 @@ model DeploymentRevision {
   revisionNumber                     Int
   source                             DeploymentSource                    @default(HOSTPANEL)
   sourceRef                          String?
+  policy                             DeploymentPolicy                    @default(ADMIN)
   composeSource                      String
   composeCanonical                   String
   environmentSnapshot                Json

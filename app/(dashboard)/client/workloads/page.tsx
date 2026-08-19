@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import type { WorkloadSummary } from "@/types/domain";
 
@@ -45,9 +46,14 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Workloads</h1>
-        <p className="text-muted">The services assigned to you.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold">Workloads</h1>
+          <p className="text-muted">The services assigned to you.</p>
+        </div>
+        <Button size="sm" onClick={() => router.push("/client/workloads/new")}>
+          New workload
+        </Button>
       </div>
 
       <DataTable

@@ -15,18 +15,20 @@ import { RELEASE_HEALTH_LABELS } from "./labels";
  */
 export function ReleaseHistory({
   deploymentId,
+  apiBase = "/api/admin/deployments",
   onRollback,
   emptyState
 }: {
   deploymentId: string;
+  apiBase?: string;
   onRollback?: () => void;
   emptyState?: React.ReactNode;
 }): React.JSX.Element {
   const [selected, setSelected] = useState<ReleaseListItem | null>(null);
 
   const query = useQuery({
-    queryKey: ["deployment-releases", deploymentId],
-    queryFn: () => apiFetch<ReleasesListPayload>(`/api/admin/deployments/${deploymentId}/releases?limit=100`),
+    queryKey: ["deployment-releases", apiBase, deploymentId],
+    queryFn: () => apiFetch<ReleasesListPayload>(`${apiBase}/${deploymentId}/releases?limit=100`),
     refetchInterval: 15000
   });
 
@@ -84,7 +86,7 @@ export function ReleaseHistory({
         <p className="mt-2 text-xs text-muted">Showing the {query.data.data.length} most recent of {query.data.total} releases.</p>
       )}
       {selected && (
-        <ReleaseDetailModal deploymentId={deploymentId} release={selected} onClose={() => setSelected(null)} onRollback={onRollback} />
+        <ReleaseDetailModal deploymentId={deploymentId} apiBase={apiBase} release={selected} onClose={() => setSelected(null)} onRollback={onRollback} />
       )}
     </>
   );
@@ -92,18 +94,20 @@ export function ReleaseHistory({
 
 function ReleaseDetailModal({
   deploymentId,
+  apiBase,
   release,
   onClose,
   onRollback
 }: {
   deploymentId: string;
+  apiBase: string;
   release: ReleaseListItem;
   onClose: () => void;
   onRollback?: () => void;
 }): React.JSX.Element {
   const detail = useQuery({
-    queryKey: ["deployment-release-detail", deploymentId, release.id],
-    queryFn: () => apiFetch<ReleaseDetailPayload>(`/api/admin/deployments/${deploymentId}/releases/${release.id}`)
+    queryKey: ["deployment-release-detail", apiBase, deploymentId, release.id],
+    queryFn: () => apiFetch<ReleaseDetailPayload>(`${apiBase}/${deploymentId}/releases/${release.id}`)
   });
 
   const d = detail.data ?? ({

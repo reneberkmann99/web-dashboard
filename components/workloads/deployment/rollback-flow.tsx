@@ -22,11 +22,11 @@ import type { DeploymentOperationPayload, DeploymentPlanPayload, RollbackTargetP
  */
 export function RollbackFlow({
   deploymentId,
-  workloadId,
+  apiBase = "/api/admin/deployments",
   onDone
 }: {
   deploymentId: string;
-  workloadId: string;
+  apiBase?: string;
   onDone: () => void;
 }): React.JSX.Element {
   const queryClient = useQueryClient();
@@ -37,8 +37,8 @@ export function RollbackFlow({
   const [busy, setBusy] = useState(false);
 
   const target = useQuery({
-    queryKey: ["rollback-target", deploymentId],
-    queryFn: () => apiFetch<RollbackTargetPayload>(`/api/admin/deployments/${deploymentId}/rollback-target`),
+    queryKey: ["rollback-target", apiBase, deploymentId],
+    queryFn: () => apiFetch<RollbackTargetPayload>(`${apiBase}/${deploymentId}/rollback-target`),
     refetchOnWindowFocus: false
   });
 
@@ -47,7 +47,7 @@ export function RollbackFlow({
     setBusy(true);
     setStale(false);
     try {
-      const p = await apiFetch<DeploymentPlanPayload>(`/api/admin/deployments/${deploymentId}/plan`, {
+      const p = await apiFetch<DeploymentPlanPayload>(`${apiBase}/${deploymentId}/plan`, {
         method: "POST",
         body: JSON.stringify({ revisionId: target.data.revisionId })
       });
@@ -62,7 +62,7 @@ export function RollbackFlow({
   const rollback = useMutation({
     mutationFn: async () => {
       if (!target.data || !plan) return;
-      const res = await apiFetch<{ operationId: string }>(`/api/admin/deployments/${deploymentId}/rollback`, {
+      const res = await apiFetch<{ operationId: string }>(`${apiBase}/${deploymentId}/rollback`, {
         method: "POST",
         body: JSON.stringify({ revisionId: target.data.revisionId, planHash: plan.planHash })
       });
@@ -81,8 +81,9 @@ export function RollbackFlow({
 
   const handleTerminal = (final: DeploymentOperationPayload) => {
     setOp(final);
-    void queryClient.invalidateQueries({ queryKey: ["deployment-releases", deploymentId] });
+    void queryClient.invalidateQueries({ queryKey: ["deployment-releases", apiBase, deploymentId] });
     void queryClient.invalidateQueries({ queryKey: ["workload"] });
+    void queryClient.invalidateQueries({ queryKey: ["client-workloads"] });
   };
 
   return (
@@ -135,14 +136,14 @@ export function RollbackFlow({
           </div>
         )}
 
-        {opId && !op && <OperationProgress deploymentId={deploymentId} operationId={opId} onTerminal={handleTerminal} />}
+        {opId && !op && <OperationProgress deploymentId={deploymentId} operationId={opId} apiBase={apiBase} onTerminal={handleTerminal} />}
 
         {op && (
           <OperationResultView
             op={op}
-            deployment={{ deploymentId, workloadId }}
             onDone={() => {
               void queryClient.invalidateQueries({ queryKey: ["workload"] });
+              void queryClient.invalidateQueries({ queryKey: ["client-workloads"] });
               onDone();
             }}
           />

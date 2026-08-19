@@ -11,13 +11,11 @@ import type { DeploymentOperationPayload, WorkloadDeploymentStatus } from "./typ
  */
 export function OperationResultView({
   op,
-  deployment,
   onRollback,
   onViewRelease,
   onDone
 }: {
   op: DeploymentOperationPayload;
-  deployment: { deploymentId: string; workloadId: string };
   onRollback?: () => void;
   onViewRelease?: (releaseId: string) => void;
   onDone?: () => void;

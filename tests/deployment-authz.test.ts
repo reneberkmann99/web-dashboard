@@ -12,18 +12,26 @@ beforeAll(async () => {
 });
 
 describe("deployment authorization", () => {
-  it("capability matrix: client roles get deployment.view but never manage/deploy", () => {
+  it("capability matrix: client operator/admin roles get deployment.manage/deploy (Phase 7 self-service); viewer stays read-only", () => {
     const admin = capabilitiesForRole(Role.ADMIN);
     expect(admin).toContain("deployment.view");
     expect(admin).toContain("deployment.manage");
     expect(admin).toContain("deployment.deploy");
 
-    for (const role of [Role.CLIENT_ADMIN, Role.CLIENT_OPERATOR, Role.CLIENT_VIEWER, Role.CLIENT]) {
+    for (const role of [Role.CLIENT_ADMIN, Role.CLIENT_OPERATOR, Role.CLIENT]) {
       const caps = capabilitiesForRole(role);
       expect(caps).toContain("deployment.view");
-      expect(caps).not.toContain("deployment.manage");
-      expect(caps).not.toContain("deployment.deploy");
+      expect(caps).toContain("deployment.manage");
+      expect(caps).toContain("deployment.deploy");
+      expect(caps).toContain("project.create");
     }
+
+    // Viewer remains strictly read-only.
+    const viewer = capabilitiesForRole(Role.CLIENT_VIEWER);
+    expect(viewer).toContain("deployment.view");
+    expect(viewer).not.toContain("deployment.manage");
+    expect(viewer).not.toContain("deployment.deploy");
+    expect(viewer).not.toContain("project.create");
   });
 
   async function managedWorkloadFor(clientId: string, nodeId: string) {
@@ -45,17 +53,34 @@ describe("deployment authorization", () => {
     return { project, deployment };
   }
 
-  it("grant-scoped client view returns status metadata only", async () => {
+  it("owning-client view returns full status metadata including deploymentId for self-service (still no sensitive fields)", async () => {
     const world = await seedWorld();
     const { project } = await managedWorkloadFor(world.clientA.id, world.node1.id);
 
     const status = await getClientDeploymentStatus(sessionFor(world.clientAOperator), project.id);
     expect(status).not.toBeNull();
     expect(status?.managed).toBe(true);
-    // No sensitive fields leak: only status metadata.
+    expect(status?.isOwner).toBe(true);
+    expect(status?.deploymentId).not.toBeNull();
+    // No sensitive fields leak: only status metadata (never compose source, secrets, findings).
     expect(Object.keys(status!).sort()).toEqual(
-      ["createdAt", "currentReleaseId", "lastHealthyReleaseId", "managed", "runtimeState"].sort()
+      ["activeOperation", "createdAt", "currentReleaseId", "deploymentId", "isOwner", "lastHealthyReleaseId", "managed", "runtimeState"].sort()
     );
+  });
+
+  it("grant-recipient (non-owning) client view withholds deploymentId", async () => {
+    const world = await seedWorld();
+    const { project, deployment } = await managedWorkloadFor(world.clientA.id, world.node1.id);
+    await prisma.accessGrant.create({
+      data: { clientAccountId: world.clientB.id, projectId: project.id, nodeId: world.node1.id, allowedActions: ["start", "stop", "restart"] }
+    });
+    void deployment;
+
+    const status = await getClientDeploymentStatus(sessionFor(world.clientBOperator), project.id);
+    expect(status?.managed).toBe(true);
+    expect(status?.isOwner).toBe(false);
+    expect(status?.deploymentId).toBeNull();
+    expect(status?.activeOperation).toBeNull();
   });
 
   it("cross-tenant: a different client cannot see the managed workload", async () => {

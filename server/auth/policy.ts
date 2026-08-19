@@ -31,6 +31,7 @@ export type Capability =
   | "user.manage"
   | "node.manage"
   | "project.view"
+  | "project.create"
   | "container.view"
   | "container.view_logs"
   | "container.start"
@@ -47,6 +48,7 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "user.manage",
     "node.manage",
     "project.view",
+    "project.create",
     "container.view",
     "container.view_logs",
     "container.start",
@@ -59,32 +61,41 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   // Deprecated legacy value retained for migration safety; treated as operator.
   CLIENT: [
     "project.view",
+    "project.create",
     "container.view",
     "container.view_logs",
     "container.start",
     "container.stop",
     "container.restart",
-    "deployment.view"
+    "deployment.view",
+    "deployment.manage",
+    "deployment.deploy"
   ],
   CLIENT_ADMIN: [
     "client.manage",
     "user.manage",
     "project.view",
+    "project.create",
     "container.view",
     "container.view_logs",
     "container.start",
     "container.stop",
     "container.restart",
-    "deployment.view"
+    "deployment.view",
+    "deployment.manage",
+    "deployment.deploy"
   ],
   CLIENT_OPERATOR: [
     "project.view",
+    "project.create",
     "container.view",
     "container.view_logs",
     "container.start",
     "container.stop",
     "container.restart",
-    "deployment.view"
+    "deployment.view",
+    "deployment.manage",
+    "deployment.deploy"
   ],
   CLIENT_VIEWER: [
     "project.view",

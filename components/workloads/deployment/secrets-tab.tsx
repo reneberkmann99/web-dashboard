@@ -19,14 +19,20 @@ import type { DeploymentOperationPayload, DeploymentPlanPayload, SecretListItem,
  * authoritative plan → confirm → deploy → operation progress. Plaintext is
  * discarded from component state immediately after the rotation request.
  */
-export function SecretsTab({ deploymentId, workloadId }: { deploymentId: string; workloadId: string }): React.JSX.Element {
+export function SecretsTab({
+  deploymentId,
+  apiBase = "/api/admin/deployments"
+}: {
+  deploymentId: string;
+  apiBase?: string;
+}): React.JSX.Element {
   const queryClient = useQueryClient();
   const [rotating, setRotating] = useState<SecretListItem | null>(null);
   const [historyFor, setHistoryFor] = useState<SecretListItem | null>(null);
 
   const secrets = useQuery({
-    queryKey: ["deployment-secrets", deploymentId],
-    queryFn: () => apiFetch<{ data: SecretListItem[]; total: number }>(`/api/admin/deployments/${deploymentId}/secrets`),
+    queryKey: ["deployment-secrets", apiBase, deploymentId],
+    queryFn: () => apiFetch<{ data: SecretListItem[]; total: number }>(`${apiBase}/${deploymentId}/secrets`),
     refetchInterval: 15000
   });
 
@@ -92,18 +98,18 @@ export function SecretsTab({ deploymentId, workloadId }: { deploymentId: string;
       {rotating && (
         <RotateFlow
           deploymentId={deploymentId}
-          workloadId={workloadId}
+          apiBase={apiBase}
           secret={rotating}
           onClose={() => {
             setRotating(null);
-            void queryClient.invalidateQueries({ queryKey: ["deployment-secrets", deploymentId] });
-            void queryClient.invalidateQueries({ queryKey: ["deployment-releases", deploymentId] });
+            void queryClient.invalidateQueries({ queryKey: ["deployment-secrets", apiBase, deploymentId] });
+            void queryClient.invalidateQueries({ queryKey: ["deployment-releases", apiBase, deploymentId] });
           }}
         />
       )}
 
       {historyFor && (
-        <SecretHistoryModal secret={historyFor} deploymentId={deploymentId} onClose={() => setHistoryFor(null)} />
+        <SecretHistoryModal secret={historyFor} deploymentId={deploymentId} apiBase={apiBase} onClose={() => setHistoryFor(null)} />
       )}
     </div>
   );
@@ -111,12 +117,12 @@ export function SecretsTab({ deploymentId, workloadId }: { deploymentId: string;
 
 function RotateFlow({
   deploymentId,
-  workloadId,
+  apiBase,
   secret,
   onClose
 }: {
   deploymentId: string;
-  workloadId: string;
+  apiBase: string;
   secret: SecretListItem;
   onClose: () => void;
 }): React.JSX.Element {
@@ -131,7 +137,7 @@ function RotateFlow({
 
   const rotate = useMutation({
     mutationFn: async () => {
-      const res = await apiFetch<{ id: string; versionNumber: number }>(`/api/admin/deployments/${deploymentId}/secrets/${secret.id}/versions`, {
+      const res = await apiFetch<{ id: string; versionNumber: number }>(`${apiBase}/${deploymentId}/secrets/${secret.id}/versions`, {
         method: "POST",
         body: JSON.stringify({ value })
       });
@@ -143,7 +149,7 @@ function RotateFlow({
     onSuccess: async () => {
       // Produce the authoritative plan for the latest revision (no revision change).
       try {
-        const p = await apiFetch<DeploymentPlanPayload>(`/api/admin/deployments/${deploymentId}/plan`, {
+        const p = await apiFetch<DeploymentPlanPayload>(`${apiBase}/${deploymentId}/plan`, {
           method: "POST",
           body: JSON.stringify({})
         });
@@ -158,7 +164,7 @@ function RotateFlow({
 
   const deploy = useMutation({
     mutationFn: async () => {
-      const res = await apiFetch<{ operationId: string }>(`/api/admin/deployments/${deploymentId}/deploy`, {
+      const res = await apiFetch<{ operationId: string }>(`${apiBase}/${deploymentId}/deploy`, {
         method: "POST",
         body: JSON.stringify({ revisionId: plan!.revisionId, planHash: plan!.planHash })
       });
@@ -179,7 +185,7 @@ function RotateFlow({
   const regenerate = async () => {
     setStale(false);
     try {
-      const p = await apiFetch<DeploymentPlanPayload>(`/api/admin/deployments/${deploymentId}/plan`, {
+      const p = await apiFetch<DeploymentPlanPayload>(`${apiBase}/${deploymentId}/plan`, {
         method: "POST",
         body: JSON.stringify({})
       });
@@ -252,11 +258,12 @@ function RotateFlow({
         <OperationProgress
           deploymentId={deploymentId}
           operationId={opId}
+          apiBase={apiBase}
           onTerminal={(final) => {
             setOp(final);
             setStep("done");
-            void queryClient.invalidateQueries({ queryKey: ["deployment-secrets", deploymentId] });
-            void queryClient.invalidateQueries({ queryKey: ["deployment-releases", deploymentId] });
+            void queryClient.invalidateQueries({ queryKey: ["deployment-secrets", apiBase, deploymentId] });
+            void queryClient.invalidateQueries({ queryKey: ["deployment-releases", apiBase, deploymentId] });
           }}
         />
       )}
@@ -272,7 +279,7 @@ function RotateFlow({
               </p>
             </div>
           )}
-          <OperationResultView op={op} deployment={{ deploymentId, workloadId }} onDone={onClose} />
+          <OperationResultView op={op} onDone={onClose} />
         </>
       )}
     </Modal>
@@ -282,15 +289,17 @@ function RotateFlow({
 function SecretHistoryModal({
   secret,
   deploymentId,
+  apiBase,
   onClose
 }: {
   secret: SecretListItem;
   deploymentId: string;
+  apiBase: string;
   onClose: () => void;
 }): React.JSX.Element {
   const versions = useQuery({
-    queryKey: ["deployment-secret-versions", deploymentId, secret.id],
-    queryFn: () => apiFetch<{ data: SecretVersionListItem[]; total: number }>(`/api/admin/deployments/${deploymentId}/secrets/${secret.id}`)
+    queryKey: ["deployment-secret-versions", apiBase, deploymentId, secret.id],
+    queryFn: () => apiFetch<{ data: SecretVersionListItem[]; total: number }>(`${apiBase}/${deploymentId}/secrets/${secret.id}`)
   });
 
   return (
