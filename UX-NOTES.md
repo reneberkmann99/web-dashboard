@@ -384,3 +384,16 @@ network operation exists anywhere in the managed flow.
   limit/offset.
 - No releases API for CLIENT roles yet (client view stays grant-scoped status
   metadata only).
+
+### Fix: editor usable before the first deploy (2026-08-19, `b5f10b7`+1)
+
+`DeploymentEditor` previously seeded its compose buffer only from the current
+release's revision. A managed workload created through the wizard has revision 1
+but no release until the first deploy, so the editor rendered a dead page
+(title + "No deployment yet" + nothing). Now the editor falls back to the
+latest saved revision when no release exists (empty editor only if there are no
+revisions at all), shows proper loading/error+retry states instead of a blank
+body, and the first-revision review step says there is nothing to diff against
+(plan + deploy still work). Covered by `scripts/ui-verify-first-deploy.mjs`
+(live browser qualification: create deployment → edit → validate → save →
+plan → deploy → reload via release path).

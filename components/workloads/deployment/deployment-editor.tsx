@@ -82,6 +82,7 @@ export function DeploymentEditor({
     queryFn: () => apiFetch<ReleasesListPayload>(`${apiBase}/${deploymentId}/releases?limit=100`)
   });
   const currentRelease = releases.data?.data.find((r) => r.isCurrent) ?? null;
+  const noReleaseYet = !releases.isLoading && !releases.isError && !currentRelease;
 
   const currentRevision = useQuery({
     queryKey: ["deployment-revision", apiBase, deploymentId, currentRelease?.revisionId],
@@ -89,12 +90,33 @@ export function DeploymentEditor({
     enabled: Boolean(currentRelease)
   });
 
-  // Seed the editor once the active revision loads.
+  // Before the first deploy there is no release, so there is no current-release
+  // revision to seed from. Fall back to the latest saved revision (e.g. the one
+  // created together with the workload). If there are no revisions at all, seed
+  // the editor empty so the user can still author configuration from scratch.
+  const latestRevision = useQuery({
+    queryKey: ["deployment-latest-revision", apiBase, deploymentId],
+    queryFn: async () => {
+      const list = await apiFetch<{ data: Array<{ id: string; revisionNumber: number }>; total: number }>(
+        `${apiBase}/${deploymentId}/revisions`
+      );
+      const latest = list.data[0];
+      if (!latest) return null;
+      return apiFetch<RevisionDetailPayload>(`${apiBase}/${deploymentId}/revisions/${latest.id}`);
+    },
+    enabled: noReleaseYet
+  });
+
+  // Seed the editor once the active revision loads (release path) or, before the
+  // first deploy, from the latest saved revision (fallback path).
   useEffect(() => {
-    if (compose === null && currentRevision.data) {
+    if (compose !== null) return;
+    if (currentRevision.data) {
       setCompose(currentRevision.data.composeSource);
+    } else if (noReleaseYet && latestRevision.data !== undefined) {
+      setCompose(latestRevision.data?.composeSource ?? "");
     }
-  }, [compose, currentRevision.data]);
+  }, [compose, currentRevision.data, noReleaseYet, latestRevision.data]);
 
   // Unsaved-change protection.
   useEffect(() => {
@@ -105,7 +127,7 @@ export function DeploymentEditor({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
-  const baseRevision = currentRevision.data;
+  const baseRevision = currentRevision.data ?? latestRevision.data ?? undefined;
   const diff = useMemo(() => {
     if (!baseRevision || compose === null || compose === baseRevision.composeSource) return null;
     return diffLines(baseRevision.composeSource, compose);
@@ -238,9 +260,34 @@ export function DeploymentEditor({
       )}
 
       {/* EDIT */}
+      {step === "edit" && compose === null && (releases.isLoading || (noReleaseYet && latestRevision.isLoading) || (currentRelease && currentRevision.isLoading)) && (
+        <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />
+      )}
+
+      {step === "edit" && compose === null && !releases.isLoading &&
+        (releases.isError || (noReleaseYet && latestRevision.isError) || (currentRelease && currentRevision.isError)) && (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-red-300">
+            Failed to load the current configuration.
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => {
+              void releases.refetch();
+              void currentRevision.refetch();
+              void latestRevision.refetch();
+            }}>
+              Retry
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => router.push(backHref)}>
+              Back to workload
+            </Button>
+          </div>
+        </div>
+      )}
+
       {step === "edit" && compose !== null && (
         <div className="space-y-3">
-          {currentRevision.isLoading && <p className="text-sm text-muted">Loading current configuration…</p>}
+          {(currentRevision.isLoading || (noReleaseYet && latestRevision.isLoading)) && <p className="text-sm text-muted">Loading current configuration…</p>}
           <textarea
             value={compose}
             onChange={(e) => {
@@ -315,7 +362,7 @@ export function DeploymentEditor({
         <div className="space-y-3">
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
-              Changes vs revision {currentRelease?.revisionNumber ?? "—"}
+              Changes vs {currentRelease ? `revision ${currentRelease.revisionNumber}` : "last saved revision"}
             </h2>
             <p className="mb-2 text-xs text-muted">What you changed in the configuration — separately from what HostPanel will mutate at deploy time.</p>
             <pre className="max-h-96 overflow-auto rounded border border-border bg-panelAlt p-3 font-mono text-xs leading-relaxed">
@@ -347,7 +394,11 @@ export function DeploymentEditor({
 
       {step === "review" && savedRevision && !diff && (
         <div className="rounded-lg border border-border bg-panel p-4 text-sm">
-          <p className="text-muted">This configuration is identical to the current revision — no changes to review.</p>
+          <p className="text-muted">
+            {currentRelease
+              ? "This configuration is identical to the current revision — no changes to review."
+              : "This is the first revision of this workload — there is no previous configuration to compare against."}
+          </p>
           <div className="mt-3 flex gap-2">
             <Button onClick={() => void generatePlan()}>Generate deployment plan anyway</Button>
             <Button variant="secondary" onClick={() => setStep("edit")}>
