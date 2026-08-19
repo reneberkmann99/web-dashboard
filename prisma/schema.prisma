@@ -311,4 +311,6 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@index([clientAccountId])
+  @@index([clientAccountId, createdAt])
+  @@index([result, createdAt])
 }

@@ -40,8 +40,8 @@ function mapStatus(value?: string): ContainerView["status"] {
 type AssignmentWithRelations = Prisma.ContainerAssignmentGetPayload<{
   include: {
     node: { select: { id: true; name: true } };
-    project: { select: { name: true } };
-    clientAccount: { select: { name: true } };
+    project: { select: { id: true; name: true } };
+    clientAccount: { select: { id: true; name: true } };
   };
 }>;
 
@@ -79,7 +79,9 @@ function toContainerView(
     nodeName: assignment.node.name,
     nodeOnline,
     projectName: assignment.project?.name ?? null,
+    projectId: assignment.project?.id ?? null,
     clientName: assignment.clientAccount.name,
+    clientId: assignment.clientAccount.id,
     allowedActions: assignment.allowedActions,
     lastUpdatedAt: runtime?.lastUpdatedAt ?? new Date().toISOString(),
     details: runtime?.details ?? null
@@ -499,12 +501,10 @@ export function buildOverview(containers: ContainerView[]): OverviewStats {
 }
 
 /**
- * ADMIN-only: return every container running on every active node,
- * regardless of assignment. Containers that have an assignment carry its
- * metadata (client/project/label/actions); unassigned ones are returned
- * read-only (no actions, clientName "Unassigned").
+ * ADMIN-only: gather every container on every active node with assignment
+ * metadata (client/project). Unassigned containers are read-only.
  */
-export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
+async function collectAllContainersEnriched(): Promise<ContainerView[]> {
   const nodes = await prisma.node.findMany({
     where: { isActive: true },
     orderBy: { name: "asc" }
@@ -514,8 +514,8 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
     where: { isActive: true },
     include: {
       node: { select: { id: true, name: true } },
-      project: { select: { name: true } },
-      clientAccount: { select: { name: true } }
+      project: { select: { id: true, name: true } },
+      clientAccount: { select: { id: true, name: true } }
     }
   });
   const assignmentByNodeContainer = new Map<string, AssignmentWithRelations>();
@@ -567,7 +567,9 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
           nodeName: node.name,
           nodeOnline: runtimePayload.nodeOnline,
           projectName: null,
+          projectId: null,
           clientName: "Unassigned",
+          clientId: null,
           allowedActions: [],
           lastUpdatedAt: live.lastUpdatedAt,
           details: live.details ?? null
@@ -576,12 +578,9 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
     }
 
     // Data consistency: containers no longer reported by the agent are marked
-    // inactive (kept for history, never deleted). Their grants remain but
-    // resolve to nothing until the container reappears.
-    //
-    // Guard: only sweep when the agent actually answered with an inventory.
-    // An offline/timed-out agent returns an empty list, and sweeping on that
-    // would wrongly deactivate every container on the node.
+    // inactive (kept for history, never deleted). Guard: only sweep when the
+    // agent actually answered with an inventory (an offline/timed-out agent
+    // returns an empty list and must never trigger a sweep).
     if (runtimePayload.nodeOnline && seenIds.size > 0) {
       await prisma.container
         .updateMany({
@@ -595,4 +594,86 @@ export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
   return results.sort(
     (a, b) => a.nodeName.localeCompare(b.nodeName) || a.name.localeCompare(b.name)
   );
+}
+
+export async function listAllContainersForAdmin(): Promise<ContainerView[]> {
+  return collectAllContainersEnriched();
+}
+
+/**
+ * Server-side query for the admin all-containers list. Live status is gathered
+ * once per node (bounded by the number of active nodes/containers), then
+ * filtered, sorted and paginated so the browser only ever receives a single
+ * page. Validates sort keys against a whitelist to avoid arbitrary comparators.
+ */
+export type ContainersQuery = {
+  search?: string;
+  status?: string;
+  nodeId?: string;
+  clientId?: string;
+  sort?: string;
+  dir?: "asc" | "desc";
+  page?: number;
+  limit?: number;
+};
+
+export async function queryAllContainersForAdmin(
+  opts: ContainersQuery
+): Promise<{ containers: ContainerView[]; total: number; page: number; limit: number; pageCount: number }> {
+  const all = await collectAllContainersEnriched();
+
+  const search = opts.search?.trim().toLowerCase();
+  const status = opts.status?.trim().toLowerCase();
+  const nodeId = opts.nodeId?.trim();
+  const clientId = opts.clientId?.trim();
+
+  let rows = all;
+
+  if (search) {
+    rows = rows.filter((c) =>
+      [c.name, c.image, c.containerId, c.nodeName, c.clientName, c.projectName ?? ""]
+        .some((f) => f && f.toLowerCase().includes(search))
+    );
+  }
+  if (status) {
+    rows = rows.filter((c) => c.status === status);
+  }
+  if (nodeId) {
+    rows = rows.filter((c) => c.nodeId === nodeId);
+  }
+  if (clientId) {
+    rows = rows.filter((c) => c.clientId === clientId);
+  }
+
+  const dir = opts.dir === "desc" ? -1 : 1;
+  switch (opts.sort) {
+    case "node":
+      rows = [...rows].sort((a, b) => dir * a.nodeName.localeCompare(b.nodeName));
+      break;
+    case "client":
+      rows = [...rows].sort((a, b) => dir * a.clientName.localeCompare(b.clientName));
+      break;
+    case "status":
+      rows = [...rows].sort((a, b) => dir * a.status.localeCompare(b.status));
+      break;
+    case "cpu":
+      rows = [...rows].sort((a, b) => dir * ((a.cpuPercent ?? -1) - (b.cpuPercent ?? -1)));
+      break;
+    case "restartCount":
+      rows = [...rows].sort((a, b) => dir * ((a.restartCount ?? 0) - (b.restartCount ?? 0)));
+      break;
+    default:
+      // name (default)
+      rows = [...rows].sort((a, b) => dir * a.name.localeCompare(b.name));
+  }
+
+  const total = rows.length;
+  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
+  const page = Math.max(opts.page ?? 1, 1);
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, pageCount);
+  const start = (safePage - 1) * limit;
+  const containers = rows.slice(start, start + limit);
+
+  return { containers, total, page: safePage, limit, pageCount };
 }

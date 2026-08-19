@@ -51,7 +51,9 @@ export type ContainerView = {
   nodeName: string;
   nodeOnline: boolean;
   projectName: string | null;
+  projectId?: string | null;
   clientName: string;
+  clientId?: string | null;
   allowedActions: string[];
   lastUpdatedAt: string;
   details?: ContainerDetailsView | null;

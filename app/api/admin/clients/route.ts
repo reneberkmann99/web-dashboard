@@ -5,18 +5,38 @@ import { fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
   try {
     await requireApiRole("ADMIN");
 
-    const clients = await prisma.clientAccount.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        _count: { select: { users: true, assignments: true, grants: true, projects: true } }
-      }
-    });
+    const url = new URL(request.url);
+    const search = url.searchParams.get("search")?.trim();
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? "25"), 1), 100);
+    const page = Math.max(Number(url.searchParams.get("page") ?? "1"), 1);
 
-    // last activity per client
+    const where = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" as const } },
+            { slug: { contains: search, mode: "insensitive" as const } }
+          ]
+        }
+      : {};
+
+    const [total, clients] = await Promise.all([
+      prisma.clientAccount.count({ where }),
+      prisma.clientAccount.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip: (page - 1) * limit,
+        include: {
+          _count: { select: { users: true, assignments: true, grants: true, projects: true } }
+        }
+      })
+    ]);
+
+    // last activity per client (only for the current page)
     const withActivity = await Promise.all(
       clients.map(async (client) => {
         const last = await prisma.auditLog.findFirst({
@@ -46,7 +66,13 @@ export async function GET(): Promise<Response> {
       })
     );
 
-    return ok({ clients: withActivity });
+    return ok({
+      clients: withActivity,
+      total,
+      page,
+      limit,
+      pageCount: Math.max(1, Math.ceil(total / limit))
+    });
   } catch (error) {
     return fromError(error);
   }
