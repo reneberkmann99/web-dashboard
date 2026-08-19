@@ -152,6 +152,15 @@ model NodeEnrollmentToken {
   @@index([expiresAt])
 }
 
+/**
+ * A Project may have NO client (an "internal" / unassigned workload visible
+ * only to ADMIN — nothing is granted to any tenant until an AccessGrant
+ * exists). `clientAccountId` is therefore nullable; ownership/ACL is always
+ * resolved through `AccessGrant`, never inferred from this field alone (see
+ * `resolveVisibleContainersForSession` in containers.ts). Slug uniqueness is
+ * scoped per-node (not per-client) so an internal workload's slug can't
+ * collide with anything else on the same node regardless of client.
+ */
 model Project {
   id              String                @id @default(cuid())
   name            String
@@ -160,8 +169,8 @@ model Project {
   source          ProjectSource         @default(MANUAL)
   composeProject  String?
   isActive        Boolean               @default(true)
-  clientAccountId String
-  clientAccount   ClientAccount         @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  clientAccountId String?
+  clientAccount   ClientAccount?        @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
   nodeId          String
   node            Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   assignments     ContainerAssignment[]
@@ -170,10 +179,11 @@ model Project {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
-  @@unique([clientAccountId, slug])
+  @@unique([nodeId, slug])
   @@unique([nodeId, composeProject])
   @@index([nodeId])
   @@index([source])
+  @@index([clientAccountId])
 }
 
 /**

@@ -55,6 +55,8 @@ export function humanizeAction(action: string): string {
     USER_ACTIVATE: "Activated user",
     USER_DEACTIVATE: "Deactivated user",
     USER_REINVITE: "Reissued invitation",
+    PROJECT_CONVERT_TO_COMPOSE: "Converted to Compose-managed workload",
+    PROJECT_DETACH_COMPOSE: "Detached from Compose tracking",
     CLIENT_CREATE: "Created client",
     CLIENT_UPDATE: "Updated client",
     CLIENT_DEACTIVATE: "Deactivated client",

@@ -77,6 +77,23 @@ export class MockDockerAdapter implements DockerAdapter {
     ];
   }
 
+  async inspectNetworks(names: string[]): Promise<import("./types").NetworkInfo[]> {
+    return names.map((name) => ({
+      name,
+      id: `mock-net-${name}`,
+      driver: "bridge",
+      scope: "local",
+      internal: false,
+      subnets: ["172.30.0.0/16"],
+      gateways: ["172.30.0.1"],
+      attachedContainers: mockContainers.map((c) => c.name)
+    }));
+  }
+
+  async inspectVolumes(names: string[]): Promise<import("./types").VolumeInfo[]> {
+    return names.map((name) => ({ name, driver: "local", mountpoint: `/var/lib/docker/volumes/${name}/_data` }));
+  }
+
   async health(): Promise<boolean> {
     return true;
   }

@@ -196,6 +196,43 @@ app.get("/storage", async (_req: Request, res: Response) => {
   }
 });
 
+const resourceNameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/);
+const MAX_BATCH_NAMES = 50;
+
+/**
+ * Batch network inspection. Names are supplied as a JSON body array (POST,
+ * not GET) because a workload can reference more networks than comfortably
+ * fits a query string, and the request carries no side effects — it's a
+ * read, but shaped like one for payload-size reasons.
+ */
+app.post("/networks/inspect", async (req: Request, res: Response) => {
+  try {
+    const names = z.array(resourceNameSchema).max(MAX_BATCH_NAMES).parse(req.body?.names ?? []);
+    const networks = adapter.inspectNetworks ? await adapter.inspectNetworks(names) : [];
+    res.json({ nodeOnline: true, networks });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ nodeOnline: true, networks: [], error: "Invalid network name(s)" });
+    } else {
+      res.status(502).json({ nodeOnline: true, networks: [], error: "Failed to inspect networks" });
+    }
+  }
+});
+
+app.post("/volumes/inspect", async (req: Request, res: Response) => {
+  try {
+    const names = z.array(resourceNameSchema).max(MAX_BATCH_NAMES).parse(req.body?.names ?? []);
+    const volumes = adapter.inspectVolumes ? await adapter.inspectVolumes(names) : [];
+    res.json({ nodeOnline: true, volumes });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ nodeOnline: true, volumes: [], error: "Invalid volume name(s)" });
+    } else {
+      res.status(502).json({ nodeOnline: true, volumes: [], error: "Failed to inspect volumes" });
+    }
+  }
+});
+
 app.get("/containers", async (_req: Request, res: Response) => {
   try {
     const containers = await adapter.listContainers();

@@ -1,19 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { WorkloadNetworksTab, WorkloadVolumesTab } from "@/components/workloads/networks-volumes-tabs";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type ContainersPayload = { containers: ContainerView[] };
 
+const TABS = ["Containers", "Networks", "Volumes"] as const;
+
 export default function ClientWorkloadDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const [tab, setTab] = useState<(typeof TABS)[number]>("Containers");
 
   const workloads = useQuery({
     queryKey: ["client-workloads"],
@@ -56,17 +60,40 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         </p>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={workloadContainers}
-        searchableText={(c) => c.name}
-        searchPlaceholder="Search containers…"
-        loading={containers.isLoading}
-        emptyTitle="No containers in this workload"
-        emptyBody="This workload has no containers visible to you."
-        onRowClick={(c) => router.push(`/client/containers/${c.assignmentId}`)}
-        rowKey={(c) => c.containerId}
-      />
+      {tab === "Containers" && (
+        <DataTable
+          columns={columns}
+          rows={workloadContainers}
+          searchableText={(c) => c.name}
+          searchPlaceholder="Search containers…"
+          loading={containers.isLoading}
+          emptyTitle="No containers in this workload"
+          emptyBody="This workload has no containers visible to you."
+          onRowClick={(c) => router.push(`/client/containers/${c.assignmentId}`)}
+          rowKey={(c) => c.containerId}
+        />
+      )}
+
+      {tab === "Networks" && (
+        <WorkloadNetworksTab resourcesUrl={`/api/client/workloads/${workload.id}/resources`} />
+      )}
+
+      {tab === "Volumes" && (
+        <WorkloadVolumesTab resourcesUrl={`/api/client/workloads/${workload.id}/resources`} />
+      )}
+
+      <div className="flex gap-1 border-b border-border">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={`rounded-t px-4 py-2 text-sm ${tab === t ? "border-b-2 border-accent font-medium" : "text-muted hover:text-text"}`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

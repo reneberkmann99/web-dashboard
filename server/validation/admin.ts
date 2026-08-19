@@ -89,7 +89,8 @@ export const createProjectSchema = z.object({
   name: z.string().min(2).max(120),
   slug: z.string().min(2).max(60).regex(/^[a-z0-9-]+$/),
   description: z.string().max(500).nullable().optional(),
-  clientAccountId: z.string().cuid(),
+  // Nullable: a workload may be internal (no client) until explicitly granted.
+  clientAccountId: z.string().cuid().nullable().optional(),
   nodeId: z.string().cuid(),
   isActive: z.boolean().optional()
 });
@@ -98,7 +99,7 @@ export const updateProjectSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   slug: z.string().min(2).max(60).regex(/^[a-z0-9-]+$/).optional(),
   description: z.string().max(500).nullable().optional(),
-  clientAccountId: z.string().cuid().optional(),
+  clientAccountId: z.string().cuid().nullable().optional(),
   nodeId: z.string().cuid().optional(),
   isActive: z.boolean().optional()
 });

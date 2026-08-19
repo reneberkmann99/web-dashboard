@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { WorkloadNetworksTab, WorkloadVolumesTab } from "@/components/workloads/networks-volumes-tabs";
 import { timeAgo } from "@/lib/format";
 import { humanizeAction } from "@/lib/format";
 
@@ -52,7 +53,7 @@ type WorkloadDetailPayload = {
 type GrantModalState = { open: boolean; clientId: string; level: "start" | "view" };
 type RestartResponse = { total: number; operationIds: string[]; failures: Array<{ dockerName: string; reason: string }> };
 
-const TABS = ["Overview", "Containers", "Activity"] as const;
+const TABS = ["Overview", "Containers", "Networks", "Volumes", "Activity"] as const;
 
 export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
@@ -61,6 +62,8 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
   const [grantModal, setGrantModal] = useState<GrantModalState>({ open: false, clientId: "", level: "start" });
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [confirmDetach, setConfirmDetach] = useState(false);
+  const [confirmConvert, setConfirmConvert] = useState(false);
 
   const query = useQuery({
     queryKey: ["workload", params.id],
@@ -81,6 +84,34 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       queryClient.invalidateQueries({ queryKey: ["workload", params.id] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Restart failed")
+  });
+
+  const detachMutation = useMutation({
+    mutationFn: () => apiFetch<{ id: string }>(`/api/admin/workloads/${params.id}/detach`, { method: "POST" }),
+    onSuccess: () => {
+      toast.success("Detached from Compose tracking — workload is now MANUAL");
+      queryClient.invalidateQueries({ queryKey: ["workload", params.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Detach failed")
+  });
+
+  const convertMutation = useMutation({
+    mutationFn: () => apiFetch<{ id: string }>(`/api/admin/workloads/${params.id}/convert`, { method: "POST" }),
+    onSuccess: () => {
+      toast.success("Converted to Compose-managed workload");
+      queryClient.invalidateQueries({ queryKey: ["workload", params.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Conversion failed")
+  });
+
+  // Conversion eligibility (only meaningful for MANUAL workloads).
+  const convertPreview = useQuery({
+    queryKey: ["workload-convert-preview", params.id],
+    queryFn: () =>
+      apiFetch<{ preview: { eligible: boolean; composeProject?: string; workloadContainers?: string[]; allComposeServices?: string[]; reason?: string; detail?: string } }>(
+        `/api/admin/workloads/${params.id}/convert-preview`
+      ),
+    enabled: true
   });
 
   if (query.isLoading) {
@@ -144,6 +175,16 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           <Button size="sm" variant="secondary" onClick={() => setGrantModal({ open: true, clientId: "", level: "start" })}>
             Grant access
           </Button>
+          {workload.source === "MANUAL" && convertPreview.data?.preview.eligible && (
+            <Button size="sm" variant="secondary" onClick={() => setConfirmConvert(true)}>
+              Convert to Compose-managed
+            </Button>
+          )}
+          {workload.source === "COMPOSE" && (
+            <Button size="sm" variant="secondary" onClick={() => setConfirmDetach(true)}>
+              Detach from Compose
+            </Button>
+          )}
           {workload.totalContainers > 0 && (
             <Button size="sm" variant="danger" onClick={() => setConfirmRestart(true)} disabled={restartMutation.isPending}>
               Restart workload
@@ -218,6 +259,12 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         />
       )}
 
+      {/* Networks */}
+      {tab === "Networks" && <WorkloadNetworksTab resourcesUrl={`/api/admin/workloads/${workload.id}/resources`} />}
+
+      {/* Volumes */}
+      {tab === "Volumes" && <WorkloadVolumesTab resourcesUrl={`/api/admin/workloads/${workload.id}/resources`} />}
+
       {/* Activity */}
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
@@ -275,6 +322,30 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         impact={`${workload.totalContainers} container${workload.totalContainers === 1 ? "" : "s"} will be restarted and the service may be temporarily unavailable.`}
         confirmLabel={`Restart ${workload.totalContainers} container${workload.totalContainers === 1 ? "" : "s"}`}
         danger
+      />
+
+      <ConfirmDialog
+        open={confirmDetach}
+        onClose={() => setConfirmDetach(false)}
+        onConfirm={() => {
+          setConfirmDetach(false);
+          detachMutation.mutate();
+        }}
+        title={`Detach ${workload.name} from Compose?`}
+        impact="HostPanel will stop automatically tracking this Compose project and treat the workload as MANUAL. This does NOT stop or delete any containers, volumes, networks, or Docker Compose resources — those are left completely untouched."
+        confirmLabel="Detach from Compose"
+      />
+
+      <ConfirmDialog
+        open={confirmConvert}
+        onClose={() => setConfirmConvert(false)}
+        onConfirm={() => {
+          setConfirmConvert(false);
+          convertMutation.mutate();
+        }}
+        title={`Convert ${workload.name} to Compose-managed?`}
+        impact={`HostPanel will start tracking this workload from Compose project "${convertPreview.data?.preview.composeProject ?? ""}". Its ID, name, client, grants and activity history are retained. Membership will then sync automatically as containers are recreated.`}
+        confirmLabel="Convert to Compose-managed"
       />
     </div>
   );

@@ -41,6 +41,18 @@ export const containerRuntimeSchema = z.object({
   lastUpdatedAt: z.string(),
   composeProject: z.string().nullable().optional(),
   composeService: z.string().nullable().optional(),
+  networkNames: z.array(z.string()).optional(),
+  mountRefs: z
+    .array(
+      z.object({
+        type: z.string(),
+        source: z.string(),
+        destination: z.string(),
+        mode: z.string(),
+        volumeName: z.string().nullable()
+      })
+    )
+    .optional(),
   details: containerDetailsSchema.nullable().optional()
 });
 
@@ -73,6 +85,35 @@ export const storageSummaryResponseSchema = z.object({
   summary: z.array(storageSummaryEntrySchema)
 });
 
+export const networkInfoSchema = z.object({
+  name: z.string(),
+  id: z.string(),
+  driver: z.string(),
+  scope: z.string(),
+  internal: z.boolean(),
+  subnets: z.array(z.string()),
+  gateways: z.array(z.string()),
+  attachedContainers: z.array(z.string())
+});
+
+export const networksInspectResponseSchema = z.object({
+  nodeOnline: z.boolean(),
+  networks: z.array(networkInfoSchema)
+});
+
+export const volumeInfoSchema = z.object({
+  name: z.string(),
+  driver: z.string(),
+  mountpoint: z.string().nullable()
+});
+
+export const volumesInspectResponseSchema = z.object({
+  nodeOnline: z.boolean(),
+  volumes: z.array(volumeInfoSchema)
+});
+
 export type StorageSummaryEntry = z.infer<typeof storageSummaryEntrySchema>;
+export type NetworkInfo = z.infer<typeof networkInfoSchema>;
+export type VolumeInfo = z.infer<typeof volumeInfoSchema>;
 
 export type RuntimeContainer = z.infer<typeof containerRuntimeSchema>;

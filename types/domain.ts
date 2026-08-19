@@ -196,7 +196,7 @@ export type ProjectRecord = {
   description: string | null;
   isActive: boolean;
   node: { id: string; name: string };
-  clientAccount: { id: string; name: string };
+  clientAccount: { id: string; name: string } | null;
   _count: { assignments: number; grants: number; containers: number };
 };
 

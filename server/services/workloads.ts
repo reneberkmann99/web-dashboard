@@ -28,6 +28,7 @@ export type WorkloadDetail = {
   source: string;
   composeProject: string | null;
   node: { id: string; name: string; hostname: string; status: string };
+  /** Null when this is an internal workload with no owning client yet. */
   client: { id: string; name: string; slug: string } | null;
   grants: Array<{ id: string; allowedActions: string[]; clientName: string }>;
   containerSummaries: Array<{
@@ -62,7 +63,7 @@ export function toWorkloadDetail(
     source: string;
     composeProject: string | null;
     node: { id: string; name: string; hostname: string; status: string };
-    clientAccount: { id: string; name: string; slug: string };
+    clientAccount: { id: string; name: string; slug: string } | null;
     grants: Array<{ id: string; allowedActions: string[]; clientAccount: { name: string } }>;
     containers: Array<{ dockerContainerId: string; dockerName: string }>;
   },
@@ -125,7 +126,9 @@ export function toWorkloadDetail(
     source: project.source,
     composeProject: project.composeProject,
     node: project.node,
-    client: { id: project.clientAccount.id, name: project.clientAccount.name, slug: project.clientAccount.slug },
+    client: project.clientAccount
+      ? { id: project.clientAccount.id, name: project.clientAccount.name, slug: project.clientAccount.slug }
+      : null,
     grants: project.grants.map((g) => ({
       id: g.id,
       allowedActions: g.allowedActions,

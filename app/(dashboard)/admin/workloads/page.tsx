@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { Compass } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { timeAgo } from "@/lib/format";
@@ -111,9 +113,15 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Workloads</h1>
-        <p className="text-muted">Logical services running across your infrastructure.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold">Workloads</h1>
+          <p className="text-muted">Logical services running across your infrastructure.</p>
+        </div>
+        <Button variant="secondary" onClick={() => router.push("/admin/compose")}>
+          <Compass size={14} className="mr-2" />
+          Discover Compose projects
+        </Button>
       </div>
 
       <div className="flex flex-wrap gap-2">

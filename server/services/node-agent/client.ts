@@ -5,8 +5,12 @@ import {
   containerLogsResponseSchema,
   listContainersResponseSchema,
   storageSummaryResponseSchema,
+  networksInspectResponseSchema,
+  volumesInspectResponseSchema,
   RuntimeContainer,
-  StorageSummaryEntry
+  StorageSummaryEntry,
+  NetworkInfo,
+  VolumeInfo
 } from "@/server/services/node-agent/types";
 
 /**
@@ -33,7 +37,8 @@ export class NodeAgentClient {
   private async call<T>(
     node: Node,
     path: string,
-    method = "GET"
+    method = "GET",
+    body?: unknown
   ): Promise<AgentResponse<T>> {
     if (!node.isActive || node.status === NodeStatus.INACTIVE) {
       return { ok: false, data: null };
@@ -50,6 +55,7 @@ export class NodeAgentClient {
           "Content-Type": "application/json",
           "x-agent-key": decryptSecret(node.apiKeyEncrypted)
         },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
         cache: "no-store"
       });
@@ -184,6 +190,28 @@ export class NodeAgentClient {
       return [];
     }
     return parsed.data.summary;
+  }
+
+  /** Batch network inspection, bounded by the caller (agent caps at 50). */
+  async inspectNetworks(node: Node, names: string[]): Promise<NetworkInfo[]> {
+    if (names.length === 0) return [];
+    const result = await this.call<unknown>(node, "/networks/inspect", "POST", { names });
+    if (!result.ok || !result.data) {
+      return [];
+    }
+    const parsed = networksInspectResponseSchema.safeParse(result.data);
+    return parsed.success ? parsed.data.networks : [];
+  }
+
+  /** Batch named-volume inspection, bounded by the caller (agent caps at 50). */
+  async inspectVolumes(node: Node, names: string[]): Promise<VolumeInfo[]> {
+    if (names.length === 0) return [];
+    const result = await this.call<unknown>(node, "/volumes/inspect", "POST", { names });
+    if (!result.ok || !result.data) {
+      return [];
+    }
+    const parsed = volumesInspectResponseSchema.safeParse(result.data);
+    return parsed.success ? parsed.data.volumes : [];
   }
 
   /** Agent + host metadata (version, docker version, os, cpu, memory). */

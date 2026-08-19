@@ -1,8 +1,9 @@
 import { ProjectSource } from "@prisma/client";
 import { prisma } from "@/server/db";
+import { nodeAgentClient } from "@/server/services/node-agent/client";
 
 /**
- * Compose workload discovery & reconciliation.
+ * Compose workload discovery, adoption, conversion & reconciliation.
  *
  * A Docker Compose project (identified by the `com.docker.compose.project`
  * label) can become a HostPanel workload. Two sources coexist:
@@ -18,6 +19,12 @@ import { prisma } from "@/server/db";
  *     stale row is marked inactive (never deleted).
  *   - Grants are project-level, so ordinary Compose container recreation does
  *     not disturb tenant access.
+ *   - Adoption/conversion NEVER silently steals containers from another
+ *     workload — conflicts are detected up front and require an explicit,
+ *     confirmed resolution (`moveConflictingContainers: true`).
+ *   - Detach and every read path here are pure DB operations; nothing in this
+ *     module ever issues a mutating Docker command (no start/stop/rm, no
+ *     `docker compose down`).
  */
 
 export type ComposeContainerRef = {
@@ -47,12 +54,14 @@ function shouldReconcile(nodeId: string): boolean {
 }
 
 function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "compose";
+  return (
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "compose"
+  );
 }
 
 /**
@@ -61,10 +70,7 @@ function slugify(value: string): string {
  * mark no-longer-reported members inactive. Returns the number of projects
  * reconciled.
  */
-export async function reconcileComposeWorkloads(
-  nodeId: string,
-  live: ComposeContainerRef[]
-): Promise<number> {
+export async function reconcileComposeWorkloads(nodeId: string, live: ComposeContainerRef[]): Promise<number> {
   const composeGroups = new Map<string, ComposeContainerRef[]>();
   for (const c of live) {
     if (!c.composeProject) continue;
@@ -146,10 +152,7 @@ export async function reconcileComposeIfDue(nodeId: string, live: ComposeContain
  * Store Compose labels on the discovered Container rows even before a workload
  * is adopted, so an admin can see and adopt the project later.
  */
-export async function recordComposeMetadata(
-  nodeId: string,
-  live: ComposeContainerRef[]
-): Promise<void> {
+export async function recordComposeMetadata(nodeId: string, live: ComposeContainerRef[]): Promise<void> {
   for (const c of live) {
     if (!c.composeProject && !c.composeService) continue;
     await prisma.container
@@ -178,78 +181,357 @@ export async function recordComposeMetadata(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Discovery (list + detail)
+// ---------------------------------------------------------------------------
+
 export type DiscoveredComposeProject = {
   nodeId: string;
   nodeName: string;
   composeProject: string;
   containerCount: number;
+  runningCount: number;
+  healthSummary: "healthy" | "degraded" | "down" | "unknown";
+  serviceNames: string[];
+  networkCount: number;
+  volumeCount: number;
+  /** True if any of this project's containers already belong to a different HostPanel workload. */
+  hasConflict: boolean;
+  lastObservedAt: string | null;
   adopted: boolean;
   workloadId: string | null;
+  workloadName: string | null;
 };
 
-/** List Compose projects detected across nodes, with adoption status. */
+/**
+ * List Compose projects detected across nodes, enriched with health/service/
+ * conflict summaries. Groups agent calls by node — exactly one
+ * `listContainers()` per node regardless of how many Compose projects that
+ * node has (the agent's own 15s in-memory cache makes this effectively free
+ * when called shortly after a dashboard poll).
+ */
 export async function listDiscoveredComposeProjects(): Promise<DiscoveredComposeProject[]> {
-  const containers = await prisma.container.findMany({
+  const dbContainers = await prisma.container.findMany({
     where: { isActive: true, composeProject: { not: null } },
     select: {
+      id: true,
       nodeId: true,
       node: { select: { name: true } },
-      composeProject: true
+      composeProject: true,
+      composeService: true,
+      dockerContainerId: true,
+      projectId: true,
+      lastSeenAt: true,
+      project: { select: { id: true, source: true, composeProject: true } }
+    }
+  });
+  if (dbContainers.length === 0) return [];
+
+  const adoptedProjects = await prisma.project.findMany({
+    where: { source: ProjectSource.COMPOSE, isActive: true },
+    select: { id: true, name: true, nodeId: true, composeProject: true }
+  });
+  const adoptedByKey = new Map(adoptedProjects.map((p) => [`${p.nodeId}:${p.composeProject}`, p]));
+
+  // Group by node so we fetch live inventory once per node.
+  const nodeIds = Array.from(new Set(dbContainers.map((c) => c.nodeId)));
+  const nodes = await prisma.node.findMany({ where: { id: { in: nodeIds } } });
+  const liveByNode = new Map<string, Awaited<ReturnType<typeof nodeAgentClient.listContainers>>>();
+  for (const node of nodes) {
+    liveByNode.set(node.id, await nodeAgentClient.listContainers(node));
+  }
+
+  const groups = new Map<
+    string,
+    {
+      nodeId: string;
+      nodeName: string;
+      composeProject: string;
+      dockerIds: string[];
+      services: Set<string>;
+      hasConflict: boolean;
+      lastObservedAt: Date | null;
+    }
+  >();
+
+  for (const c of dbContainers) {
+    if (!c.composeProject) continue;
+    const key = `${c.nodeId}:${c.composeProject}`;
+    const entry = groups.get(key) ?? {
+      nodeId: c.nodeId,
+      nodeName: c.node.name,
+      composeProject: c.composeProject,
+      dockerIds: [],
+      services: new Set<string>(),
+      hasConflict: false,
+      lastObservedAt: null
+    };
+    entry.dockerIds.push(c.dockerContainerId);
+    if (c.composeService) entry.services.add(c.composeService);
+    if (!entry.lastObservedAt || c.lastSeenAt > entry.lastObservedAt) entry.lastObservedAt = c.lastSeenAt;
+    // Conflict: this container belongs to a project other than the COMPOSE
+    // project matching this key (i.e. a MANUAL workload, or a different
+    // COMPOSE workload entirely — should not normally happen but is possible
+    // after a relabel).
+    if (c.projectId && !(c.project?.source === ProjectSource.COMPOSE && c.project.composeProject === c.composeProject)) {
+      entry.hasConflict = true;
+    }
+    groups.set(key, entry);
+  }
+
+  const results: DiscoveredComposeProject[] = [];
+  for (const [key, g] of groups) {
+    const live = liveByNode.get(g.nodeId);
+    const liveById = new Map((live?.containers ?? []).map((c) => [c.id, c]));
+    const networkNames = new Set<string>();
+    const volumeNames = new Set<string>();
+    let running = 0;
+    let unhealthy = 0;
+    for (const dockerId of g.dockerIds) {
+      const lc = liveById.get(dockerId);
+      if (!lc) continue;
+      if (lc.status === "running") running += 1;
+      if (lc.status === "unhealthy") unhealthy += 1;
+      for (const n of lc.networkNames ?? []) networkNames.add(n);
+      for (const m of lc.mountRefs ?? []) {
+        if (m.type === "volume" && m.volumeName) volumeNames.add(m.volumeName);
+      }
+    }
+    const total = g.dockerIds.length;
+    const healthSummary: DiscoveredComposeProject["healthSummary"] = !live?.nodeOnline
+      ? "unknown"
+      : unhealthy > 0
+        ? "degraded"
+        : running === total
+          ? "healthy"
+          : running === 0
+            ? "down"
+            : "degraded";
+
+    const adopted = adoptedByKey.get(key);
+    results.push({
+      nodeId: g.nodeId,
+      nodeName: g.nodeName,
+      composeProject: g.composeProject,
+      containerCount: total,
+      runningCount: running,
+      healthSummary,
+      serviceNames: Array.from(g.services).sort(),
+      networkCount: networkNames.size,
+      volumeCount: volumeNames.size,
+      hasConflict: g.hasConflict,
+      lastObservedAt: g.lastObservedAt ? g.lastObservedAt.toISOString() : null,
+      adopted: Boolean(adopted),
+      workloadId: adopted?.id ?? null,
+      workloadName: adopted?.name ?? null
+    });
+  }
+
+  return results.sort((a, b) => a.nodeName.localeCompare(b.nodeName) || a.composeProject.localeCompare(b.composeProject));
+}
+
+export type ComposeConflict = {
+  workloadId: string;
+  workloadName: string;
+  workloadSource: string;
+  containerNames: string[];
+};
+
+/**
+ * Detect containers (by internal Container.id) that are already members of a
+ * DIFFERENT workload than the one implied by `composeProject`. Used both by
+ * adoption (before creating a new COMPOSE workload) and by the discovery
+ * detail screen (to surface the warning before the admin even opens the
+ * wizard).
+ */
+async function detectComposeConflicts(
+  composeProject: string,
+  containerIds: string[]
+): Promise<ComposeConflict[]> {
+  if (containerIds.length === 0) return [];
+  const rows = await prisma.container.findMany({
+    where: { id: { in: containerIds }, projectId: { not: null } },
+    select: {
+      dockerName: true,
+      project: { select: { id: true, name: true, source: true, composeProject: true } }
     }
   });
 
-  const projects = await prisma.project.findMany({
-    where: { source: ProjectSource.COMPOSE, isActive: true },
-    select: { id: true, nodeId: true, composeProject: true }
-  });
-  const adoptedByNode = new Map<string, string>();
-  for (const p of projects) {
-    if (p.composeProject) adoptedByNode.set(`${p.nodeId}:${p.composeProject}`, p.id);
-  }
-
-  const groups = new Map<string, DiscoveredComposeProject>();
-  for (const c of containers) {
-    if (!c.composeProject) continue;
-    const key = `${c.nodeId}:${c.composeProject}`;
-    const existing = groups.get(key);
+  const byProject = new Map<string, ComposeConflict>();
+  for (const r of rows) {
+    if (!r.project) continue;
+    if (r.project.source === ProjectSource.COMPOSE && r.project.composeProject === composeProject) {
+      continue; // already the target Compose workload — not a conflict
+    }
+    const existing = byProject.get(r.project.id);
     if (existing) {
-      existing.containerCount += 1;
+      existing.containerNames.push(r.dockerName);
     } else {
-      groups.set(key, {
-        nodeId: c.nodeId,
-        nodeName: c.node.name,
-        composeProject: c.composeProject,
-        containerCount: 1,
-        adopted: adoptedByNode.has(key),
-        workloadId: adoptedByNode.get(key) ?? null
+      byProject.set(r.project.id, {
+        workloadId: r.project.id,
+        workloadName: r.project.name,
+        workloadSource: r.project.source,
+        containerNames: [r.dockerName]
       });
     }
   }
-
-  return Array.from(groups.values()).sort(
-    (a, b) => a.nodeName.localeCompare(b.nodeName) || a.composeProject.localeCompare(b.composeProject)
-  );
+  return Array.from(byProject.values());
 }
 
+export type DiscoveredComposeProjectDetail = {
+  nodeId: string;
+  nodeName: string;
+  composeProject: string;
+  services: Array<{
+    dockerContainerId: string;
+    dockerName: string;
+    composeService: string | null;
+    status: string;
+    image: string;
+  }>;
+  runningCount: number;
+  totalCount: number;
+  healthSummary: "healthy" | "degraded" | "down" | "unknown";
+  networks: string[];
+  volumes: string[];
+  lastObservedAt: string | null;
+  conflicts: ComposeConflict[];
+  adopted: boolean;
+  workloadId: string | null;
+  workloadName: string | null;
+};
+
+/** Full detail for a single discovered (or already-adopted) Compose project. */
+export async function getDiscoveredComposeProjectDetail(
+  nodeId: string,
+  composeProject: string
+): Promise<DiscoveredComposeProjectDetail | null> {
+  const node = await prisma.node.findUnique({ where: { id: nodeId } });
+  if (!node) return null;
+
+  const dbContainers = await prisma.container.findMany({
+    where: { nodeId, composeProject, isActive: true }
+  });
+  if (dbContainers.length === 0) return null;
+
+  const live = await nodeAgentClient.listContainers(node);
+  const liveById = new Map(live.containers.map((c) => [c.id, c]));
+
+  const services = dbContainers.map((dc) => {
+    const lc = liveById.get(dc.dockerContainerId);
+    return {
+      dockerContainerId: dc.dockerContainerId,
+      dockerName: dc.dockerName,
+      composeService: dc.composeService,
+      status: lc?.status ?? "unknown",
+      image: lc?.image ?? dc.image ?? "unknown"
+    };
+  });
+
+  const total = services.length;
+  const running = services.filter((s) => s.status === "running").length;
+  const unhealthy = services.filter((s) => s.status === "unhealthy").length;
+  const healthSummary: DiscoveredComposeProjectDetail["healthSummary"] = !live.nodeOnline
+    ? "unknown"
+    : unhealthy > 0
+      ? "degraded"
+      : running === total
+        ? "healthy"
+        : running === 0
+          ? "down"
+          : "degraded";
+
+  const networkNames = new Set<string>();
+  const volumeNames = new Set<string>();
+  for (const dc of dbContainers) {
+    const lc = liveById.get(dc.dockerContainerId);
+    for (const n of lc?.networkNames ?? []) networkNames.add(n);
+    for (const m of lc?.mountRefs ?? []) {
+      if (m.type === "volume" && m.volumeName) volumeNames.add(m.volumeName);
+    }
+  }
+
+  const conflicts = await detectComposeConflicts(
+    composeProject,
+    dbContainers.map((c) => c.id)
+  );
+
+  const adopted = await prisma.project.findFirst({
+    where: { nodeId, composeProject, source: ProjectSource.COMPOSE },
+    select: { id: true, name: true }
+  });
+
+  const lastObserved = dbContainers.reduce<Date | null>(
+    (acc, c) => (!acc || c.lastSeenAt > acc ? c.lastSeenAt : acc),
+    null
+  );
+
+  return {
+    nodeId,
+    nodeName: node.name,
+    composeProject,
+    services: services.sort((a, b) => a.dockerName.localeCompare(b.dockerName)),
+    runningCount: running,
+    totalCount: total,
+    healthSummary,
+    networks: Array.from(networkNames).sort(),
+    volumes: Array.from(volumeNames).sort(),
+    lastObservedAt: lastObserved ? lastObserved.toISOString() : null,
+    conflicts,
+    adopted: Boolean(adopted),
+    workloadId: adopted?.id ?? null,
+    workloadName: adopted?.name ?? null
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Adoption
+// ---------------------------------------------------------------------------
+
+export type AdoptComposeResult =
+  | { status: "adopted"; id: string }
+  | { status: "already_adopted"; workloadId: string; workloadName: string }
+  | { status: "conflict"; conflicts: ComposeConflict[] }
+  | { status: "not_found" };
+
 /**
- * Adopt a detected Compose project as a COMPOSE workload owned by the given
- * client. Returns the created project, or null when the compose project does
- * not exist on the node or is already adopted.
+ * Adopt a detected Compose project as a COMPOSE workload, optionally owned by
+ * a client (nullable — "internal, no client" is a valid choice per the
+ * adoption wizard). Never silently reassigns containers that already belong
+ * to another workload: if conflicts exist, the caller must explicitly pass
+ * `moveConflictingContainers: true` to proceed.
  */
 export async function adoptComposeProject(input: {
-  clientAccountId: string;
+  clientAccountId?: string | null;
   nodeId: string;
   composeProject: string;
   name?: string;
   slug?: string;
   description?: string | null;
-}): Promise<{ id: string } | null> {
+  moveConflictingContainers?: boolean;
+}): Promise<AdoptComposeResult> {
   const members = await prisma.container.findMany({
     where: { nodeId: input.nodeId, composeProject: input.composeProject, isActive: true },
     select: { id: true }
   });
   if (members.length === 0) {
-    return null;
+    return { status: "not_found" };
+  }
+
+  const existing = await prisma.project.findFirst({
+    where: { nodeId: input.nodeId, composeProject: input.composeProject, source: ProjectSource.COMPOSE },
+    select: { id: true, name: true }
+  });
+  if (existing) {
+    return { status: "already_adopted", workloadId: existing.id, workloadName: existing.name };
+  }
+
+  const conflicts = await detectComposeConflicts(
+    input.composeProject,
+    members.map((m) => m.id)
+  );
+  if (conflicts.length > 0 && !input.moveConflictingContainers) {
+    return { status: "conflict", conflicts };
   }
 
   const friendly = input.name?.trim() || input.composeProject;
@@ -271,5 +553,160 @@ export async function adoptComposeProject(input: {
     data: { projectId: created.id, isActive: true }
   });
 
-  return { id: created.id };
+  return { status: "adopted", id: created.id };
+}
+
+// ---------------------------------------------------------------------------
+// Manual → Compose conversion
+// ---------------------------------------------------------------------------
+
+export type ConvertConflictReason =
+  | "already_compose"
+  | "no_compose_label"
+  | "multiple_compose_projects"
+  | "compose_project_already_adopted_elsewhere"
+  | "partial_membership";
+
+export type ConvertPreview =
+  | {
+      eligible: true;
+      composeProject: string;
+      workloadContainers: string[];
+      allComposeServices: string[];
+    }
+  | { eligible: false; reason: ConvertConflictReason; detail: string };
+
+/**
+ * Determine whether a MANUAL workload can be safely converted to a
+ * COMPOSE-managed workload: every active member must carry the SAME
+ * `com.docker.compose.project` label, no non-Compose containers may be
+ * mixed in, the Compose project name must not already be adopted by a
+ * different workload, and the manual workload's membership must already be
+ * the FULL set of live containers for that Compose project (converting must
+ * never silently drop services out of tracking).
+ */
+export async function previewConvertToCompose(projectId: string): Promise<ConvertPreview | null> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: { containers: { where: { isActive: true } } }
+  });
+  if (!project) return null;
+
+  if (project.source === ProjectSource.COMPOSE) {
+    return { eligible: false, reason: "already_compose", detail: "This workload is already Compose-managed." };
+  }
+  if (project.containers.length === 0) {
+    return { eligible: false, reason: "no_compose_label", detail: "This workload has no active containers to inspect." };
+  }
+
+  const composeLabels = new Set(
+    project.containers.map((c) => c.composeProject).filter((v): v is string => Boolean(v))
+  );
+  if (composeLabels.size === 0) {
+    return {
+      eligible: false,
+      reason: "no_compose_label",
+      detail: "None of this workload's containers carry Docker Compose labels."
+    };
+  }
+  if (composeLabels.size > 1) {
+    return {
+      eligible: false,
+      reason: "multiple_compose_projects",
+      detail: `This workload's containers span ${composeLabels.size} different Compose projects (${Array.from(composeLabels).join(", ")}) — the mapping is ambiguous.`
+    };
+  }
+  const composeProject = Array.from(composeLabels)[0];
+
+  const nonComposeMembers = project.containers.filter((c) => c.composeProject !== composeProject);
+  if (nonComposeMembers.length > 0) {
+    return {
+      eligible: false,
+      reason: "partial_membership",
+      detail: `${nonComposeMembers.length} container(s) in this workload do not carry the "${composeProject}" Compose label.`
+    };
+  }
+
+  const existingCompose = await prisma.project.findFirst({
+    where: { nodeId: project.nodeId, composeProject, source: ProjectSource.COMPOSE, NOT: { id: project.id } }
+  });
+  if (existingCompose) {
+    return {
+      eligible: false,
+      reason: "compose_project_already_adopted_elsewhere",
+      detail: `Compose project "${composeProject}" is already tracked by workload "${existingCompose.name}".`
+    };
+  }
+
+  const allComposeContainers = await prisma.container.findMany({
+    where: { nodeId: project.nodeId, composeProject, isActive: true },
+    select: { id: true, dockerName: true }
+  });
+  const memberIds = new Set(project.containers.map((c) => c.id));
+  const missing = allComposeContainers.filter((c) => !memberIds.has(c.id));
+  if (missing.length > 0) {
+    return {
+      eligible: false,
+      reason: "partial_membership",
+      detail: `${missing.length} container(s) belonging to Compose project "${composeProject}" are not currently members of this workload (${missing.map((m) => m.dockerName).join(", ")}). Add them to this workload first, or adopt "${composeProject}" as a separate workload instead.`
+    };
+  }
+
+  return {
+    eligible: true,
+    composeProject,
+    workloadContainers: project.containers.map((c) => c.dockerName),
+    allComposeServices: allComposeContainers.map((c) => c.dockerName)
+  };
+}
+
+/**
+ * Convert a MANUAL workload to COMPOSE in place. Retains id, name, client
+ * association, grants and activity history — this is a plain field update,
+ * never a create+migrate, so nothing is orphaned. Only proceeds when
+ * `previewConvertToCompose` reports `eligible: true`.
+ */
+export async function convertToComposeManaged(
+  projectId: string
+): Promise<{ id: string } | { error: string }> {
+  const preview = await previewConvertToCompose(projectId);
+  if (!preview) return { error: "Workload not found" };
+  if (!preview.eligible) return { error: preview.detail };
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { source: ProjectSource.COMPOSE, composeProject: preview.composeProject }
+  });
+
+  return { id: projectId };
+}
+
+// ---------------------------------------------------------------------------
+// Detach (stop automatic Compose tracking)
+// ---------------------------------------------------------------------------
+
+/**
+ * Detach a COMPOSE workload from automatic reconciliation, converting it back
+ * to MANUAL with its currently-known active containers as static membership.
+ *
+ * This function NEVER touches Docker: it is a pure database update (source →
+ * MANUAL, composeProject → null). No container is stopped, no volume or
+ * network is removed, no `docker compose down` is ever invoked from this or
+ * any code path this function calls. Existing grants, activity history, and
+ * the workload id/name are all untouched — only future inventory refreshes
+ * stop re-syncing membership for this project (reconcileComposeWorkloads only
+ * iterates `source: COMPOSE` projects).
+ */
+export async function detachComposeTracking(projectId: string): Promise<{ id: string } | null> {
+  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  if (!project || project.source !== ProjectSource.COMPOSE) {
+    return null;
+  }
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { source: ProjectSource.MANUAL, composeProject: null }
+  });
+
+  return { id: projectId };
 }

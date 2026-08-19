@@ -13,6 +13,14 @@ export type RuntimeContainer = {
   /** Docker Compose project/service labels (com.docker.compose.project/service). */
   composeProject?: string | null;
   composeService?: string | null;
+  /**
+   * Lightweight network/mount references captured during the per-container
+   * inspect that `listContainers()` already performs — cheap to include
+   * (zero extra Docker calls) and enough for workload-level Networks/Volumes
+   * aggregation without inspecting every container again.
+   */
+  networkNames?: string[];
+  mountRefs?: Array<{ type: string; source: string; destination: string; mode: string; volumeName: string | null }>;
   /** Detailed docker inspect-derived metadata (networks, mounts, labels, …). */
   details?: ContainerDetails | null;
 };
@@ -46,6 +54,10 @@ export interface DockerAdapter {
   runAction(containerId: string, action: "start" | "stop" | "restart"): Promise<boolean>;
   /** Docker disk usage summary (images/containers/volumes/build-cache). */
   getStorageSummary?(): Promise<StorageSummaryEntry[]>;
+  /** Batch-inspect specific networks by name (bounded by caller). */
+  inspectNetworks?(names: string[]): Promise<NetworkInfo[]>;
+  /** Batch-inspect specific named volumes by name (bounded by caller). */
+  inspectVolumes?(names: string[]): Promise<VolumeInfo[]>;
 }
 
 export type StorageSummaryEntry = {
@@ -54,4 +66,23 @@ export type StorageSummaryEntry = {
   active: number;
   size: string;
   reclaimable: string;
+};
+
+export type NetworkInfo = {
+  name: string;
+  id: string;
+  driver: string;
+  scope: string;
+  internal: boolean;
+  subnets: string[];
+  gateways: string[];
+  /** Names of every container currently attached to this network on this node. */
+  attachedContainers: string[];
+};
+
+export type VolumeInfo = {
+  name: string;
+  driver: string;
+  /** Host filesystem mountpoint. Admin-only at the control-plane layer. */
+  mountpoint: string | null;
 };

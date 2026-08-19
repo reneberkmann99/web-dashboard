@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
-import { formatBytes, timeAgo } from "@/lib/format";
+import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 
 type NodeDetailPayload = {
@@ -15,11 +16,14 @@ type NodeDetailPayload = {
     id: string;
     name: string;
     hostname: string;
+    apiBaseUrl: string;
+    dockerContext: string | null;
     status: string;
     isActive: boolean;
     lastHeartbeatAt: string | null;
     agentVersion: string | null;
     dockerVersion: string | null;
+    createdAt: string;
     osInfo: Record<string, unknown> | null;
     systemInfo: Record<string, unknown> | null;
     containerCount: number;
@@ -33,8 +37,9 @@ type NodeDetailPayload = {
 };
 
 type ContainersPayload = { containers: RuntimeContainer[] };
+type EnrollTokenPayload = { token: string; expiresAt: string; ttlMinutes: number };
 
-const TABS = ["Overview", "Workloads", "Containers", "Activity"] as const;
+const TABS = ["Overview", "Workloads", "Containers", "Configuration", "Activity"] as const;
 
 export default function AdminNodeDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
@@ -52,6 +57,21 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
     queryFn: () => apiFetch<ContainersPayload>(`/api/admin/nodes/${params.id}/containers`),
     refetchInterval: 15000,
     enabled: tab === "Containers"
+  });
+
+  const [enrollToken, setEnrollToken] = useState<string | null>(null);
+  const enrollMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<EnrollTokenPayload>("/api/admin/nodes/enroll-token", {
+        method: "POST",
+        body: JSON.stringify({ nodeId: params.id })
+      }),
+    onSuccess: (data) => {
+      setEnrollToken(data.token);
+      void navigator.clipboard.writeText(data.token);
+      toast.success("Re-enrollment token generated and copied (15 min, single-use)");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to generate token")
   });
 
   if (detail.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
@@ -217,6 +237,52 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           onRowClick={(c) => router.push(`/admin/containers/${node.id}/${c.id}`)}
           rowKey={(c) => c.id}
         />
+      )}
+
+      {tab === "Configuration" && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-lg border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Agent configuration</h2>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <Stat label="Node ID" value={node.id} />
+              <Stat label="Display name" value={node.name} />
+              <Stat label="Hostname" value={node.hostname} />
+              <Stat label="Agent endpoint" value={node.apiBaseUrl} />
+              <Stat label="Docker context" value={node.dockerContext ?? "default"} />
+              <Stat label="Agent version" value={node.agentVersion ?? "—"} />
+              <Stat label="Enabled" value={node.isActive ? "yes" : "no"} />
+              <Stat label="Enrollment mode" value={node.agentVersion ? "token (self-registered)" : "manual"} />
+              <Stat label="Registered" value={formatDateTime(node.createdAt)} />
+            </dl>
+          </div>
+
+          <div className="rounded-lg border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Polling & reconciliation</h2>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <Stat label="Agent list cache" value="15 s" />
+              <Stat label="Compose reconcile" value="every 30 s (throttled)" />
+              <Stat label="Dashboard poll" value="8–20 s" />
+              <Stat label="Heartbeat" value="on inventory refresh" />
+            </dl>
+          </div>
+
+          <div className="rounded-lg border border-border bg-panel p-4 lg:col-span-2">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted">Agent credential rotation</h2>
+            <p className="mb-3 text-sm text-muted">
+              Generate a one-time re-enrollment token (15 min TTL). The agent rotates its API key the next time it
+              starts with <code className="rounded bg-panelAlt px-1">AGENT_ENROLL_TOKEN</code> set; the old key stops
+              working immediately after re-enrollment.
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => enrollMutation.mutate()} disabled={enrollMutation.isPending}>
+              {enrollMutation.isPending ? "Generating…" : "Generate re-enrollment token"}
+            </Button>
+            {enrollToken && (
+              <p className="mt-3 break-all rounded border border-border bg-black/40 p-2 font-mono text-xs text-slate-200">
+                {enrollToken}
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       {tab === "Activity" && (
