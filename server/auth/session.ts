@@ -130,8 +130,13 @@ export const CSRF_COOKIE = "hostpanel_csrf";
  * mirrors into the X-CSRF-Token header on state-changing requests. The
  * middleware rejects requests where the two differ. SameSite=Lax is set so
  * cross-site top-level POSTs cannot even attach it.
+ *
+ * The cookie lifetime is tied to the session (via `expiresAt`) so it survives
+ * browser restarts for as long as the session does. Without this, the session
+ * cookie (persistent, 12h) outlives the CSRF cookie (session-scoped), leaving
+ * the browser authenticated but with no CSRF token — every mutation 403s.
  */
-export function setCsrfCookie(response: NextResponse): void {
+export function setCsrfCookie(response: NextResponse, expiresAt?: Date): void {
   const token = crypto.randomBytes(24).toString("hex");
   response.cookies.set({
     name: CSRF_COOKIE,
@@ -141,6 +146,7 @@ export function setCsrfCookie(response: NextResponse): void {
       ? process.env.COOKIE_SECURE === "true"
       : process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: "/"
+    path: "/",
+    ...(expiresAt ? { expires: expiresAt } : {})
   });
 }

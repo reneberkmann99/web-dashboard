@@ -69,7 +69,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       redirectPath: token.user.role === "ADMIN" ? "/admin" : "/client"
     });
     setSessionCookie(response, session.token, session.expiresAt);
-    setCsrfCookie(response);
+    setCsrfCookie(response, session.expiresAt);
     return response;
   } catch (error) {
     const { fromError } = await import("@/server/http");

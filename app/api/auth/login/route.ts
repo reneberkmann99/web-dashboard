@@ -249,7 +249,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
 
     setSessionCookie(response, session.token, session.expiresAt);
-    setCsrfCookie(response);
+    setCsrfCookie(response, session.expiresAt);
     return response;
   } catch (error) {
     return fromError(error);

@@ -7,6 +7,7 @@ import {
   Boxes,
   LayoutDashboard,
   LogOut,
+  Search,
   Server,
   Settings,
   Users,
@@ -15,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { isClientRole } from "@/types/domain";
+import { CommandPalette } from "@/components/search/command-palette";
 
 type ShellSession = {
   displayName: string;
@@ -116,22 +118,35 @@ export function DashboardShell({
         <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:px-6 md:py-4">
           <p className="hidden text-sm text-muted sm:block">{new Date().toLocaleString()}</p>
           <p className="text-sm text-muted sm:hidden">HostPanel</p>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              router.push("/login");
-              router.refresh();
-            }}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("hostpanel:open-search"))}
+              className="hidden items-center gap-2 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm text-muted transition hover:text-text focus:outline-none focus:ring-2 focus:ring-accent sm:flex"
+              aria-label="Open search"
+            >
+              <Search size={14} />
+              <span>Search</span>
+              <kbd className="rounded border border-border px-1.5 text-[10px]">⌘K</kbd>
+            </button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                router.push("/login");
+                router.refresh();
+              }}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
+          </div>
         </header>
 
         <main className="mx-auto w-full max-w-7xl p-4 md:p-6">{children}</main>
       </div>
+      <CommandPalette />
     </div>
   );
 }
