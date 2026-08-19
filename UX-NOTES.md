@@ -397,3 +397,14 @@ body, and the first-revision review step says there is nothing to diff against
 (plan + deploy still work). Covered by `scripts/ui-verify-first-deploy.mjs`
 (live browser qualification: create deployment → edit → validate → save →
 plan → deploy → reload via release path).
+
+### Fix: workload Containers tab listed the entire node (2026-08-20, after `469811d`)
+
+`toWorkloadDetail` returned summaries for every live container on the node with
+an `inProject` flag, and the Containers tab rendered them all — every workload
+looked identical. Stats were already membership-scoped, and the tab's empty
+state explicitly says containers are attached via the workload, so the node-wide
+dump was never intended. The summaries array is now filtered to the workload's
+members (DB `Container.projectId`): COMPOSE workloads sync membership from
+compose labels, MANUAL workloads attach explicitly. Node-level views
+(`/admin/nodes/[id]`, node containers route) still list everything.

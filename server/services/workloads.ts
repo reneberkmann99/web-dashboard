@@ -71,18 +71,24 @@ export function toWorkloadDetail(
 ): WorkloadDetail {
   const projectIds = new Set(project.containers.map((c) => c.dockerContainerId));
 
-  const containerSummaries = liveContainers.map((c) => ({
-    containerId: c.id,
-    dockerName: c.name,
-    status: c.status,
-    cpuPercent: c.cpuPercent,
-    memoryUsage: c.memoryUsage,
-    restartCount: c.restartCount,
-    ports: c.ports,
-    uptime: c.uptime,
-    health: c.details?.health ?? null,
-    inProject: projectIds.has(c.id)
-  }));
+  // Only this workload's containers — never a node-wide dump. A container
+  // belongs to the workload when its DB Container row is linked to the project
+  // (projectId): COMPOSE workloads sync membership from compose labels,
+  // MANUAL workloads attach explicitly (container detail / grants workflow).
+  const containerSummaries = liveContainers
+    .map((c) => ({
+      containerId: c.id,
+      dockerName: c.name,
+      status: c.status,
+      cpuPercent: c.cpuPercent,
+      memoryUsage: c.memoryUsage,
+      restartCount: c.restartCount,
+      ports: c.ports,
+      uptime: c.uptime,
+      health: c.details?.health ?? null,
+      inProject: projectIds.has(c.id)
+    }))
+    .filter((c) => c.inProject);
 
   const inProject = containerSummaries.filter((c) => c.inProject);
   const running = inProject.filter((c) => c.status === "running").length;
