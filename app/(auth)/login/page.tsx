@@ -18,8 +18,8 @@ type LoginResponse = {
 
 export default function LoginPage(): React.JSX.Element {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@hostpanel.local");
-  const [password, setPassword] = useState("ChangeMe123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
