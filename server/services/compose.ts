@@ -65,6 +65,28 @@ function slugify(value: string): string {
 }
 
 /**
+ * Ensure a slug is unique per node (the (nodeId, slug) unique constraint).
+ * A stale MANUAL remnant of a previously adopted/detached project can still
+ * hold the slug on the same node — appending -2/-3 … keeps adoption working
+ * instead of failing on the constraint.
+ */
+async function uniqueSlugForNode(nodeId: string, base: string): Promise<string> {
+  const baseSlug = slugify(base);
+  const existing = await prisma.project.findMany({
+    where: { nodeId, slug: { startsWith: baseSlug } },
+    select: { slug: true }
+  });
+  const used = new Set(existing.map((p) => p.slug));
+  if (!used.has(baseSlug)) return baseSlug;
+  let i = 2;
+  for (;;) {
+    const candidate = `${baseSlug.slice(0, 56)}-${i}`;
+    if (!used.has(candidate)) return candidate;
+    i += 1;
+  }
+}
+
+/**
  * Reconcile COMPOSE workloads on a node against the live container inventory.
  * For each existing COMPOSE project on the node, associate current members and
  * mark no-longer-reported members inactive. Returns the number of projects
@@ -538,7 +560,7 @@ export async function adoptComposeProject(input: {
   const created = await prisma.project.create({
     data: {
       name: friendly,
-      slug: input.slug?.trim() || slugify(friendly),
+      slug: input.slug?.trim() ? await uniqueSlugForNode(input.nodeId, input.slug.trim()) : await uniqueSlugForNode(input.nodeId, friendly),
       description: input.description ?? null,
       source: ProjectSource.COMPOSE,
       composeProject: input.composeProject,

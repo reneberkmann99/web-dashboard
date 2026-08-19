@@ -32,7 +32,7 @@ type NodeDetailPayload = {
     unhealthyCount: number;
     stoppedCount: number;
     storageSummary: Array<{ type: string; totalCount: number; active: number; size: string; reclaimable: string }>;
-    projects: Array<{ id: string; name: string; slug: string; clientAccount: { name: string }; _count: { containers: number } }>;
+    projects: Array<{ id: string; name: string; slug: string; clientAccount: { name: string } | null; _count: { containers: number } }>;
   };
   activity: Array<{ id: string; action: string; actorEmail: string | null; result: string; createdAt: string }>;
 };
@@ -195,7 +195,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
                       {p.name}
                     </button>
                     <span className="ml-2 text-xs text-muted">
-                      {p.clientAccount.name} · {p._count.containers} containers
+                      {p.clientAccount?.name ?? "No client"} · {p._count.containers} containers
                     </span>
                   </li>
                 ))}
@@ -215,7 +215,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
                 <li key={p.id} className="flex items-center justify-between py-2.5">
                   <div>
                     <p className="font-medium">{p.name}</p>
-                    <p className="text-xs text-muted">{p.clientAccount.name}</p>
+                    <p className="text-xs text-muted">{p.clientAccount?.name ?? "No client"}</p>
                   </div>
                   <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/workloads/${p.id}`)}>
                     Open

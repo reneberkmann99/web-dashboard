@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
@@ -64,6 +65,13 @@ export function DashboardShell({
     : [...CLIENT_NAV, ...(isClientAdmin ? CLIENT_ADMIN_NAV : [])];
   const settingsItems = isAdmin ? ADMIN_SETTINGS : [];
 
+  // Rendered only after mount so server (UTC) and browser (local timezone)
+  // never disagree during hydration (React #418).
+  const [now, setNow] = useState<string | null>(null);
+  useEffect(() => {
+    setNow(new Date().toLocaleString());
+  }, []);
+
   return (
     <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
       <aside className="border-r border-border bg-panel p-4">
@@ -123,7 +131,7 @@ export function DashboardShell({
 
       <div className="min-w-0">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:px-6 md:py-4">
-          <p className="hidden text-sm text-muted sm:block">{new Date().toLocaleString()}</p>
+          <p className="hidden text-sm text-muted sm:block">{now ?? ""}</p>
           <p className="text-sm text-muted sm:hidden">HostPanel</p>
           <div className="flex items-center gap-2">
             <button

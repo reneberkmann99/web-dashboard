@@ -164,6 +164,48 @@ describe("Compose adoption", () => {
     expect(moved?.projectId).toBe(result.id);
     expect(moved?.isActive).toBe(true);
   });
+
+  it("re-adopting after detach (stale MANUAL remnant) generates a unique slug instead of failing", async () => {
+    const s = suffix();
+    // First adoption + detach leaves a MANUAL remnant holding the slug.
+    await createComposeContainers(world.node1.id, `stack-${s}`, [`r1-${s}`]);
+    const first = await adoptComposeProject({
+      nodeId: world.node1.id,
+      composeProject: `stack-${s}`,
+      clientAccountId: null,
+      name: `Roundtrip ${s}`
+    });
+    expect(first.status).toBe("adopted");
+    if (first.status !== "adopted") return;
+    await detachComposeTracking(first.id);
+
+    // Re-adopt: the compose project is no longer tracked as COMPOSE, but the
+    // stale MANUAL workload still owns the containers — so this is a conflict
+    // (never a silent steal) AND the slug is still taken by the remnant.
+    const second = await adoptComposeProject({
+      nodeId: world.node1.id,
+      composeProject: `stack-${s}`,
+      clientAccountId: null,
+      name: `Roundtrip ${s}`
+    });
+    expect(second.status).toBe("conflict"); // containers still owned by remnant
+
+    const third = await adoptComposeProject({
+      nodeId: world.node1.id,
+      composeProject: `stack-${s}`,
+      clientAccountId: null,
+      name: `Roundtrip ${s}`,
+      moveConflictingContainers: true
+    });
+    expect(third.status).toBe("adopted");
+    if (third.status !== "adopted") return;
+
+    const recreated = await prisma.project.findUnique({ where: { id: third.id } });
+    expect(recreated?.slug).not.toBe(first.id ? (await prisma.project.findUnique({ where: { id: first.id } }))?.slug : undefined);
+    // Unique per node holds.
+    expect(recreated?.nodeId).toBe(world.node1.id);
+    expect(recreated?.composeProject).toBe(`stack-${s}`);
+  });
 });
 
 async function manualWithContainers(composeProjects: Array<string | null>, s: string) {
