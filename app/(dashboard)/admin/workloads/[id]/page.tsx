@@ -138,6 +138,9 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={healthVariant}>{workload.health}</Badge>
+          <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/activity?projectId=${workload.id}`)}>
+            View activity
+          </Button>
           <Button size="sm" variant="secondary" onClick={() => setGrantModal({ open: true, clientId: "", level: "start" })}>
             Grant access
           </Button>

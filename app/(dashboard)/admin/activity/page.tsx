@@ -60,8 +60,7 @@ export default function AdminActivityPage(): React.JSX.Element {
 
   useEffect(() => {
     syncUrl({ q, result, nodeId, clientId });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, result, nodeId, clientId]);
+  }, [q, result, nodeId, clientId, syncUrl]);
 
   const query = useQuery({
     queryKey: ["admin-activity", { q, result, nodeId, clientId, containerId, projectId, from, to, page }],

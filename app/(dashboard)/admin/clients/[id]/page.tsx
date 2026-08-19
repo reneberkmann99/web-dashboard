@@ -213,11 +213,16 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           </div>
           <p className="text-muted">{client.slug} · {client.counts.users} users · {client.counts.projects} workloads</p>
         </div>
-        {client.isActive && (
-          <Button variant="danger" onClick={() => setDeactivateClient(true)}>
-            Deactivate client
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>
+            View activity
           </Button>
-        )}
+          {client.isActive && (
+            <Button variant="danger" onClick={() => setDeactivateClient(true)}>
+              Deactivate client
+            </Button>
+          )}
+        </div>
       </div>
 
       {tab === "Overview" && (

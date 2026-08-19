@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type ListResponse = {
   containers: ContainerView[];
@@ -19,6 +20,7 @@ type ListResponse = {
 export default function ClientContainersPage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [confirmStop, setConfirmStop] = useState<{ assignmentId: string; name: string } | null>(null);
 
   const query = useQuery({
     queryKey: ["client-containers"],
@@ -143,7 +145,7 @@ export default function ClientContainersPage(): React.JSX.Element {
                           assignmentId={container.assignmentId}
                           allowed={container.allowedActions.includes("stop")}
                           loading={actionMutation.isPending}
-                          onClick={(input) => actionMutation.mutate(input)}
+                          onClick={() => setConfirmStop({ assignmentId: container.assignmentId, name: container.name })}
                         />
                       </div>
                     </td>
@@ -154,6 +156,19 @@ export default function ClientContainersPage(): React.JSX.Element {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmStop !== null}
+        onClose={() => setConfirmStop(null)}
+        onConfirm={() => {
+          if (confirmStop) actionMutation.mutate({ assignmentId: confirmStop.assignmentId, action: "stop" });
+          setConfirmStop(null);
+        }}
+        title={`Stop ${confirmStop?.name ?? "this container"}?`}
+        impact="This will stop the container until it is started again."
+        confirmLabel="Stop"
+        danger
+      />
     </div>
   );
 }
@@ -178,12 +193,7 @@ function ActionButton({
       disabled={!allowed || loading}
       size="sm"
       variant={variant}
-      onClick={() => {
-        if (action === "stop" && !window.confirm("Stop this container?")) {
-          return;
-        }
-        onClick({ assignmentId, action });
-      }}
+      onClick={() => onClick({ assignmentId, action })}
     >
       {action}
     </Button>

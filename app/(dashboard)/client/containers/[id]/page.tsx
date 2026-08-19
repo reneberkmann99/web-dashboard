@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogViewer } from "@/components/logs/log-viewer";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 
@@ -98,6 +99,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
 
   const container = detail.data?.container;
   const busy = Boolean(operation && !["SUCCEEDED", "FAILED", "CANCELLED"].includes(operation.state));
+  const [confirmStop, setConfirmStop] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -164,15 +166,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
                 <Button disabled={busy} variant="secondary" onClick={() => actionMutation.mutate("restart")}>
                   {busy ? "Working…" : "Restart"}
                 </Button>
-                <Button
-                  disabled={busy}
-                  variant="danger"
-                  onClick={() => {
-                    if (window.confirm("Stop this container?")) {
-                      actionMutation.mutate("stop");
-                    }
-                  }}
-                >
+                <Button disabled={busy} variant="danger" onClick={() => setConfirmStop(true)}>
                   {busy ? "Working…" : "Stop"}
                 </Button>
               </div>
@@ -193,6 +187,19 @@ export default function ContainerDetailPage(): React.JSX.Element {
           </Card>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmStop}
+        onClose={() => setConfirmStop(false)}
+        onConfirm={() => {
+          setConfirmStop(false);
+          actionMutation.mutate("stop");
+        }}
+        title={`Stop ${container?.name ?? "this container"}?`}
+        impact="This will stop the container until it is started again."
+        confirmLabel="Stop"
+        danger
+      />
     </div>
   );
 }

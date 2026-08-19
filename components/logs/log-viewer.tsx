@@ -94,8 +94,7 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buf = "";
-          // eslint-disable-next-line no-constant-condition
-          while (true) {
+          for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
             buf += decoder.decode(value, { stream: true });

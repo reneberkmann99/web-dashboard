@@ -53,8 +53,7 @@ export default function AdminClientsPage(): React.JSX.Element {
 
   useEffect(() => {
     syncUrl({ search });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, syncUrl]);
 
   const query = useQuery({
     queryKey: ["admin-clients", { search, page }],

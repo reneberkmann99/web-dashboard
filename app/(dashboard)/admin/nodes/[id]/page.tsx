@@ -90,6 +90,13 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
             {offline ? "offline" : stale ? "stale heartbeat" : "online"}
           </Badge>
           {!node.isActive && <Badge>disabled</Badge>}
+          <button
+            type="button"
+            onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}
+            className="ml-auto text-sm text-accent hover:underline"
+          >
+            View activity →
+          </button>
         </div>
         <p className="text-muted">{node.hostname}</p>
         {offline && (

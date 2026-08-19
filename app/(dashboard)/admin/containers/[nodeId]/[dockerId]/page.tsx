@@ -184,7 +184,16 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
           </section>
 
           <section className="rounded-lg border border-border bg-panel p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Actions</h2>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Actions</h2>
+              <button
+                type="button"
+                onClick={() => router.push(`/admin/activity?containerId=${container.containerId}`)}
+                className="text-xs text-accent hover:underline"
+              >
+                View activity →
+              </button>
+            </div>
             {!nodeOnline ? (
               <p className="text-sm text-muted">
                 Actions are disabled because node <strong>{container.nodeName}</strong> is not responding.

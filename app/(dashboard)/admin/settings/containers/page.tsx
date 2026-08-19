@@ -49,8 +49,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
 
   useEffect(() => {
     syncUrl({ search, status, nodeId, clientId });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, nodeId, clientId]);
+  }, [search, status, nodeId, clientId, syncUrl]);
 
   const query = useQuery({
     queryKey: ["admin-all-containers", { search, status, nodeId, clientId, sort, dir, page }],
