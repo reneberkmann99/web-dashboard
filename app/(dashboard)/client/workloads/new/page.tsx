@@ -113,9 +113,12 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
         <div className="space-y-4">
           <div>
             <label className="mb-1 block text-sm text-muted" htmlFor="wl-name">
-              Workload name
+              Workload name <span className="text-danger">*</span>
             </label>
-            <Input id="wl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My App" />
+            <Input id="wl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. My App (type your own name here)" />
+            {name.trim().length === 0 && (
+              <p className="mt-1 text-xs text-amber-300">Required — the text above is a placeholder, not a value.</p>
+            )}
             {slug && <p className="mt-1 text-xs text-muted">Compose project: {slug}</p>}
           </div>
 
@@ -195,6 +198,11 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
                   {validation.highRiskFindings.length > 0 && (
                     <p className="mt-1.5 text-xs text-amber-300">
                       Resolve the high-risk findings above before creating this workload.
+                    </p>
+                  )}
+                  {validation.highRiskFindings.length === 0 && name.trim().length < 2 && (
+                    <p className="mt-1.5 text-xs text-amber-300">
+                      Enter a workload name above (at least 2 characters) to enable this button.
                     </p>
                   )}
                 </div>
