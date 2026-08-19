@@ -4,7 +4,9 @@ import {
   containerDetailResponseSchema,
   containerLogsResponseSchema,
   listContainersResponseSchema,
-  RuntimeContainer
+  storageSummaryResponseSchema,
+  RuntimeContainer,
+  StorageSummaryEntry
 } from "@/server/services/node-agent/types";
 
 /**
@@ -169,6 +171,19 @@ export class NodeAgentClient {
   async checkHealth(node: Node): Promise<boolean> {
     const result = await this.call<unknown>(node, "/health");
     return result.ok;
+  }
+
+  /** Docker storage summary (images/containers/volumes/build-cache). */
+  async getStorageSummary(node: Node): Promise<StorageSummaryEntry[]> {
+    const result = await this.call<unknown>(node, "/storage");
+    if (!result.ok || !result.data) {
+      return [];
+    }
+    const parsed = storageSummaryResponseSchema.safeParse(result.data);
+    if (!parsed.success) {
+      return [];
+    }
+    return parsed.data.summary;
   }
 
   /** Agent + host metadata (version, docker version, os, cpu, memory). */

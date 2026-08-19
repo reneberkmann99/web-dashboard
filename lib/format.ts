@@ -61,6 +61,7 @@ export function humanizeAction(action: string): string {
     PROJECT_CREATE: "Created workload",
     PROJECT_UPDATE: "Updated workload",
     PROJECT_DEACTIVATE: "Deactivated workload",
+    WORKLOAD_RESTART: "Restarted workload",
     ASSIGNMENT_CREATE: "Granted container access",
     ASSIGNMENT_UPDATE: "Updated container grant",
     ASSIGNMENT_DELETE: "Revoked container access",

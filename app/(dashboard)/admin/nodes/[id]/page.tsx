@@ -25,6 +25,8 @@ type NodeDetailPayload = {
     containerCount: number;
     runningCount: number;
     unhealthyCount: number;
+    stoppedCount: number;
+    storageSummary: Array<{ type: string; totalCount: number; active: number; size: string; reclaimable: string }>;
     projects: Array<{ id: string; name: string; slug: string; clientAccount: { name: string }; _count: { containers: number } }>;
   };
   activity: Array<{ id: string; action: string; actorEmail: string | null; result: string; createdAt: string }>;
@@ -113,6 +115,46 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
               <Stat label="Memory" value={formatBytes(Number(node.systemInfo?.totalMemBytes ?? 0))} />
             </dl>
           </div>
+          <div className="rounded-lg border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Containers</h2>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <Stat label="Total" value={String(node.containerCount)} />
+              <Stat label="Running" value={String(node.runningCount)} />
+              <Stat label="Stopped" value={String(node.stoppedCount)} />
+              <Stat label="Unhealthy" value={String(node.unhealthyCount)} />
+            </dl>
+          </div>
+
+          <div className="rounded-lg border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Docker storage</h2>
+            {node.storageSummary.length === 0 ? (
+              <p className="text-sm text-muted">Storage summary unavailable.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase tracking-wide text-muted">
+                  <tr>
+                    <th className="pb-2">Type</th>
+                    <th className="pb-2">Total</th>
+                    <th className="pb-2">Active</th>
+                    <th className="pb-2">Size</th>
+                    <th className="pb-2">Reclaimable</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {node.storageSummary.map((s) => (
+                    <tr key={s.type} className="border-t border-border">
+                      <td className="py-1.5 capitalize">{s.type.replace(/^Local /, "").toLowerCase()}</td>
+                      <td className="py-1.5">{s.totalCount}</td>
+                      <td className="py-1.5">{s.active}</td>
+                      <td className="py-1.5">{s.size}</td>
+                      <td className="py-1.5">{s.reclaimable}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Workloads</h2>
             {node.projects.length === 0 ? (

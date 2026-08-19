@@ -6,6 +6,7 @@ import { fromError, fail, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { listContainersForNode } from "@/server/services/workloads";
+import { nodeAgentClient } from "@/server/services/node-agent/client";
 
 export async function GET(
   _: Request,
@@ -38,6 +39,8 @@ export async function GET(
     const containers = await listContainersForNode(node.id);
     const running = containers.filter((c) => c.status === "running").length;
     const unhealthy = containers.filter((c) => c.status === "unhealthy").length;
+    const stopped = containers.filter((c) => c.status === "stopped").length;
+    const storageSummary = await nodeAgentClient.getStorageSummary(node);
 
     const activity = await prisma.auditLog.findMany({
       where: { OR: [{ targetType: "NODE", targetId: node.id }, { metadata: { path: ["nodeId"], equals: node.id } }] },
@@ -61,6 +64,8 @@ export async function GET(
         containerCount: containers.length,
         runningCount: running,
         unhealthyCount: unhealthy,
+        stoppedCount: stopped,
+        storageSummary,
         projects: node.projects,
         counts: node._count
       },

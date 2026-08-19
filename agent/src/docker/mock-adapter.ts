@@ -68,6 +68,15 @@ export class MockDockerAdapter implements DockerAdapter {
     return { restartPolicy: "unless-stopped", labels: { "mock": "true" }, networks: [{ name: "mock", ipAddress: "172.30.0.2", gateway: "172.30.0.1" }], mounts: [] };
   }
 
+  async getStorageSummary(): Promise<import("./types").StorageSummaryEntry[]> {
+    return [
+      { type: "Images", totalCount: 5, active: 4, size: "1.2GiB", reclaimable: "300MiB" },
+      { type: "Containers", totalCount: 3, active: 2, size: "120MiB", reclaimable: "0B" },
+      { type: "Local Volumes", totalCount: 2, active: 1, size: "80MiB", reclaimable: "40MiB" },
+      { type: "Build Cache", totalCount: 0, active: 0, size: "0B", reclaimable: "0B" }
+    ];
+  }
+
   async health(): Promise<boolean> {
     return true;
   }

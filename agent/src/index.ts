@@ -185,6 +185,17 @@ app.get("/info", async (_req: Request, res: Response) => {
   res.json({ ...info, nodeOnline: await adapter.health() });
 });
 
+app.get("/storage", async (_req: Request, res: Response) => {
+  try {
+    const summary = adapter.getStorageSummary
+      ? await adapter.getStorageSummary()
+      : [];
+    res.json({ nodeOnline: true, summary });
+  } catch (error) {
+    res.status(503).json({ nodeOnline: false, summary: [], error: "Unable to fetch storage summary" });
+  }
+});
+
 app.get("/containers", async (_req: Request, res: Response) => {
   try {
     const containers = await adapter.listContainers();

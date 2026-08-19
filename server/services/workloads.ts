@@ -2,6 +2,8 @@ import { prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import { humanizeAction } from "@/server/services/overview";
+import { requestOperation, OperationConflictError } from "@/server/services/operations";
+import type { AuthSession } from "@/server/auth/session";
 
 /**
  * Workload (Project/Stack) detail assembly.
@@ -23,6 +25,8 @@ export type WorkloadDetail = {
   name: string;
   slug: string;
   description: string | null;
+  source: string;
+  composeProject: string | null;
   node: { id: string; name: string; hostname: string; status: string };
   client: { id: string; name: string; slug: string } | null;
   grants: Array<{ id: string; allowedActions: string[]; clientName: string }>;
@@ -43,6 +47,7 @@ export type WorkloadDetail = {
   runningContainers: number;
   stoppedContainers: number;
   unhealthyContainers: number;
+  restartingContainers: number;
   cpuPercent: number | null;
   memoryUsage: string | null;
   exposedPorts: string[];
@@ -54,6 +59,8 @@ export function toWorkloadDetail(
     name: string;
     slug: string;
     description: string | null;
+    source: string;
+    composeProject: string | null;
     node: { id: string; name: string; hostname: string; status: string };
     clientAccount: { id: string; name: string; slug: string };
     grants: Array<{ id: string; allowedActions: string[]; clientAccount: { name: string } }>;
@@ -80,6 +87,7 @@ export function toWorkloadDetail(
   const running = inProject.filter((c) => c.status === "running").length;
   const stopped = inProject.filter((c) => c.status === "stopped").length;
   const unhealthy = inProject.filter((c) => c.status === "unhealthy").length;
+  const restarting = inProject.filter((c) => c.status === "restarting").length;
   const total = inProject.length;
 
   const health: WorkloadDetail["health"] =
@@ -114,6 +122,8 @@ export function toWorkloadDetail(
     name: project.name,
     slug: project.slug,
     description: project.description,
+    source: project.source,
+    composeProject: project.composeProject,
     node: project.node,
     client: { id: project.clientAccount.id, name: project.clientAccount.name, slug: project.clientAccount.slug },
     grants: project.grants.map((g) => ({
@@ -127,6 +137,7 @@ export function toWorkloadDetail(
     runningContainers: running,
     stoppedContainers: stopped,
     unhealthyContainers: unhealthy,
+    restartingContainers: restarting,
     cpuPercent: cpuCount > 0 ? Number((cpuSum / cpuCount).toFixed(1)) : null,
     memoryUsage: memSum > 0 ? `${memSum.toFixed(0)} MiB` : null,
     exposedPorts
@@ -134,3 +145,53 @@ export function toWorkloadDetail(
 }
 
 export { humanizeAction };
+
+/**
+ * Restart every active container in a workload as a set of tracked Operations.
+ * Each container restart is an independent CONTAINER_RESTART operation (so the
+ * existing conflict protection and lifecycle apply per container). Partial
+ * failures are reported explicitly — never masked as a blanket success.
+ * ADMIN-only (the route enforces the capability).
+ */
+export async function restartWorkload(
+  projectId: string,
+  session: AuthSession
+): Promise<{
+  total: number;
+  operationIds: string[];
+  failures: Array<{ dockerName: string; reason: string }>;
+} | null> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: { containers: { where: { isActive: true } } }
+  });
+  if (!project) {
+    return null;
+  }
+
+  const operationIds: string[] = [];
+  const failures: Array<{ dockerName: string; reason: string }> = [];
+
+  for (const container of project.containers) {
+    try {
+      const opId = await requestOperation({
+        type: "CONTAINER_RESTART",
+        actor: session,
+        clientAccountId: session.clientAccountId,
+        nodeId: container.nodeId,
+        dockerContainerId: container.dockerContainerId,
+        containerId: container.id,
+        sourceIp: null
+      });
+      operationIds.push(opId);
+    } catch (error) {
+      if (error instanceof OperationConflictError) {
+        failures.push({ dockerName: container.dockerName, reason: "An operation is already in progress" });
+      } else {
+        failures.push({ dockerName: container.dockerName, reason: "Failed to request restart" });
+      }
+    }
+  }
+
+  return { total: project.containers.length, operationIds, failures };
+}

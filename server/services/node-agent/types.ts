@@ -60,4 +60,19 @@ export const containerLogsResponseSchema = z.object({
   logs: z.array(z.string())
 });
 
+export const storageSummaryEntrySchema = z.object({
+  type: z.string(),
+  totalCount: z.number(),
+  active: z.number(),
+  size: z.string(),
+  reclaimable: z.string()
+});
+
+export const storageSummaryResponseSchema = z.object({
+  nodeOnline: z.boolean(),
+  summary: z.array(storageSummaryEntrySchema)
+});
+
+export type StorageSummaryEntry = z.infer<typeof storageSummaryEntrySchema>;
+
 export type RuntimeContainer = z.infer<typeof containerRuntimeSchema>;

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { DockerAdapter, RuntimeContainer } from "./types";
+import { DockerAdapter, RuntimeContainer, StorageSummaryEntry } from "./types";
 
 /**
  * Security: Rootless Docker adapter.
@@ -258,6 +258,35 @@ export class RootlessDockerAdapter implements DockerAdapter {
     const { stdout, stderr } = await this.runDocker(["logs", "--tail", String(safeTail), safeId]);
     const merged = `${stdout}${stderr}`.trim();
     return merged ? merged.split("\n") : ["No logs"]; 
+  }
+
+  async getStorageSummary(): Promise<StorageSummaryEntry[]> {
+    try {
+      const { stdout } = await this.runDocker(["system", "df", "--format", "{{json .}}"]);
+      return stdout
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const parsed = JSON.parse(line) as {
+            Type?: string;
+            TotalCount?: string;
+            Active?: string;
+            Size?: string;
+            Reclaimable?: string;
+          };
+          return {
+            type: parsed.Type ?? "unknown",
+            totalCount: Number(parsed.TotalCount ?? 0),
+            active: Number(parsed.Active ?? 0),
+            size: parsed.Size ?? "0B",
+            reclaimable: parsed.Reclaimable ?? "0B"
+          };
+        });
+    } catch (error) {
+      console.error("[RootlessAdapter] storage summary failed:", error instanceof Error ? error.message : error);
+      return [];
+    }
   }
 
   streamContainerLogs(containerId: string, tail: number): {

@@ -44,4 +44,14 @@ export interface DockerAdapter {
     kill: () => void;
   };
   runAction(containerId: string, action: "start" | "stop" | "restart"): Promise<boolean>;
+  /** Docker disk usage summary (images/containers/volumes/build-cache). */
+  getStorageSummary?(): Promise<StorageSummaryEntry[]>;
 }
+
+export type StorageSummaryEntry = {
+  type: string;
+  totalCount: number;
+  active: number;
+  size: string;
+  reclaimable: string;
+};

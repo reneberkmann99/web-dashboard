@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { timeAgo } from "@/lib/format";
 import { humanizeAction } from "@/lib/format";
@@ -17,6 +19,8 @@ type WorkloadDetailPayload = {
     name: string;
     slug: string;
     description: string | null;
+    source: string;
+    composeProject: string | null;
     node: { id: string; name: string; hostname: string; status: string };
     client: { id: string; name: string; slug: string } | null;
     grants: Array<{ id: string; allowedActions: string[]; clientName: string }>;
@@ -37,6 +41,7 @@ type WorkloadDetailPayload = {
     runningContainers: number;
     stoppedContainers: number;
     unhealthyContainers: number;
+    restartingContainers: number;
     cpuPercent: number | null;
     memoryUsage: string | null;
     exposedPorts: string[];
@@ -45,19 +50,37 @@ type WorkloadDetailPayload = {
 };
 
 type GrantModalState = { open: boolean; clientId: string; level: "start" | "view" };
+type RestartResponse = { total: number; operationIds: string[]; failures: Array<{ dockerName: string; reason: string }> };
 
 const TABS = ["Overview", "Containers", "Activity"] as const;
 
 export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
   const [grantModal, setGrantModal] = useState<GrantModalState>({ open: false, clientId: "", level: "start" });
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   const query = useQuery({
     queryKey: ["workload", params.id],
     queryFn: () => apiFetch<WorkloadDetailPayload>(`/api/admin/workloads/${params.id}`),
     refetchInterval: 15000
+  });
+
+  const restartMutation = useMutation({
+    mutationFn: () => apiFetch<RestartResponse>(`/api/admin/workloads/${params.id}/restart`, { method: "POST" }),
+    onSuccess: (data) => {
+      if (data.failures.length === 0) {
+        toast.success(`Restart requested for all ${data.total} containers`);
+      } else if (data.failures.length < data.total) {
+        toast.warning(`Restarted ${data.total - data.failures.length}/${data.total} — ${data.failures.length} failed to queue`);
+      } else {
+        toast.error("Failed to queue restart for any container");
+      }
+      queryClient.invalidateQueries({ queryKey: ["workload", params.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Restart failed")
   });
 
   if (query.isLoading) {
@@ -70,6 +93,9 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const { workload, activity } = query.data;
   const healthVariant =
     workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : workload.health === "down" ? "danger" : "default";
+  const failedOrRestarting = workload.containerSummaries.filter(
+    (c) => c.inProject && (c.status === "restarting" || c.status === "unhealthy" || (c.restartCount ?? 0) >= 3)
+  );
 
   const containerColumns: Column<(typeof workload.containerSummaries)[number]>[] = [
     {
@@ -103,15 +129,32 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           <h1 className="text-3xl font-semibold">{workload.name}</h1>
           <p className="text-muted">
             {workload.description ?? workload.slug} · {workload.node.name}
+            {workload.source === "COMPOSE" && (
+              <span className="ml-2 text-xs">
+                <Badge variant="default">Compose{workload.composeProject ? `: ${workload.composeProject}` : ""}</Badge>
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={healthVariant}>{workload.health}</Badge>
-          <Button size="sm" onClick={() => setGrantModal({ open: true, clientId: "", level: "start" })}>
+          <Button size="sm" variant="secondary" onClick={() => setGrantModal({ open: true, clientId: "", level: "start" })}>
             Grant access
           </Button>
+          {workload.totalContainers > 0 && (
+            <Button size="sm" variant="danger" onClick={() => setConfirmRestart(true)} disabled={restartMutation.isPending}>
+              Restart workload
+            </Button>
+          )}
         </div>
       </div>
+
+      {failedOrRestarting.length > 0 && (
+        <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-300">
+          {failedOrRestarting.length} container{failedOrRestarting.length > 1 ? "s" : ""} recently failed or is restarting:{" "}
+          {failedOrRestarting.map((c) => c.dockerName).join(", ")}
+        </div>
+      )}
 
       {/* Overview */}
       {tab === "Overview" && (
@@ -216,6 +259,19 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         level={grantModal.level}
         onClientChange={(v) => setGrantModal((m) => ({ ...m, clientId: v }))}
         onLevelChange={(v) => setGrantModal((m) => ({ ...m, level: v }))}
+      />
+
+      <ConfirmDialog
+        open={confirmRestart}
+        onClose={() => setConfirmRestart(false)}
+        onConfirm={() => {
+          setConfirmRestart(false);
+          restartMutation.mutate();
+        }}
+        title={`Restart ${workload.name}?`}
+        impact={`${workload.totalContainers} container${workload.totalContainers === 1 ? "" : "s"} will be restarted and the service may be temporarily unavailable.`}
+        confirmLabel={`Restart ${workload.totalContainers} container${workload.totalContainers === 1 ? "" : "s"}`}
+        danger
       />
     </div>
   );
