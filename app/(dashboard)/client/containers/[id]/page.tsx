@@ -9,15 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { LogViewer } from "@/components/logs/log-viewer";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 
 type DetailResponse = {
   container: ContainerView;
-};
-
-type LogsResponse = {
-  logs: string[];
-  nodeOnline: boolean;
 };
 
 type ActionResponse = {
@@ -42,12 +38,6 @@ export default function ContainerDetailPage(): React.JSX.Element {
     queryKey: ["container", assignmentId],
     queryFn: () => apiFetch<DetailResponse>(`/api/client/containers/${assignmentId}`),
     refetchInterval: 7000
-  });
-
-  const logs = useQuery({
-    queryKey: ["container-logs", assignmentId],
-    queryFn: () => apiFetch<LogsResponse>(`/api/client/containers/${assignmentId}/logs`),
-    refetchInterval: 12000
   });
 
   // Poll the active operation until it reaches a terminal state.
@@ -191,22 +181,14 @@ export default function ContainerDetailPage(): React.JSX.Element {
 
           <Card className="panel">
             <CardHeader>
-              <CardTitle>Recent logs</CardTitle>
-              <CardDescription>Last log lines from this container.</CardDescription>
+              <CardTitle>Logs</CardTitle>
+              <CardDescription>Live log stream from this container.</CardDescription>
             </CardHeader>
             <CardContent>
-              {logs.isLoading ? (
-                <div className="space-y-3">
-                  <div className="h-8 animate-pulse rounded bg-panelAlt" />
-                  <div className="h-8 animate-pulse rounded bg-panelAlt" />
-                </div>
-              ) : logs.isError ? (
-                <p className="text-sm text-red-400">Failed to load logs.</p>
-              ) : (
-                <pre className="max-h-[460px] overflow-auto rounded-lg border border-border bg-black/40 p-4 text-xs text-slate-200">
-                  {(logs.data?.logs ?? ["No logs available"]).join("\n")}
-                </pre>
-              )}
+              <LogViewer
+                streamUrl={(tail) => `/api/client/containers/${assignmentId}/logs/stream?tail=${tail}`}
+                downloadName={container.name}
+              />
             </CardContent>
           </Card>
         </>

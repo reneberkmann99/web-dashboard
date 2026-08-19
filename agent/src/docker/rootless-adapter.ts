@@ -256,6 +256,33 @@ export class RootlessDockerAdapter implements DockerAdapter {
     return merged ? merged.split("\n") : ["No logs"]; 
   }
 
+  streamContainerLogs(containerId: string, tail: number): {
+    stdout: NodeJS.ReadableStream;
+    kill: () => void;
+  } {
+    const safeId = sanitizeContainerId(containerId);
+    const safeTail = Math.max(1, Math.min(tail, 500));
+    // Security: arguments passed as an array — no shell interpolation. The
+    // `--timestamps` flag keeps each line prefixed with an RFC3339 timestamp.
+    const child = spawn(
+      "docker",
+      ["logs", "--tail", String(safeTail), "--follow", "--timestamps", safeId],
+      { env: this.env(), stdio: ["ignore", "pipe", "pipe"] }
+    );
+
+    // Merge stderr into stdout so we stream a single ordered-ish stream.
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => child.stdout.emit("data", chunk));
+    }
+
+    return {
+      stdout: child.stdout,
+      kill: () => {
+        child.kill("SIGTERM");
+      }
+    };
+  }
+
   async runAction(containerId: string, action: "start" | "stop" | "restart"): Promise<boolean> {
     const safeId = sanitizeContainerId(containerId);
     await this.runDocker([action, safeId]);

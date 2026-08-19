@@ -236,6 +236,56 @@ app.get("/containers/:id/logs", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Streaming logs (tail + follow). Emits raw newline-delimited lines; the
+ * control plane wraps these into Server-Sent Events for the browser. The
+ * underlying docker process is torn down as soon as the consumer disconnects.
+ */
+app.get("/containers/:id/logs/stream", (req: Request, res: Response) => {
+  let containerId: string;
+  try {
+    containerId = containerIdSchema.parse(req.params.id);
+  } catch {
+    res.status(400).json({ error: "Invalid container id" });
+    return;
+  }
+  const tail = Math.max(1, Math.min(Number(req.query.tail ?? 200), 500));
+
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  let stream: { stdout: NodeJS.ReadableStream; kill: () => void };
+  try {
+    stream = adapter.streamContainerLogs(containerId, Number.isNaN(tail) ? 200 : tail);
+  } catch (error) {
+    res.status(502).json({ error: "Failed to stream logs" });
+    return;
+  }
+
+  const { stdout, kill } = stream;
+  const cleanup = (): void => {
+    try {
+      kill();
+    } catch {
+      // ignore
+    }
+  };
+
+  stdout.on("data", (chunk: Buffer | string) => {
+    if (!res.writableEnded) res.write(chunk);
+  });
+  stdout.on("end", () => {
+    if (!res.writableEnded) res.end();
+  });
+  stdout.on("error", () => {
+    if (!res.writableEnded) res.end();
+  });
+  req.on("close", cleanup);
+  res.on("close", cleanup);
+});
+
 app.post("/containers/:id/:action", async (req: Request, res: Response) => {
   const actionSchema = z.enum(["start", "stop", "restart"]);
 

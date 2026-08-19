@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { DockerAdapter, RuntimeContainer } from "./types";
 
 const mockContainers: RuntimeContainer[] = [
@@ -81,6 +82,24 @@ export class MockDockerAdapter implements DockerAdapter {
 
   async getContainerLogs(containerId: string, tail: number): Promise<string[]> {
     return (mockLogs[containerId] ?? ["No logs"]).slice(-tail);
+  }
+
+  streamContainerLogs(containerId: string, tail: number): {
+    stdout: NodeJS.ReadableStream;
+    kill: () => void;
+  } {
+    // Mock: emit the existing tail lines immediately, then end. No live tail
+    // in mock mode (the real adapter streams).
+    const lines = (mockLogs[containerId] ?? ["No logs"]).slice(-tail);
+    const stream = new Readable({
+      read() {
+        for (const line of lines) {
+          this.push(`${line}\n`);
+        }
+        this.push(null);
+      }
+    });
+    return { stdout: stream, kill: () => stream.destroy() };
   }
 
   async runAction(containerId: string, action: "start" | "stop" | "restart"): Promise<boolean> {

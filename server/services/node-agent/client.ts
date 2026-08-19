@@ -120,6 +120,43 @@ export class NodeAgentClient {
     return parsed.data;
   }
 
+  /**
+   * Open a streaming (tail + follow) log connection to the node agent.
+   * Returns the raw response body, or null when the node is unreachable/
+   * disabled. The caller is responsible for reading and closing the stream.
+   * No timeout is applied here — a live log stream is intentionally long-lived.
+   */
+  async streamLogs(
+    node: Node,
+    containerId: string,
+    tail = 200
+  ): Promise<ReadableStream<Uint8Array> | null> {
+    if (!node.isActive || node.status === NodeStatus.INACTIVE) {
+      return null;
+    }
+    try {
+      const url = new URL(
+        `/containers/${encodeURIComponent(containerId)}/logs/stream?tail=${tail}`,
+        node.apiBaseUrl
+      );
+      const response = await fetch(url.toString(), {
+        headers: { "x-agent-key": decryptSecret(node.apiKeyEncrypted) },
+        cache: "no-store"
+      });
+      if (!response.ok || !response.body) {
+        console.error(`[NodeAgent] logs/stream on node ${node.id} returned ${response.status}`);
+        return null;
+      }
+      return response.body;
+    } catch (error) {
+      console.error(
+        `[NodeAgent] stream /containers/:id/logs/stream on node ${node.id} failed:`,
+        error instanceof Error ? error.message : error
+      );
+      return null;
+    }
+  }
+
   async runAction(node: Node, containerId: string, action: "start" | "stop" | "restart"): Promise<boolean> {
     const result = await this.call<unknown>(
       node,

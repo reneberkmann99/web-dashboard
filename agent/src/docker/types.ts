@@ -31,5 +31,14 @@ export interface DockerAdapter {
   listContainers(): Promise<RuntimeContainer[]>;
   getContainer(containerId: string): Promise<RuntimeContainer | null>;
   getContainerLogs(containerId: string, tail: number): Promise<string[]>;
+  /**
+   * Stream a container's logs (tail + follow). Returns the stdout stream and
+   * a kill() to tear the underlying process down when the consumer goes away.
+   * Lines are emitted raw (newline-separated).
+   */
+  streamContainerLogs(containerId: string, tail: number): {
+    stdout: NodeJS.ReadableStream;
+    kill: () => void;
+  };
   runAction(containerId: string, action: "start" | "stop" | "restart"): Promise<boolean>;
 }

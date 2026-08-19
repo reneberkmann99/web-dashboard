@@ -9,7 +9,7 @@
  *    container-level) plus legacy ContainerAssignment rows (pre-refactor).
  *  - Every action mutation is audited through `logAuditEvent`.
  */
-import { Prisma, Role } from "@prisma/client";
+import { Node, Prisma, Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import { type AuthSession } from "@/server/auth/session";
@@ -319,6 +319,30 @@ export async function getContainerByGrant(
   const container = toContainerView(grantToAssignment(row), mapped, runtimePayload.nodeOnline);
 
   return { container, grant: row };
+}
+
+/**
+ * Check that the session may view logs on the container referenced by
+ * grantId, and return the resolved node + docker id. DB-only (no agent call),
+ * so it is cheap to run before opening a long-lived log stream.
+ */
+export async function resolveLogTarget(
+  session: AuthSession,
+  grantId: string
+): Promise<{ node: Node; dockerContainerId: string } | null> {
+  const visible = await resolveVisibleContainersForSession(session);
+  const row = Array.from(visible.values()).find((r) => rowMatchesGrant(r, grantId));
+  if (!row) {
+    return null;
+  }
+  if (session.role !== Role.ADMIN && !row.allowedActions.includes("view_logs")) {
+    return null;
+  }
+  const node = await prisma.node.findUnique({ where: { id: row.nodeId } });
+  if (!node) {
+    return null;
+  }
+  return { node, dockerContainerId: row.dockerContainerId };
 }
 
 export async function getContainerLogs(

@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download } from "lucide-react";
+import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { maskSecrets, shortId, timeAgo } from "@/lib/format";
+import { LogViewer } from "@/components/logs/log-viewer";
+import { shortId, timeAgo } from "@/lib/format";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 
 type DetailResponse = { container: ContainerView; nodeOnline: boolean };
-type LogsResponse = { logs: string[]; nodeOnline: boolean };
 type ActionResponse = { operationId: string };
 
 function OperationStateBadge({ state }: { state: OperationState }): React.JSX.Element {
@@ -36,21 +36,12 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
 
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<"start" | "stop" | "restart" | null>(null);
-  const [logTail, setLogTail] = useState(200);
-  const [logFilter, setLogFilter] = useState("");
   const [copied, setCopied] = useState(false);
 
   const detail = useQuery({
     queryKey: ["direct-container", nodeId, dockerId],
     queryFn: () => apiFetch<DetailResponse>(`/api/admin/containers/direct/${nodeId}/${dockerId}`),
     refetchInterval: 8000
-  });
-
-  const logs = useQuery({
-    queryKey: ["direct-container-logs", nodeId, dockerId, logTail],
-    queryFn: () =>
-      apiFetch<LogsResponse>(`/api/admin/containers/direct/${nodeId}/${dockerId}?logs=1&tail=${logTail}`),
-    refetchInterval: 10000
   });
 
   const operationQuery = useQuery({
@@ -87,13 +78,6 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
   const container = detail.data?.container;
   const busy = Boolean(operation && !["SUCCEEDED", "FAILED", "CANCELLED"].includes(operation.state));
   const nodeOnline = detail.data?.nodeOnline ?? false;
-
-  const filteredLogs = useMemo(() => {
-    const lines = logs.data?.logs ?? [];
-    if (!logFilter) return lines;
-    const q = logFilter.toLowerCase();
-    return lines.filter((l) => l.toLowerCase().includes(q));
-  }, [logs.data, logFilter]);
 
   const copyId = async (text: string): Promise<void> => {
     await navigator.clipboard.writeText(text);
@@ -279,58 +263,13 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
         <section className="rounded-lg border border-border bg-panel p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Logs</h2>
-            <div className="flex items-center gap-2">
-              <input
-                type="search"
-                value={logFilter}
-                onChange={(e) => setLogFilter(e.target.value)}
-                placeholder="Filter logs…"
-                aria-label="Filter logs"
-                className="w-36 rounded-md border border-border bg-panelAlt px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent"
-              />
-              <select
-                value={logTail}
-                onChange={(e) => setLogTail(Number(e.target.value))}
-                aria-label="Number of log lines"
-                className="rounded-md border border-border bg-panelAlt px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent"
-              >
-                {[100, 200, 500].map((n) => (
-                  <option key={n} value={n}>
-                    {n} lines
-                  </option>
-                ))}
-              </select>
-              <Button
-                size="sm"
-                variant="secondary"
-                aria-label="Download logs"
-                onClick={() => {
-                  const blob = new Blob([(logs.data?.logs ?? []).join("\n")], { type: "text/plain" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `${container.name}-logs.txt`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                <Download size={14} />
-              </Button>
-            </div>
           </div>
-          {logs.isLoading ? (
-            <div className="h-64 animate-pulse rounded bg-panelAlt" />
-          ) : logs.isError ? (
-            <p className="text-sm text-red-400">Failed to load logs.</p>
-          ) : (
-            <pre className="max-h-[560px] overflow-auto rounded-lg border border-border bg-black/40 p-3 text-xs text-slate-200">
-              {filteredLogs.length === 0 ? (
-                <span className="text-muted">{logFilter ? "No log lines match." : "No logs available."}</span>
-              ) : (
-                filteredLogs.map((line, i) => <div key={i}>{maskSecrets(line)}</div>)
-              )}
-            </pre>
-          )}
+          <LogViewer
+            streamUrl={(tail) =>
+              `/api/admin/containers/direct/${nodeId}/${dockerId}/logs/stream?tail=${tail}`
+            }
+            downloadName={container.name}
+          />
         </section>
       </div>
 
