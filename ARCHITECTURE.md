@@ -709,3 +709,28 @@ total byte count — only per-event and in-flight buffering are bounded.
 - `tests/logs-limits.test.ts` (4) — oversized line truncation, pending-buffer
   bound under newline-free flood, disconnect teardown (caught the locked-
   stream cancel bug), graceful stream end
+
+---
+
+# Managed Compose deployment — future design (Phase 5, PROPOSED ONLY)
+
+**Not implemented. Nothing below changes production behavior.**
+
+A design package for HostPanel-owned Docker Compose deployment lifecycle exists under `docs/` and is
+pending Rene's review before any implementation:
+
+- `docs/MANAGED-COMPOSE-ARCHITECTURE.md` — full technical design.
+- `docs/MANAGED-COMPOSE-DATA-MODEL.md` — proposed Prisma schema + migration implications.
+- `docs/MANAGED-COMPOSE-API.md` — proposed REST + agent contract.
+- `docs/MANAGED-COMPOSE-THREAT-MODEL.md` — deployment-specific threat model.
+- `docs/MANAGED-COMPOSE-IMPLEMENTATION-PLAN.md` — implementation phases + dependency order.
+- `docs/adr/0001…0008` — architecture decision records.
+
+The key decision: ownership of a deployment definition is a **separate, optional `Deployment` relation
+on `Project`**, not a new value on `Project.source`. The three conceptual modes are *derived*:
+`MANUAL` (source=MANUAL, no deployment), `EXTERNAL_COMPOSE` (source=COMPOSE, no deployment — this is
+where Mailcow sits), and `MANAGED_COMPOSE` (a `Deployment` exists). Revisions are immutable; secrets
+are versioned, encrypted at rest, and referenced by key only; rollback re-applies a previous revision
+and never restores data or secret values; HostPanel never auto-deletes volumes/networks and never
+auto-rolls-back. No migrations, deployment endpoints, secrets storage, Git integration, or Docker
+mutation have been added as part of this phase.
