@@ -331,7 +331,11 @@ export async function executeDeploymentOperation(operationId: string): Promise<v
   await setPhase(operationId, DeploymentOperationPhase.RECONCILING);
   await patchResult(operationId, { verify });
 
-  if (verify && (verify.verdict === "CONVERGED_HEALTHY" || verify.verdict === "CONVERGED_DEGRADED")) {
+  // PENDING means the runtime converged but a healthcheck had not produced a
+  // terminal result by the end of the grace window. That is honestly NOT
+  // healthy: record a DEGRADED release and fail the operation with a distinct
+  // error — never report success on unproven health.
+  if (verify && ["CONVERGED_HEALTHY", "CONVERGED_DEGRADED", "PENDING"].includes(verify.verdict)) {
     const healthy = verify.verdict === "CONVERGED_HEALTHY";
     const releaseId = await createRelease({
       deploymentId: deployment.id,
@@ -355,13 +359,17 @@ export async function executeDeploymentOperation(operationId: string): Promise<v
         metadata: { deploymentId: deployment.id, revisionNumber: revision.revisionNumber, releaseId }, result: "SUCCESS"
       });
     } else {
-      // Degraded: runtime converged to candidate, but health failed.
+      // Degraded / unproven health: runtime converged to candidate, but health
+      // failed (or could not be proven within the grace window).
       const previousHealthy = deployment.lastHealthyReleaseId;
+      const degradeError = verify.verdict === "PENDING"
+        ? "health verification did not stabilize within the grace window"
+        : "health verification failed";
       await prisma.deployment.update({
         where: { id: deployment.id },
         data: { currentReleaseId: releaseId, runtimeState: "DEGRADED" }
       });
-      await finish(operationId, "FAILED", "health verification failed", {
+      await finish(operationId, "FAILED", degradeError, {
         runtimeConverged: true, health: "DEGRADED", releaseId, previousHealthyReleaseId: previousHealthy
       });
       await logAuditEvent({
@@ -491,8 +499,8 @@ async function finalizeCancellation(operationId: string): Promise<void> {
       })
     : null;
 
-  const runtimeChanged = verify !== null && (verify.verdict === "CONVERGED_HEALTHY" || verify.verdict === "CONVERGED_DEGRADED" || verify.verdict === "DRIFTED");
-  const runtimeState = verify?.verdict === "CONVERGED_HEALTHY" ? "CONVERGED" : verify?.verdict === "CONVERGED_DEGRADED" ? "DEGRADED" : "DRIFTED";
+  const runtimeChanged = verify !== null && ["CONVERGED_HEALTHY", "CONVERGED_DEGRADED", "PENDING", "DRIFTED"].includes(verify.verdict);
+  const runtimeState = verify?.verdict === "CONVERGED_HEALTHY" ? "CONVERGED" : (verify?.verdict === "CONVERGED_DEGRADED" || verify?.verdict === "PENDING") ? "DEGRADED" : "DRIFTED";
 
   await prisma.deployment.update({
     where: { id: op.deploymentId },
@@ -547,8 +555,8 @@ async function recoverOperation(operationId: string): Promise<void> {
       })
     : null;
 
-  if (verify && (verify.verdict === "CONVERGED_HEALTHY" || verify.verdict === "CONVERGED_DEGRADED")) {
-    // Conclusively converged — finalize (healthy success, degraded failure).
+  if (verify && ["CONVERGED_HEALTHY", "CONVERGED_DEGRADED", "PENDING"].includes(verify.verdict)) {
+    // Conclusively converged — finalize (healthy success, degraded/pending failure).
     const healthy = verify.verdict === "CONVERGED_HEALTHY";
     const frozenSecrets = ((op.result as Record<string, unknown>)?.frozenSecrets ?? []) as FrozenSecret[];
     const releaseId = await createRelease({
@@ -564,7 +572,7 @@ async function recoverOperation(operationId: string): Promise<void> {
         ? { currentReleaseId: releaseId, lastHealthyReleaseId: releaseId, runtimeState: "CONVERGED" }
         : { currentReleaseId: releaseId, runtimeState: "DEGRADED" }
     });
-    await finish(operationId, healthy ? "SUCCEEDED" : "FAILED", healthy ? null : "health verification failed", {
+    await finish(operationId, healthy ? "SUCCEEDED" : "FAILED", healthy ? null : (verify.verdict === "PENDING" ? "health verification did not stabilize within the grace window" : "health verification failed"), {
       runtimeConverged: true, health: healthy ? "HEALTHY" : "DEGRADED", releaseId, recovered: true
     });
   } else {
@@ -636,11 +644,39 @@ export function startDeploymentSweeper(intervalMs = 30_000): void {
 
 /** Resolve the default rollback target revision (previous healthy release). */
 export async function getRollbackTargetRevision(deploymentId: string): Promise<string | null> {
+  const target = await getRollbackTarget(deploymentId);
+  return target?.revisionId ?? null;
+}
+
+/**
+ * Resolve the default rollback target (previous healthy release) with the
+ * context a rollback UI needs: target revision + the release/runtime state it
+ * came from. Never resurrects the old release — it only identifies the
+ * configuration (revision) to re-apply.
+ */
+export async function getRollbackTarget(deploymentId: string): Promise<{
+  revisionId: string;
+  revisionNumber: number;
+  fromReleaseId: string;
+  fromReleaseHealthVerdict: string;
+  fromRuntimeState: string;
+  currentReleaseId: string | null;
+  fromReleaseAppliedAt: string | null;
+} | null> {
   const deployment = await prisma.deployment.findUnique({ where: { id: deploymentId } });
   if (!deployment?.lastHealthyReleaseId) return null;
   const release = await prisma.deploymentRelease.findUnique({
     where: { id: deployment.lastHealthyReleaseId },
-    select: { revisionId: true }
+    include: { revision: { select: { revisionNumber: true } } }
   });
-  return release?.revisionId ?? null;
+  if (!release?.revisionId) return null;
+  return {
+    revisionId: release.revisionId,
+    revisionNumber: release.revision.revisionNumber,
+    fromReleaseId: release.id,
+    fromReleaseHealthVerdict: release.healthVerdict,
+    fromRuntimeState: deployment.runtimeState,
+    currentReleaseId: deployment.currentReleaseId,
+    fromReleaseAppliedAt: release.appliedAt?.toISOString() ?? null
+  };
 }

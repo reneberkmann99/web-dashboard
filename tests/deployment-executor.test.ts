@@ -9,7 +9,7 @@ import { resetDatabase } from "./setup";
 import { seedWorld, sessionFor } from "./helpers/fixtures";
 import { createSecret, rotateSecret } from "@/server/services/deployment-secrets";
 import { recomputePlanHash } from "@/server/services/deployment-plan";
-import { requestDeploymentOperation, requestCancellation, sweepStaleDeploymentOperations } from "@/server/services/deployment-executor";
+import { requestDeploymentOperation, requestCancellation, sweepStaleDeploymentOperations, getRollbackTarget } from "@/server/services/deployment-executor";
 
 // The eligibility gate requires the Agent CA to exist; point it at a throwaway dir.
 const pkiTmp = fs.mkdtempSync(path.join(os.tmpdir(), "hostpanel-exec-pki-"));
@@ -326,5 +326,155 @@ describe("managed deployment executor", () => {
     const staleAfter = await prisma.deploymentOperation.findUniqueOrThrow({ where: { id: stale.id } });
     expect(staleAfter.state).toBe("SUCCEEDED"); // verify mock returns CONVERGED_HEALTHY
     expect((staleAfter.result as { recovered?: boolean }).recovered).toBe(true);
+  });
+
+  it("healthcheck not yet determined (PENDING) during grace window converges to DEGRADED", async () => {
+    const world = await seedWorld();
+    const { deployment, revision } = await makeManaged(sessionFor(world.adminA));
+    await prisma.deployment.update({ where: { id: deployment.id }, data: { verifyGraceMs: 10_000 } });
+    let calls = 0;
+    agent.verifyDeployment.mockImplementation(async () => {
+      calls += 1;
+      return calls === 1
+        ? { verdict: "PENDING" as const, services: [{ name: "web", status: "running", health: "starting", restartCount: 0 }] }
+        : { verdict: "CONVERGED_DEGRADED" as const, services: [{ name: "web", status: "running", health: "unhealthy", restartCount: 3 }] };
+    });
+    const planHash = (await recomputePlanHash(deployment.id, revision.id))!;
+
+    const result = await requestDeploymentOperation({ deploymentId: deployment.id, type: "DEPLOY", revisionId: revision.id, planHash, actor: sessionFor(world.adminA) });
+    await waitForTerminal((result as { operationId: string }).operationId);
+
+    const op = await prisma.deploymentOperation.findFirstOrThrow({ where: { deploymentId: deployment.id } });
+    expect(op.state).toBe("FAILED");
+    expect(op.error).toContain("health verification failed");
+    const d = await prisma.deployment.findUniqueOrThrow({ where: { id: deployment.id } });
+    expect(d.runtimeState).toBe("DEGRADED");
+    expect(d.currentReleaseId).not.toBeNull();
+    const release = await prisma.deploymentRelease.findUniqueOrThrow({ where: { id: d.currentReleaseId! } });
+    expect(release.healthVerdict).toBe("DEGRADED");
+  });
+
+  it("PENDING for the whole grace window → FAILED with unproven-health error + DEGRADED release", async () => {
+    const world = await seedWorld();
+    const { deployment, revision } = await makeManaged(sessionFor(world.adminA));
+    await prisma.deployment.update({ where: { id: deployment.id }, data: { verifyGraceMs: 300 } });
+    agent.verifyDeployment.mockResolvedValue({ verdict: "PENDING" as const, services: [{ name: "web", status: "running", health: "starting", restartCount: 0 }] });
+    const planHash = (await recomputePlanHash(deployment.id, revision.id))!;
+
+    const result = await requestDeploymentOperation({ deploymentId: deployment.id, type: "DEPLOY", revisionId: revision.id, planHash, actor: sessionFor(world.adminA) });
+    await waitForTerminal((result as { operationId: string }).operationId);
+
+    const op = await prisma.deploymentOperation.findFirstOrThrow({ where: { deploymentId: deployment.id } });
+    expect(op.state).toBe("FAILED");
+    expect(op.error).toContain("did not stabilize");
+    const d = await prisma.deployment.findUniqueOrThrow({ where: { id: deployment.id } });
+    expect(d.runtimeState).toBe("DEGRADED");
+    expect(d.currentReleaseId).not.toBeNull();
+  });
+
+  it("stale plan rejected after secret rotation (planHash binds secret versions)", async () => {
+    const outer = await seedWorld();
+    const { deployment, revision } = await makeManaged(sessionFor(outer.adminA));
+    const oldHash = (await recomputePlanHash(deployment.id, revision.id))!;
+    const secret = await prisma.secret.findFirstOrThrow({ where: { deploymentId: deployment.id, key: "DB_PASSWORD" } });
+    await rotateSecret({ deploymentId: deployment.id, secretId: secret.id, value: "rotated-value", actor: sessionFor(outer.adminA) });
+
+    const result = await requestDeploymentOperation({ deploymentId: deployment.id, type: "DEPLOY", revisionId: revision.id, planHash: oldHash, actor: sessionFor(outer.adminA) });
+    expect(result.status).toBe("plan_stale");
+    expect(agent.prepareDeployment).not.toHaveBeenCalled();
+  });
+
+  it("getRollbackTarget returns null when no healthy release exists yet", async () => {
+    const world = await seedWorld();
+    const { deployment } = await makeManaged(sessionFor(world.adminA));
+    expect(await getRollbackTarget(deployment.id)).toBeNull();
+  });
+
+  it("rollback targets the previous healthy revision and creates a NEW release with the latest secret version", async () => {
+    const outer = await seedWorld();
+    const { deployment, revision } = await makeManaged(sessionFor(outer.adminA));
+
+    const deploy = async (revId: string, verdict: string) => {
+      agent.verifyDeployment.mockResolvedValue({
+        verdict: verdict as "CONVERGED_HEALTHY" | "CONVERGED_DEGRADED",
+        services: [{ name: "web", status: "running", health: verdict === "CONVERGED_DEGRADED" ? "unhealthy" : null, restartCount: verdict === "CONVERGED_DEGRADED" ? 3 : 0 }]
+      });
+      const planHash = (await recomputePlanHash(deployment.id, revId))!;
+      const result = await requestDeploymentOperation({ deploymentId: deployment.id, type: "DEPLOY", revisionId: revId, planHash, actor: sessionFor(outer.adminA) });
+      expect(result.status).toBe("created");
+      await waitForTerminal((result as { operationId: string }).operationId);
+    };
+
+    // Healthy deploy of revision 1 (secret v1).
+    await deploy(revision.id, "CONVERGED_HEALTHY");
+    const secret = await prisma.secret.findFirstOrThrow({ where: { deploymentId: deployment.id, key: "DB_PASSWORD" } });
+
+    // Rotate to v2 + healthy redeploy → release B (the previous healthy release).
+    await rotateSecret({ deploymentId: deployment.id, secretId: secret.id, value: "secret-value-2", actor: sessionFor(outer.adminA) });
+    await deploy(revision.id, "CONVERGED_HEALTHY");
+    const releasesAfterB = await prisma.deploymentRelease.findMany({ where: { deploymentId: deployment.id }, orderBy: { createdAt: "asc" } });
+    const releaseB = releasesAfterB[1];
+
+    // Degraded revision 2 → degraded release C.
+    const rev2 = await prisma.deploymentRevision.create({
+      data: {
+        deploymentId: deployment.id, revisionNumber: 2, source: DeploymentSource.HOSTPANEL,
+        composeSource: "services:\n  web:\n    image: nginx:stable\n    environment:\n      DB: ${DB_PASSWORD}\n",
+        composeCanonical: "services:\n  web:\n    image: nginx:stable\n    environment:\n      DB: __HOSTPANEL_SECRET_DB_PASSWORD__\n",
+        environmentSnapshot: {}, secretReferences: ["DB_PASSWORD"],
+        contentSha256: crypto.randomUUID(), analyzerVersion: "1"
+      }
+    });
+    await deploy(rev2.id, "CONVERGED_DEGRADED");
+    const depMid = await prisma.deployment.findUniqueOrThrow({ where: { id: deployment.id } });
+    expect(depMid.runtimeState).toBe("DEGRADED");
+    expect(depMid.lastHealthyReleaseId).toBe(releaseB.id);
+
+    // Target resolves to the previous healthy release's revision.
+    const target = await getRollbackTarget(deployment.id);
+    expect(target?.revisionId).toBe(revision.id);
+    expect(target?.revisionNumber).toBe(1);
+    expect(target?.fromReleaseId).toBe(releaseB.id);
+
+    // Rotate to v3 (latest) WITHOUT deploying — rollback must use v3, not v2.
+    await rotateSecret({ deploymentId: deployment.id, secretId: secret.id, value: "secret-value-3", actor: sessionFor(outer.adminA) });
+
+    agent.verifyDeployment.mockResolvedValue({ verdict: "CONVERGED_HEALTHY" as const, services: [{ name: "web", status: "running", health: null, restartCount: 0 }] });
+    const planHash = (await recomputePlanHash(deployment.id, target!.revisionId))!;
+    const rb = await requestDeploymentOperation({ deploymentId: deployment.id, type: "ROLLBACK", revisionId: target!.revisionId, planHash, actor: sessionFor(outer.adminA) });
+    expect(rb.status).toBe("created");
+    await waitForTerminal((rb as { operationId: string }).operationId);
+
+    const releaseD = (await prisma.deploymentRelease.findMany({ where: { deploymentId: deployment.id }, orderBy: { createdAt: "asc" } })).at(-1)!;
+    expect(releaseD.id).not.toBe(releaseB.id); // new release, NOT the old one reactivated
+    expect(releaseD.revisionId).toBe(releaseB.revisionId); // same configuration
+    expect(releaseD.healthVerdict).toBe("HEALTHY");
+    const snapD = await prisma.deploymentReleaseSecret.findFirstOrThrow({ where: { releaseId: releaseD.id, key: "DB_PASSWORD" } });
+    expect(snapD.versionNumber).toBe(3); // LATEST secret version, not the historical v2
+    const opD = await prisma.deploymentOperation.findUniqueOrThrow({ where: { id: releaseD.operationId! } });
+    expect(opD.type).toBe("ROLLBACK");
+    const depAfter = await prisma.deployment.findUniqueOrThrow({ where: { id: deployment.id } });
+    expect(depAfter.runtimeState).toBe("CONVERGED");
+    expect(depAfter.currentReleaseId).toBe(releaseD.id);
+    expect(depAfter.lastHealthyReleaseId).toBe(releaseD.id);
+  });
+
+  it("release image snapshot takes ACTUAL runtime identity from verification", async () => {
+    const world = await seedWorld();
+    const { deployment, revision } = await makeManaged(sessionFor(world.adminA));
+    agent.verifyDeployment.mockResolvedValue({
+      verdict: "CONVERGED_HEALTHY" as const,
+      services: [{ name: "web", status: "running", health: null, restartCount: 0, imageId: "sha256:runtime-image-id", repoDigest: "nginx@sha256:runtime-digest", imageRef: "nginx:stable" }]
+    });
+    const planHash = (await recomputePlanHash(deployment.id, revision.id))!;
+    const result = await requestDeploymentOperation({ deploymentId: deployment.id, type: "DEPLOY", revisionId: revision.id, planHash, actor: sessionFor(world.adminA) });
+    await waitForTerminal((result as { operationId: string }).operationId);
+
+    const d = await prisma.deployment.findUniqueOrThrow({ where: { id: deployment.id } });
+    const release = await prisma.deploymentRelease.findUniqueOrThrow({ where: { id: d.currentReleaseId! }, include: { images: true } });
+    expect(release.images).toHaveLength(1);
+    expect(release.images[0].imageId).toBe("sha256:runtime-image-id");
+    expect(release.images[0].repoDigest).toBe("nginx@sha256:runtime-digest");
+    expect(release.images[0].imageRef).toBe("nginx:stable");
   });
 });

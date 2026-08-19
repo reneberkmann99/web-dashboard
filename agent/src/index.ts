@@ -20,6 +20,7 @@ import {
   getCurrentRevisionNumber,
   resolveStateDir
 } from "./deployments/state-dir";
+import { decideVerifyVerdict } from "./deployments/verdict";
 import { verifyRequestSignature, withinTimestampWindow, NonceCache, sha256Hex } from "./security/signing";
 import {
   generateKeyAndCsr,
@@ -511,6 +512,7 @@ app.post("/deployments/:deploymentId/verify", requireSignedRequest, async (req: 
 
     let running = 0;
     let unhealthy = 0;
+    let starting = 0;
     const services: {
       name: string;
       status: string;
@@ -535,6 +537,7 @@ app.post("/deployments/:deploymentId/verify", requireSignedRequest, async (req: 
         if (status === "running") {
           running += 1;
           if (health === "unhealthy") unhealthy += 1;
+          else if (health === "starting") starting += 1;
         }
       }
     } catch {
@@ -558,16 +561,13 @@ app.post("/deployments/:deploymentId/verify", requireSignedRequest, async (req: 
       // image identity is best-effort; verdict is unaffected
     }
 
-    const present = new Set(services.map((s) => s.name));
-    const missing = expected.filter((e) => !present.has(e));
-    let verdict: "CONVERGED_HEALTHY" | "CONVERGED_DEGRADED" | "DRIFTED" | "FAILED";
-    if (missing.length > 0 || running < expected.length) {
-      verdict = "DRIFTED";
-    } else if (unhealthy > 0) {
-      verdict = "CONVERGED_DEGRADED";
-    } else {
-      verdict = "CONVERGED_HEALTHY";
-    }
+    const verdict = decideVerifyVerdict({
+      expectedServices: expected,
+      presentServices: services.map((s) => s.name),
+      runningCount: running,
+      unhealthyCount: unhealthy,
+      startingCount: starting
+    });
     res.json({ verdict, services });
   } catch (error) {
     res.json({ verdict: "FAILED", services: [] });

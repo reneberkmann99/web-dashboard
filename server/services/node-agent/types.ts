@@ -156,7 +156,7 @@ export const deploymentVerifyServiceSchema = z.object({
 });
 
 export const deploymentVerifyResponseSchema = z.object({
-  verdict: z.enum(["CONVERGED_HEALTHY", "CONVERGED_DEGRADED", "DRIFTED", "FAILED"]),
+  verdict: z.enum(["CONVERGED_HEALTHY", "CONVERGED_DEGRADED", "PENDING", "DRIFTED", "FAILED"]),
   services: z.array(deploymentVerifyServiceSchema)
 });
 
