@@ -41,6 +41,11 @@ enum AuditResult {
   FAILURE
 }
 
+enum ProjectSource {
+  MANUAL
+  COMPOSE
+}
+
 model ClientAccount {
   id          String                @id @default(cuid())
   name        String
@@ -152,6 +157,8 @@ model Project {
   name            String
   slug            String
   description     String?
+  source          ProjectSource         @default(MANUAL)
+  composeProject  String?
   isActive        Boolean               @default(true)
   clientAccountId String
   clientAccount   ClientAccount         @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
@@ -164,7 +171,9 @@ model Project {
   updatedAt       DateTime              @updatedAt
 
   @@unique([clientAccountId, slug])
+  @@unique([nodeId, composeProject])
   @@index([nodeId])
+  @@index([source])
 }
 
 /**
@@ -181,6 +190,8 @@ model Container {
   dockerContainerId String
   dockerName        String
   image             String?
+  composeProject    String?
+  composeService    String?
   lastKnownStatus   String?
   firstSeenAt       DateTime              @default(now())
   lastSeenAt        DateTime              @default(now())

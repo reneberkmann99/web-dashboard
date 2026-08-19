@@ -10,6 +10,9 @@ export type RuntimeContainer = {
   memoryUsage: string | null;
   restartCount: number | null;
   lastUpdatedAt: string;
+  /** Docker Compose project/service labels (com.docker.compose.project/service). */
+  composeProject?: string | null;
+  composeService?: string | null;
   /** Detailed docker inspect-derived metadata (networks, mounts, labels, …). */
   details?: ContainerDetails | null;
 };

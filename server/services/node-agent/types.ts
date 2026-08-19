@@ -39,6 +39,8 @@ export const containerRuntimeSchema = z.object({
   memoryUsage: z.string().nullable(),
   restartCount: z.number().nullable(),
   lastUpdatedAt: z.string(),
+  composeProject: z.string().nullable().optional(),
+  composeService: z.string().nullable().optional(),
   details: containerDetailsSchema.nullable().optional()
 });
 

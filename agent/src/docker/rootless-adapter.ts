@@ -217,9 +217,11 @@ export class RootlessDockerAdapter implements DockerAdapter {
       const detail = JSON.parse(inspect.stdout.trim()) as {
         Created?: string;
         RestartCount?: number;
+        Config?: { Labels?: Record<string, string> };
       };
 
       const stat = statsRows.get(row.ID);
+      const labels = detail.Config?.Labels ?? {};
 
       results.push({
         id: row.ID,
@@ -232,6 +234,8 @@ export class RootlessDockerAdapter implements DockerAdapter {
         cpuPercent: parseCpuPercent(stat?.CPUPerc),
         memoryUsage: stat?.MemUsage ?? null,
         restartCount: detail.RestartCount ?? null,
+        composeProject: labels["com.docker.compose.project"] ?? null,
+        composeService: labels["com.docker.compose.service"] ?? null,
         lastUpdatedAt: new Date().toISOString()
       });
     }

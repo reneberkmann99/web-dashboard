@@ -14,6 +14,7 @@ import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import { type AuthSession } from "@/server/auth/session";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
+import { recordComposeMetadata, reconcileComposeWorkloads } from "@/server/services/compose";
 import { ContainerView, OverviewStats, DiscoveredContainer } from "@/types/domain";
 
 function mapStatus(value?: string): ContainerView["status"] {
@@ -589,6 +590,11 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
         })
         .catch(() => undefined);
     }
+
+    // Compose discovery: record labels and keep COMPOSE workloads in sync.
+    // Safe when offline (empty inventory → no-op / no deactivation).
+    await recordComposeMetadata(node.id, runtimePayload.containers);
+    await reconcileComposeWorkloads(node.id, runtimePayload.containers);
   }
 
   return results.sort(
