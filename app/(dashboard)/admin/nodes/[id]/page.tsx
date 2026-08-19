@@ -128,6 +128,9 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
         )}
       </div>
 
+      {/* Tab bar — above the panels so its position never shifts with content height */}
+      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="node" />
+
       {tab === "Overview" && (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-panel p-4">
@@ -305,8 +308,6 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           )}
         </div>
       )}
-
-      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="node" />
     </div>
   );
 }

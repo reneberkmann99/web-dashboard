@@ -226,6 +226,9 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         </div>
       </div>
 
+      {/* Tab bar — above the panels so its position never shifts with content height */}
+      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="client" />
+
       {tab === "Overview" && (
         <div className="grid gap-4 md:grid-cols-3">
           <Metric label="Active users" value={String(client.users.filter((u) => u.isActive).length)} />
@@ -299,8 +302,6 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           )}
         </div>
       )}
-
-      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="client" />
 
       {/* Invite modal */}
       <Modal
