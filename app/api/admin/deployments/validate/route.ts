@@ -21,6 +21,8 @@ export async function POST(request: Request): Promise<Response> {
       composeVersion: result.composeVersion,
       valid: result.valid,
       findings: result.findings,
+      blockedFindings: result.blockedFindings,
+      highRiskFindings: result.highRiskFindings,
       composeErrors: result.composeErrors
     });
   } catch (error) {

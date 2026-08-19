@@ -768,10 +768,10 @@ async function main() {
 
   await login();
 
-  const state = MODE === "lifecycle" ? {} : requireState();
+  const state = MODE === "lifecycle" || MODE === "first-deploy" ? {} : requireState();
   state.phases = state.phases ?? {};
 
-  if (MODE === "lifecycle") {
+  if (MODE === "lifecycle" || MODE === "first-deploy") {
     // Pre-flight: clean slate + isolation baseline.
     const existing = docker(`ps -a --filter name=${PROJECT} --format '{{.Names}}'`, { allowFail: true });
     if (existing) throw new Error(`fixture already exists (${existing.split("\n").join(", ")}) — run cleanup first`);
@@ -781,7 +781,12 @@ async function main() {
     console.log("isolation baseline captured (all containers on both daemons)");
   }
 
-  const phases = FROM ? PHASES.slice(PHASES.indexOf(FROM)) : PHASES;
+  const phases =
+    MODE === "lifecycle"
+      ? FROM
+        ? PHASES.slice(PHASES.indexOf(FROM))
+        : PHASES
+      : [MODE];
   for (const phase of phases) {
     if (MODE === "lifecycle" && phase === "first-deploy" && FROM && FROM !== "first-deploy") continue;
     const started = Date.now();

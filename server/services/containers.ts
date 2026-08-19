@@ -438,6 +438,7 @@ export async function getContainerDirect(
       nodeName: node.name,
       nodeOnline: payload.nodeOnline,
       projectName: containerRow?.project?.name ?? null,
+      projectId: containerRow?.project?.id ?? null,
       clientName: "Unassigned",
       allowedActions: [],
       lastUpdatedAt: live.lastUpdatedAt,

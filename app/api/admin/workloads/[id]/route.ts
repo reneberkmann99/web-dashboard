@@ -3,6 +3,7 @@ import { prisma } from "@/server/db";
 import { cuidParamSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 import { listContainersForNode, toWorkloadDetail } from "@/server/services/workloads";
+import { getAdminWorkloadDeploymentStatus } from "@/server/services/deployments";
 
 export async function GET(
   _: Request,
@@ -40,7 +41,9 @@ export async function GET(
       select: { id: true, action: true, actorEmail: true, result: true, createdAt: true, metadata: true }
     });
 
-    return ok({ workload: detail, activity });
+    const deployment = await getAdminWorkloadDeploymentStatus(project.id);
+
+    return ok({ workload: detail, activity, deployment });
   } catch (error) {
     return fromError(error);
   }

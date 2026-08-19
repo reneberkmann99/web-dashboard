@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
@@ -12,6 +12,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { TabBar } from "@/components/ui/tab-bar";
 import { WorkloadNetworksTab, WorkloadVolumesTab } from "@/components/workloads/networks-volumes-tabs";
+import { DeploymentCard } from "@/components/workloads/deployment/deployment-card";
+import { DeploymentsTab } from "@/components/workloads/deployment/deployments-tab";
+import { SecretsTab } from "@/components/workloads/deployment/secrets-tab";
+import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
+import type { WorkloadDeploymentStatus } from "@/components/workloads/deployment/types";
 import { timeAgo } from "@/lib/format";
 import { humanizeAction } from "@/lib/format";
 
@@ -49,12 +54,17 @@ type WorkloadDetailPayload = {
     exposedPorts: string[];
   };
   activity: Array<{ id: string; action: string; actorEmail: string | null; result: string; createdAt: string }>;
+  deployment: WorkloadDeploymentStatus | null;
 };
 
 type GrantModalState = { open: boolean; clientId: string; level: "start" | "view" };
 type RestartResponse = { total: number; operationIds: string[]; failures: Array<{ dockerName: string; reason: string }> };
 
-const TABS = ["Overview", "Containers", "Networks", "Volumes", "Activity"] as const;
+const TABS = ["Overview", "Containers", "Deployments", "Secrets", "Networks", "Volumes", "Activity"] as const;
+
+function isDeploymentActivity(action: string): boolean {
+  return /^(DEPLOY_|ROLLBACK_|SECRET_|REVISION_|DEPLOYMENT_|SECURITY_ACKNOWLEDGED)/.test(action);
+}
 
 export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
@@ -65,6 +75,17 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [confirmDetach, setConfirmDetach] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const searchParams = useSearchParams();
+
+  // Deep link from the deployment editor's degraded result ([Rollback]) opens
+  // the rollback flow once, then clears the URL param.
+  useEffect(() => {
+    if (searchParams.get("rollback") === "1") {
+      setRollbackOpen(true);
+      router.replace(`/admin/workloads/${params.id}`, { scroll: false });
+    }
+  }, [searchParams, params.id, router]);
 
   const query = useQuery({
     queryKey: ["workload", params.id],
@@ -122,7 +143,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
     return <p className="text-sm text-red-400">Failed to load workload.</p>;
   }
 
-  const { workload, activity } = query.data;
+  const { workload, activity, deployment } = query.data;
   const healthVariant =
     workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : workload.health === "down" ? "danger" : "default";
   const failedOrRestarting = workload.containerSummaries.filter(
@@ -203,7 +224,16 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
 
       {/* Overview */}
       {tab === "Overview" && (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
+          {deployment?.managed && deployment.deploymentId && (
+            <DeploymentCard
+              deployment={deployment}
+              workloadId={workload.id}
+              onGoToDeployments={() => setTab("Deployments")}
+              onRollback={() => setRollbackOpen(true)}
+            />
+          )}
+          <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Status</h2>
             <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -244,6 +274,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
               </ul>
             )}
           </div>
+          </div>
         </div>
       )}
 
@@ -259,6 +290,17 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           onRowClick={(c) => router.push(`/admin/containers/${workload.node.id}/${c.containerId}`)}
         />
       )}
+
+      {/* Deployments */}
+      {tab === "Deployments" && <DeploymentsTab workloadId={workload.id} />}
+
+      {/* Secrets */}
+      {tab === "Secrets" &&
+        (deployment?.managed && deployment.deploymentId ? (
+          <SecretsTab deploymentId={deployment.deploymentId} workloadId={workload.id} />
+        ) : (
+          <p className="text-sm text-muted">This workload has no HostPanel-managed secrets.</p>
+        ))}
 
       {/* Networks */}
       {tab === "Networks" && <WorkloadNetworksTab resourcesUrl={`/api/admin/workloads/${workload.id}/resources`} />}
@@ -278,6 +320,15 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
                   <span>
                     {humanizeAction(a.action)}
                     <span className="ml-2 text-xs text-muted">{a.actorEmail ?? "system"}</span>
+                    {isDeploymentActivity(a.action) && (
+                      <button
+                        type="button"
+                        onClick={() => setTab("Deployments")}
+                        className="ml-2 text-xs text-accent hover:underline"
+                      >
+                        View deployment
+                      </button>
+                    )}
                   </span>
                   <span className="shrink-0 text-xs text-muted">{timeAgo(a.createdAt)}</span>
                 </li>
@@ -288,7 +339,20 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       )}
 
       {/* Tab bar */}
-      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="workload" />
+      <TabBar
+        tabs={deployment?.managed ? TABS : TABS.filter((t) => t !== "Deployments" && t !== "Secrets")}
+        active={tab}
+        onChange={setTab}
+        idPrefix="workload"
+      />
+
+      {rollbackOpen && deployment?.managed && deployment.deploymentId && (
+        <RollbackFlow
+          deploymentId={deployment.deploymentId}
+          workloadId={workload.id}
+          onDone={() => setRollbackOpen(false)}
+        />
+      )}
 
       <GrantModal
         open={grantModal.open}

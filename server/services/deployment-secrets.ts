@@ -1,6 +1,7 @@
 import { prisma } from "@/server/db";
 import { encryptSecret, isEncryptionKeyConfigured } from "@/server/security/crypto";
 import { logAuditEvent } from "@/server/audit";
+import { parse } from "yaml";
 import type { AuthSession } from "@/server/auth/session";
 
 /**
@@ -52,6 +53,10 @@ export type SecretMetadataView = {
   isActive: boolean;
   latestVersion: { versionNumber: number; createdAt: string; createdBy: string | null } | null;
   createdAt: string;
+  /** Number of services in the LATEST revision whose environment uses this secret. */
+  usedByServices: number;
+  /** Service names in the LATEST revision whose environment uses this secret. */
+  usedByServiceNames: string[];
 };
 
 function toSecretMetadata(secret: {
@@ -73,8 +78,47 @@ function toSecretMetadata(secret: {
           createdBy: latest.createdBy?.email ?? null
         }
       : null,
-    createdAt: secret.createdAt.toISOString()
+    createdAt: secret.createdAt.toISOString(),
+    usedByServices: 0, // filled in by listSecrets after computing usage across services
+    usedByServiceNames: []
   };
+}
+
+/**
+ * Count which services in the LATEST revision's canonical config reference
+ * each secret key (deterministic sentinel inside services.*.environment).
+ * Pure read of the stored canonical — never Docker, never plaintext.
+ */
+function secretUsageByService(
+  composeCanonical: string | null,
+  keys: string[]
+): Map<string, { count: number; names: string[] }> {
+  const usage = new Map<string, { count: number; names: string[] }>(keys.map((k) => [k, { count: 0, names: [] }]));
+  if (!composeCanonical || keys.length === 0) return usage;
+  try {
+    const root = parse(composeCanonical) as { services?: Record<string, { environment?: unknown }> };
+    const services = root?.services ?? {};
+    for (const [serviceName, service] of Object.entries(services)) {
+      const env = service?.environment;
+      if (env == null) continue;
+      const values: string[] = Array.isArray(env)
+        ? env.map((e) => String(e))
+        : Object.values(env as Record<string, unknown>).map((v) => String(v));
+      for (const key of keys) {
+        const sentinel = `__HOSTPANEL_SECRET_${key}__`;
+        if (values.some((v) => v.includes(sentinel))) {
+          const entry = usage.get(key) ?? { count: 0, names: [] };
+          entry.count += 1;
+          entry.names.push(serviceName);
+          usage.set(key, entry);
+        }
+      }
+    }
+  } catch {
+    // Unparseable canonical → usage stays 0; the deployment engine already
+    // validated it before persisting, so this is purely defensive.
+  }
+  return usage;
 }
 
 export async function listSecrets(deploymentId: string): Promise<SecretMetadataView[]> {
@@ -89,7 +133,16 @@ export async function listSecrets(deploymentId: string): Promise<SecretMetadataV
       }
     }
   });
-  return secrets.map(toSecretMetadata);
+  const latestRevision = await prisma.deploymentRevision.findFirst({
+    where: { deploymentId },
+    orderBy: { revisionNumber: "desc" },
+    select: { composeCanonical: true }
+  });
+  const usage = secretUsageByService(latestRevision?.composeCanonical ?? null, secrets.map((s) => s.key));
+  return secrets.map((s) => {
+    const u = usage.get(s.key) ?? { count: 0, names: [] };
+    return { ...toSecretMetadata(s), usedByServices: u.count, usedByServiceNames: u.names };
+  });
 }
 
 /**
@@ -253,4 +306,27 @@ export async function setSecretActive(input: {
   });
 
   return toSecretMetadata(updated);
+}
+
+/** Version metadata history for one secret (never ciphertext). */
+export async function listSecretVersions(
+  deploymentId: string,
+  secretId: string
+): Promise<{ id: string; versionNumber: number; createdAt: string; createdBy: string | null }[] | null> {
+  const secret = await prisma.secret.findFirst({
+    where: { id: secretId, deploymentId },
+    select: { id: true }
+  });
+  if (!secret) return null;
+  const versions = await prisma.secretVersion.findMany({
+    where: { secretId },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true, versionNumber: true, createdAt: true, createdBy: { select: { email: true } } }
+  });
+  return versions.map((v) => ({
+    id: v.id,
+    versionNumber: v.versionNumber,
+    createdAt: v.createdAt.toISOString(),
+    createdBy: v.createdBy?.email ?? null
+  }));
 }

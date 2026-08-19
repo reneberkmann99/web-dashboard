@@ -790,3 +790,137 @@ export async function acknowledgeSecurityFinding(input: {
 
   return { status: "acknowledged" };
 }
+
+/**
+ * Deployment status for the ADMIN workload detail / overview card (Phase 6C).
+ * Read-only summary; never compose content or secret material.
+ */
+export async function getAdminWorkloadDeploymentStatus(projectId: string): Promise<{
+  managed: boolean;
+  deploymentId: string | null;
+  runtimeState: string | null;
+  currentRelease: {
+    id: string;
+    displayNumber: number | null;
+    revisionId: string;
+    revisionNumber: number;
+    healthVerdict: string;
+    appliedAt: string | null;
+    operationId: string | null;
+    operationType: string | null;
+    operationState: string | null;
+    actorEmail: string | null;
+  } | null;
+  lastHealthyRelease: { id: string; displayNumber: number | null; revisionNumber: number } | null;
+  activeOperation: {
+    id: string;
+    type: string;
+    state: string;
+    phase: string | null;
+    actorEmail: string | null;
+    startedAt: string | null;
+  } | null;
+} | null> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: {
+      deployment: {
+        select: { id: true, runtimeState: true, currentReleaseId: true, lastHealthyReleaseId: true }
+      }
+    }
+  });
+  if (!project) return null;
+  const dep = project.deployment;
+  if (!dep) {
+    return {
+      managed: false,
+      deploymentId: null,
+      runtimeState: null,
+      currentRelease: null,
+      lastHealthyRelease: null,
+      activeOperation: null
+    };
+  }
+
+  const releaseDisplayNumber = async (releaseId: string): Promise<number | null> => {
+    const r = await prisma.deploymentRelease.findUnique({ where: { id: releaseId }, select: { createdAt: true } });
+    if (!r) return null;
+    return prisma.deploymentRelease.count({
+      where: {
+        deploymentId: dep.id,
+        OR: [{ createdAt: { lt: r.createdAt } }, { createdAt: r.createdAt, id: { lte: releaseId } }]
+      }
+    });
+  };
+
+  const [currentRelease, lastHealthyRelease, activeOperation] = await Promise.all([
+    dep.currentReleaseId
+      ? prisma.deploymentRelease.findUnique({
+          where: { id: dep.currentReleaseId },
+          select: {
+            id: true,
+            revisionId: true,
+            healthVerdict: true,
+            appliedAt: true,
+            operationId: true,
+            revision: { select: { revisionNumber: true } }
+          }
+        })
+      : null,
+    dep.lastHealthyReleaseId
+      ? prisma.deploymentRelease.findUnique({
+          where: { id: dep.lastHealthyReleaseId },
+          select: { id: true, revision: { select: { revisionNumber: true } } }
+        })
+      : null,
+    prisma.deploymentOperation.findFirst({
+      where: { deploymentId: dep.id, state: { in: ["REQUESTED", "QUEUED", "RUNNING"] } },
+      orderBy: { requestedAt: "desc" },
+      select: { id: true, type: true, state: true, phase: true, actorEmail: true, startedAt: true }
+    })
+  ]);
+
+  const currentOperation = currentRelease?.operationId
+    ? await prisma.deploymentOperation.findUnique({
+        where: { id: currentRelease.operationId },
+        select: { type: true, state: true, actorEmail: true }
+      })
+    : null;
+
+  return {
+    managed: true,
+    deploymentId: dep.id,
+    runtimeState: dep.runtimeState,
+    currentRelease: currentRelease
+      ? {
+          id: currentRelease.id,
+          displayNumber: await releaseDisplayNumber(currentRelease.id),
+          revisionId: currentRelease.revisionId,
+          revisionNumber: currentRelease.revision.revisionNumber,
+          healthVerdict: currentRelease.healthVerdict,
+          appliedAt: currentRelease.appliedAt?.toISOString() ?? null,
+          operationId: currentRelease.operationId,
+          operationType: currentOperation?.type ?? null,
+          operationState: currentOperation?.state ?? null,
+          actorEmail: currentOperation?.actorEmail ?? null
+        }
+      : null,
+    lastHealthyRelease: lastHealthyRelease
+      ? {
+          id: lastHealthyRelease.id,
+          displayNumber: await releaseDisplayNumber(lastHealthyRelease.id),
+          revisionNumber: lastHealthyRelease.revision.revisionNumber
+        }
+      : null,
+    activeOperation: activeOperation
+      ? {
+          id: activeOperation.id,
+          type: activeOperation.type,
+          state: activeOperation.state,
+          phase: activeOperation.phase,
+          actorEmail: activeOperation.actorEmail,
+          startedAt: activeOperation.startedAt?.toISOString() ?? null
+        }
+      : null
+  };
+}

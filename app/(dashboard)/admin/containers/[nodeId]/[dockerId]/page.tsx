@@ -13,7 +13,7 @@ import { LogViewer } from "@/components/logs/log-viewer";
 import { shortId, timeAgo } from "@/lib/format";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 
-type DetailResponse = { container: ContainerView; nodeOnline: boolean };
+type DetailResponse = { container: ContainerView; nodeOnline: boolean; managedDeployment: import("@/components/workloads/deployment/types").WorkloadDeploymentStatus | null };
 type ActionResponse = { operationId: string };
 
 function OperationStateBadge({ state }: { state: OperationState }): React.JSX.Element {
@@ -147,6 +147,25 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
           {operation.state === "FAILED" && (
             <span className="text-sm text-red-400">{operation.error ?? "Unknown failure"}</span>
           )}
+        </div>
+      )}
+
+      {detail.data?.managedDeployment?.managed && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">
+          <p className="font-medium">
+            Managed by HostPanel — workload <span className="font-mono text-xs">{container.projectName}</span>
+            {detail.data.managedDeployment.currentRelease && (
+              <>
+                {' '}· Release #{detail.data.managedDeployment.currentRelease.displayNumber ?? "—"} · Revision{" "}
+                {detail.data.managedDeployment.currentRelease.revisionNumber}
+              </>
+            )}
+          </p>
+          <p className="mt-1 text-muted">
+            Direct start/stop/restart actions on this container are audited but can diverge from the managed deployment
+            state. Prefer workload-level deployment operations (edit → plan → deploy, rollback) for configuration changes;
+            keep direct actions for emergency recovery.
+          </p>
         </div>
       )}
 

@@ -1,4 +1,25 @@
-import { ApiResponse } from "@/types/api";
+import { ApiErrorPayload, ApiResponse } from "@/types/api";
+
+/**
+ * Error thrown by apiFetch with the backend error CODE preserved (not just the
+ * message). UI code switches on `error.code` (e.g. PLAN_STALE) while the
+ * message remains human-readable for toasts.
+ */
+export class ApiError extends Error {
+  code: string;
+  details?: unknown;
+
+  constructor(payload: ApiErrorPayload) {
+    super(payload.message);
+    this.name = "ApiError";
+    this.code = payload.code;
+    this.details = payload.details;
+  }
+}
+
+export function isApiError(error: unknown): error is ApiError {
+  return error instanceof ApiError;
+}
 
 function getCsrfCookie(): string | null {
   if (typeof document === "undefined") {
@@ -34,7 +55,7 @@ export async function apiFetch<T>(input: RequestInfo | URL, init?: RequestInit):
 
   const payload = (await response.json()) as ApiResponse<T>;
   if (!payload.ok) {
-    throw new Error(payload.error.message);
+    throw new ApiError(payload.error);
   }
   return payload.data;
 }

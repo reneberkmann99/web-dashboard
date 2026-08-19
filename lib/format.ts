@@ -79,7 +79,22 @@ export function humanizeAction(action: string): string {
     LOGOUT: "Signed out",
     ACCOUNT_ACTIVATED: "Activated account",
     ACCOUNT_ACTIVATE_FAILED: "Account activation failed",
-    LOGIN_RATE_LIMITED: "Sign-in rate limited"
+    LOGIN_RATE_LIMITED: "Sign-in rate limited",
+    DEPLOYMENT_CREATED: "Created managed deployment",
+    REVISION_CREATED: "Saved configuration revision",
+    DEPLOYMENT_PLAN_CREATED: "Generated deployment plan",
+    DEPLOY_REQUESTED: "Deployment requested",
+    DEPLOY_SUCCEEDED: "Deployment succeeded",
+    DEPLOY_FAILED: "Deployment failed",
+    ROLLBACK_REQUESTED: "Rollback requested",
+    ROLLBACK_SUCCEEDED: "Rollback completed",
+    ROLLBACK_FAILED: "Rollback failed",
+    DEPLOYMENT_CANCEL_REQUESTED: "Deployment cancellation requested",
+    DEPLOYMENT_RUNTIME_DRIFT_DETECTED: "Deployment runtime drift detected",
+    SECRET_CREATED: "Created secret",
+    SECRET_ROTATED: "Rotated secret",
+    SECRET_SET_ACTIVE: "Changed secret status",
+    SECURITY_ACKNOWLEDGED: "Acknowledged security finding"
   };
   if (map[action]) return map[action];
   const cleaned = action

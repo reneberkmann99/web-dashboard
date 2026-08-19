@@ -10,6 +10,7 @@ const buttonVariants = cva(
         default: "bg-accent px-4 py-2 text-slate-900 hover:bg-cyan-300",
         secondary: "bg-panelAlt px-4 py-2 text-text hover:bg-[#1a2947]",
         danger: "bg-danger px-4 py-2 text-white hover:bg-red-500",
+        warning: "bg-warning px-4 py-2 text-slate-900 hover:bg-amber-400",
         ghost: "px-3 py-2 hover:bg-panelAlt"
       },
       size: {

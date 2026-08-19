@@ -321,3 +321,66 @@ ARIA tablists, hydration fix) are removed; what's left:
    resolution like the admin side.
 10. **Workload detail tabs are not deep-linkable** (no ?tab= URL param), so
     sharing a link to the Networks tab isn't possible yet.
+
+## Phase 6C — Managed deployment lifecycle UI
+
+Full operator UX for HostPanel-managed Compose workloads. Only managed workloads
+(source=COMPOSE + Deployment relation) expose the Deployments/Secrets tabs and
+the overview deployment card; ordinary Compose and MANUAL workloads are unchanged.
+
+- **Overview card**: runtime state (CONVERGED/DEGRADED/DRIFTED, exact backend
+  semantics), current release/revision, actor, outstanding operation, last
+  healthy release with rollback action when degraded.
+- **Deployments tab**: current state, active configuration (compose source,
+  never secrets), release history timeline (CURRENT / LAST HEALTHY / HEALTHY /
+  DEGRADED badges — never color-only), release detail (runtime-observed image
+  identities, verification verdict, failure reason, rotation detection).
+- **Editor workflow** (`/admin/workloads/[id]/deployment/edit`): edit YAML →
+  validate (server-side Stage A + B; BLOCKED/HIGH_RISK surfaced, ack gate) →
+  save as immutable revision (no Docker mutation) → line diff vs current →
+  authoritative plan (KEEP guarantees, secret changes, plan hash in an advanced
+  disclosure) → explicit confirm → operation progress → result. Zero-impact
+  plans explain that nothing requires mutation and disable deploy.
+- **Operation progress**: coarse real stages (Queued/Preparing/Pulling/
+  Applying/Verifying/Recording) from actual backend state; polling stops on
+  terminal state; network failures show a retrying notice, never an endless
+  spinner.
+- **DEGRADED result**: FAILED + runtimeConverged renders as "Deployment applied,
+  but health verification failed — the new configuration is currently running",
+  with last-healthy context and a rollback action. Never a generic failure.
+- **Rollback**: GET /rollback-target → plan target revision → confirm with the
+  explicit "current secret versions are used, historical values are not
+  restored" warning → POST /rollback → new release (never reactivates the old
+  one). Editors can deep-link `?rollback=1` from a degraded result.
+- **Secrets tab**: metadata-only list (version, rotation time/actor, services
+  using the secret from the latest revision canonical), version history, rotate
+  flow (new value → affected services → plan → confirm → reconcile deploy).
+  Plaintext discarded from frontend state immediately after the rotation call.
+- **PLAN_STALE**: 409 renders an explicit "plan is out of date" banner with a
+  regenerate action; the stale plan is discarded and confirmation is required
+  again. Never auto-deploys the refreshed plan.
+- **Concurrency**: an active deployment operation is surfaced on the overview
+  card and deployments tab; the backend rejects concurrent deploys
+  (DEPLOYMENT_OP_IN_PROGRESS) and the UI surfaces it as a translated message.
+- **Errors**: all known lifecycle codes map to human messages; the raw code is
+  not shown as a stack trace.
+
+### Managed containers: direct action policy (decision)
+
+Direct start/stop/restart on containers belonging to a managed workload REMAIN
+available (emergency recovery needs them). The container detail page shows a
+"Managed by HostPanel" banner with workload + release/revision context and a
+warning that direct actions are audited but can diverge from the managed
+deployment state; operators are pointed at workload-level lifecycle operations
+for configuration changes. Actions remain fully audited through Operations and
+AuditLog — no silent path was added, and no destructive container/volume/
+network operation exists anywhere in the managed flow.
+
+### Remaining debt
+
+- The agent `pull` step still returns `images: []` (cosmetic; release image
+  identity comes from runtime verification — never tag-derived).
+- Release history pagination is UI-simple (latest 100); the API supports
+  limit/offset.
+- No releases API for CLIENT roles yet (client view stays grant-scoped status
+  metadata only).

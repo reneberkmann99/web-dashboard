@@ -1,6 +1,7 @@
 import { requireApiRole } from "@/server/auth/guards";
 import { getContainerDirect, getContainerLogsDirect } from "@/server/services/containers";
 import { requestOperation, OperationConflictError } from "@/server/services/operations";
+import { getAdminWorkloadDeploymentStatus } from "@/server/services/deployments";
 import { containerActionSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
@@ -27,7 +28,11 @@ export async function GET(
     if (!container) {
       return fail("NOT_FOUND", "Container not found", 404);
     }
-    return ok({ container, nodeOnline });
+    // Managed ownership context (workload/revision/release) for the UI banner.
+    const managedDeployment = container.projectId
+      ? await getAdminWorkloadDeploymentStatus(container.projectId)
+      : null;
+    return ok({ container, nodeOnline, managedDeployment });
   } catch (error) {
     return fromError(error);
   }
