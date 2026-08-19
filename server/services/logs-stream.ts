@@ -69,12 +69,12 @@ function exceedsLineCap(line: string): boolean {
  * gracefully (the browser sees the connection end and can reconnect).
  */
 export function agentLogsToSSE(node: Node, dockerContainerId: string, tail: number): ReadableStream<Uint8Array> {
-  let agentStream: ReadableStream<Uint8Array> | null = null;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   let cancelled = false;
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      agentStream = await nodeAgentClient.streamLogs(node, dockerContainerId, tail);
+      const agentStream = await nodeAgentClient.streamLogs(node, dockerContainerId, tail);
 
       if (!agentStream) {
         controller.enqueue(sse("__hostpanel_error__:node unreachable"));
@@ -82,7 +82,11 @@ export function agentLogsToSSE(node: Node, dockerContainerId: string, tail: numb
         return;
       }
 
-      const reader = agentStream.getReader();
+      // NOTE: the agent stream is locked by our reader, so teardown must go
+      // through reader.cancel() — calling agentStream.cancel() directly while
+      // locked would reject with a TypeError and never reach the source's
+      // cancel() (i.e. the docker logs process would keep running).
+      reader = agentStream.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
@@ -144,16 +148,16 @@ export function agentLogsToSSE(node: Node, dockerContainerId: string, tail: numb
           }
         } finally {
           // Always tear down the agent connection, even on error paths.
-          if (agentStream) {
-            agentStream.cancel().catch(() => undefined);
+          if (reader) {
+            reader.cancel().catch(() => undefined);
           }
         }
       })();
     },
     cancel() {
       cancelled = true;
-      if (agentStream) {
-        agentStream.cancel().catch(() => undefined);
+      if (reader) {
+        reader.cancel().catch(() => undefined);
       }
     }
   });

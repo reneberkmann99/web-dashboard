@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { WorkloadNetworksTab, WorkloadVolumesTab } from "@/components/workloads/networks-volumes-tabs";
+import { TabBar } from "@/components/ui/tab-bar";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
@@ -82,18 +83,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         <WorkloadVolumesTab resourcesUrl={`/api/client/workloads/${workload.id}/resources`} />
       )}
 
-      <div className="flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`rounded-t px-4 py-2 text-sm ${tab === t ? "border-b-2 border-accent font-medium" : "text-muted hover:text-text"}`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="client-workload" />
     </div>
   );
 }

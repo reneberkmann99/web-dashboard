@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { TabBar } from "@/components/ui/tab-bar";
 import { WorkloadNetworksTab, WorkloadVolumesTab } from "@/components/workloads/networks-volumes-tabs";
 import { timeAgo } from "@/lib/format";
 import { humanizeAction } from "@/lib/format";
@@ -287,18 +288,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       )}
 
       {/* Tab bar */}
-      <div className="flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`rounded-t px-4 py-2 text-sm ${tab === t ? "border-b-2 border-accent font-medium" : "text-muted hover:text-text"}`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="workload" />
 
       <GrantModal
         open={grantModal.open}

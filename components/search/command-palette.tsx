@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Boxes, Box, Loader2, Search, Server, Users, CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/fetcher";
+import { useFocusTrap } from "@/components/ui/use-focus-trap";
 import type { SearchGroup, SearchResultItem } from "@/server/services/search";
 
 /**
@@ -37,7 +38,10 @@ export function CommandPalette(): React.JSX.Element | null {
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const paletteRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useFocusTrap(paletteRef, open, true);
 
   const isAdmin = pathname.startsWith("/admin");
 
@@ -168,9 +172,11 @@ export function CommandPalette(): React.JSX.Element | null {
       }}
     >
       <div
+        ref={paletteRef}
         role="dialog"
         aria-modal="true"
         aria-label="Global search"
+        tabIndex={-1}
         className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-panel shadow-2xl"
       >
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">

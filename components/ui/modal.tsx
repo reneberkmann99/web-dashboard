@@ -3,10 +3,12 @@
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useFocusTrap } from "@/components/ui/use-focus-trap";
 
 /**
- * Accessible modal: ESC to close, backdrop click to close, focus moved into
- * the dialog on open and restored on close, labelled by its title.
+ * Accessible modal: ESC to close, backdrop click to close, focus trapped in
+ * the dialog and restored to the originating control on close, labelled by
+ * its title.
  */
 export function Modal({
   open,
@@ -26,21 +28,17 @@ export function Modal({
   size?: "sm" | "md" | "lg";
 }): React.JSX.Element | null {
   const ref = useRef<HTMLDivElement>(null);
-  const previouslyFocused = useRef<Element | null>(null);
+
+  useFocusTrap(ref, open, true);
 
   useEffect(() => {
     if (!open) return;
-    previouslyFocused.current = document.activeElement;
-    ref.current?.focus();
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      if (previouslyFocused.current instanceof HTMLElement) {
-        previouslyFocused.current.focus();
-      }
     };
   }, [open, onClose]);
 
