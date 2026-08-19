@@ -1,6 +1,6 @@
 # ADR-0002: Deployment revision source of truth
 
-- **Status**: Proposed (Phase 5 design; not implemented)
+- **Status**: Accepted (ratified Phase 6A; amendments in ADR-0009)
 - **Date**: 2026-08-19
 
 ## Context

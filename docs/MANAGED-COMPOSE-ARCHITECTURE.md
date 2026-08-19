@@ -1,6 +1,15 @@
 # HostPanel — Managed Compose Deployment Architecture
 
-Status: **Design proposal (Phase 5). Not implemented.**
+Status: **Phase 6A implemented (foundation only — no deployment execution).**
+
+The ownership/domain model, immutable revisions, secret-safe validation, security analyzer, encrypted
+secrets, authorization, audit, and read/authoring APIs described here are now implemented and tested
+(153 tests). Deployment execution (pull/up/apply/rollback) remains **not implemented** and gated to
+Phase 6B. Thirteen Phase 6A corrections amended the Phase 5 design — see `adr/0009-phase6a-corrections.md`.
+Key corrections reflected below: secret-safe canonicalization (sentinels, never real secret values),
+secret interpolation restricted to `services.*.environment`, `env_file`/relative-binds/`build`/`include`/
+file-backed `secrets`/`configs` unsupported, `currentRevisionId` vs `lastSuccessfulRevisionId` pointers,
+separate security-finding acknowledgements, and cancellation-requires-verification.
 Scope: define how HostPanel will own the *deployment lifecycle* of Docker Compose workloads, without
 confusing "observing a workload" with "owning its deployment definition".
 

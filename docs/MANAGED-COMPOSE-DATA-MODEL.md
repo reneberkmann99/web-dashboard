@@ -1,7 +1,10 @@
 # HostPanel — Managed Compose Data Model
 
-Status: **Proposed schema. Do NOT apply.** This document specifies the Prisma models for the managed
-Compose deployment feature. It is a design artifact; no migration is created by Phase 5.
+Status: **Phase 6A + 6B implemented.** The schema here is applied (migrations
+`managed_deployment_foundation`, `managed_release_model`, `node_compose_capability`). Phase 6B added
+the `DeploymentRelease`/`DeploymentReleaseImage`/`DeploymentReleaseSecret` models (Revision != Release),
+release pointers (`currentReleaseId`/`lastHealthyReleaseId`), `RuntimeState`, and `Node.transportMode`.
+See ADR-0010.
 
 ---
 

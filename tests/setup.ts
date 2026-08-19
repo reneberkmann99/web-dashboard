@@ -14,6 +14,7 @@ const repoRoot = path.resolve(__dirname, "..");
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 process.env.NODE_CREDENTIALS_KEY = process.env.NODE_CREDENTIALS_KEY ?? "a".repeat(64);
+process.env.DEPLOYMENT_SECRETS_KEY = process.env.DEPLOYMENT_SECRETS_KEY ?? "b".repeat(64);
 process.env.PAM_BRIDGE_URL = "http://127.0.0.1:19999";
 process.env.PAM_BRIDGE_KEY = "test-pam-key";
 process.env.PAM_ADMIN_USERS = "rene";

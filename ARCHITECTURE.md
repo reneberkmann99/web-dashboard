@@ -712,25 +712,31 @@ total byte count — only per-event and in-flight buffering are bounded.
 
 ---
 
-# Managed Compose deployment — future design (Phase 5, PROPOSED ONLY)
+# Managed Compose deployment — Phase 6A foundation + Phase 6B execution engine (IMPLEMENTED)
 
-**Not implemented. Nothing below changes production behavior.**
+Phase 6A (foundation) and Phase 6B (execution engine) are implemented and tested (176 tests,
+`npm run build` clean). Phase 6B added the runtime-release model (`DeploymentRelease` + image/secret
+snapshots), a non-mutating plan engine with stale-plan protection, HMAC request signing/replay
+protection, a secure-transport execution gate, and the curated agent execution API
+(`prepare/pull/apply/verify/abort` via `docker compose` v2). The execution engine is **implemented
+but fleet-wide execution remains DENIED** — no production node has `TLS_VERIFIED` transport yet, so
+the execution gate keeps `LEGACY_HTTP` nodes deploy-ineligible (see ADR-0010). Rollback is
+ADMIN-triggered, configuration-only, and creates a new `DeploymentRelease`.
 
-A design package for HostPanel-owned Docker Compose deployment lifecycle exists under `docs/` and is
-pending Rene's review before any implementation:
+Mailcow remains an `EXTERNAL_COMPOSE` workload (no `Deployment`), and no observed workload was
+mutated across 6A+6B (verified by before/after `docker ps`/`network ls`/`volume ls` diff).
+
+Design package (all under `docs/`) and ADRs 0001–0010 are **Accepted**:
 
 - `docs/MANAGED-COMPOSE-ARCHITECTURE.md` — full technical design.
-- `docs/MANAGED-COMPOSE-DATA-MODEL.md` — proposed Prisma schema + migration implications.
-- `docs/MANAGED-COMPOSE-API.md` — proposed REST + agent contract.
+- `docs/MANAGED-COMPOSE-DATA-MODEL.md` — Prisma schema (migrations `managed_deployment_foundation`, `managed_release_model`, `node_compose_capability`).
+- `docs/MANAGED-COMPOSE-API.md` — REST + agent contract.
 - `docs/MANAGED-COMPOSE-THREAT-MODEL.md` — deployment-specific threat model.
 - `docs/MANAGED-COMPOSE-IMPLEMENTATION-PLAN.md` — implementation phases + dependency order.
-- `docs/adr/0001…0008` — architecture decision records.
+- `docs/adr/0001…0010` — architecture decision records.
 
-The key decision: ownership of a deployment definition is a **separate, optional `Deployment` relation
-on `Project`**, not a new value on `Project.source`. The three conceptual modes are *derived*:
-`MANUAL` (source=MANUAL, no deployment), `EXTERNAL_COMPOSE` (source=COMPOSE, no deployment — this is
-where Mailcow sits), and `MANAGED_COMPOSE` (a `Deployment` exists). Revisions are immutable; secrets
-are versioned, encrypted at rest, and referenced by key only; rollback re-applies a previous revision
-and never restores data or secret values; HostPanel never auto-deletes volumes/networks and never
-auto-rolls-back. No migrations, deployment endpoints, secrets storage, Git integration, or Docker
-mutation have been added as part of this phase.
+The key decision (unchanged from Phase 5): ownership is a **separate, optional `Deployment` relation
+on `Project`**. Modes are *derived*: `MANUAL`, `EXTERNAL_COMPOSE` (Mailcow), `MANAGED_COMPOSE` (a
+`Deployment` exists). Revisions are immutable; secrets are versioned, encrypted at rest, referenced
+by key only; rollback re-applies a previous revision and never restores data or secret values;
+HostPanel never auto-deletes volumes/networks and never auto-rolls-back.

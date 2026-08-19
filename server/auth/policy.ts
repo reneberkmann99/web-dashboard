@@ -35,7 +35,10 @@ export type Capability =
   | "container.view_logs"
   | "container.start"
   | "container.stop"
-  | "container.restart";
+  | "container.restart"
+  | "deployment.view"
+  | "deployment.manage"
+  | "deployment.deploy";
 
 const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   ADMIN: [
@@ -48,7 +51,10 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "container.view_logs",
     "container.start",
     "container.stop",
-    "container.restart"
+    "container.restart",
+    "deployment.view",
+    "deployment.manage",
+    "deployment.deploy"
   ],
   // Deprecated legacy value retained for migration safety; treated as operator.
   CLIENT: [
@@ -57,7 +63,8 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "container.view_logs",
     "container.start",
     "container.stop",
-    "container.restart"
+    "container.restart",
+    "deployment.view"
   ],
   CLIENT_ADMIN: [
     "client.manage",
@@ -67,7 +74,8 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "container.view_logs",
     "container.start",
     "container.stop",
-    "container.restart"
+    "container.restart",
+    "deployment.view"
   ],
   CLIENT_OPERATOR: [
     "project.view",
@@ -75,9 +83,15 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "container.view_logs",
     "container.start",
     "container.stop",
-    "container.restart"
+    "container.restart",
+    "deployment.view"
   ],
-  CLIENT_VIEWER: ["project.view", "container.view", "container.view_logs"]
+  CLIENT_VIEWER: [
+    "project.view",
+    "container.view",
+    "container.view_logs",
+    "deployment.view"
+  ]
 };
 
 export function capabilitiesForRole(role: Role): Capability[] {

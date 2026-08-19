@@ -25,6 +25,9 @@ services:
       DATABASE_URL: "postgresql://postgres:${DB_PASSWORD:-postgres}@postgres:5432/hostpanel?schema=public"
       SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-12}"
       NODE_CREDENTIALS_KEY: "${NODE_CREDENTIALS_KEY}"
+      DEPLOYMENT_SECRETS_KEY: "${DEPLOYMENT_SECRETS_KEY:-}"
+      HOSTPANEL_AGENT_CA_CERT_PATH: "${HOSTPANEL_AGENT_CA_CERT_PATH:-/data/pki/hostpanel-agent-ca.pem}"
+      HOSTPANEL_AGENT_CA_KEY_PATH: "${HOSTPANEL_AGENT_CA_KEY_PATH:-/data/pki/hostpanel-agent-ca-key.pem}"
       NODE_AGENT_TIMEOUT_MS: "${NODE_AGENT_TIMEOUT_MS:-15000}"
       NEXT_PUBLIC_APP_NAME: "${NEXT_PUBLIC_APP_NAME:-HostPanel}"
       COOKIE_SECURE: "${COOKIE_SECURE:-}"
@@ -34,6 +37,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # Agent CA material (private key 0600) — persisted outside the image and
+      # outside Postgres. BACK THIS UP: see scripts/bootstrap-agent-ca.ts.
+      - hostpanel-ca-data:/data/pki
 
   agent:
     build:
@@ -42,10 +49,12 @@ services:
     restart: unless-stopped
     environment:
       AGENT_PORT: "8081"
+      AGENT_TLS_PORT: "9081"
       AGENT_API_KEY: "${AGENT_API_KEY:-}"
       AGENT_ENROLL_TOKEN: "${AGENT_ENROLL_TOKEN:-}"
       CONTROL_PLANE_URL: "${CONTROL_PLANE_URL:-}"
       AGENT_KEY_FILE: "/data/agent.key"
+      AGENT_STATE_DIR: "/data/state"
       AGENT_DOCKER_MODE: "${AGENT_DOCKER_MODE:-mock}"
       DOCKER_HOST: "${DOCKER_HOST:-}"
       XDG_RUNTIME_DIR: "${XDG_RUNTIME_DIR:-}"
@@ -60,10 +69,12 @@ services:
     restart: unless-stopped
     environment:
       AGENT_PORT: "8082"
+      AGENT_TLS_PORT: "9082"
       AGENT_API_KEY: "${AGENT_ROOTLESS_API_KEY:-}"
       AGENT_ENROLL_TOKEN: "${AGENT_ROOTLESS_ENROLL_TOKEN:-}"
       CONTROL_PLANE_URL: "${CONTROL_PLANE_URL:-}"
       AGENT_KEY_FILE: "/data/agent.key"
+      AGENT_STATE_DIR: "/data/state"
       AGENT_DOCKER_MODE: "rootless"
       DOCKER_HOST: "unix:///run/rootless.sock"
       XDG_RUNTIME_DIR: ""
@@ -73,5 +84,6 @@ services:
 
 volumes:
   hostpanel_pg:
+  hostpanel-ca-data:
   hostpanel-agent-data:
   hostpanel-agent-rootless-data:

@@ -13,7 +13,10 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/activate",
   "/api/auth/logout",
-  "/api/agent/enroll"
+  "/api/agent/enroll",
+  // Agent-called, authenticated by a one-time enrollment token (no browser
+  // session), so the double-submit cookie pattern does not apply.
+  "/api/agent/tls-enroll"
 ]);
 
 function randomCsrfToken(): string {

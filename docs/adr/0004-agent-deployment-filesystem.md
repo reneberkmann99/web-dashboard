@@ -1,6 +1,6 @@
 # ADR-0004: Agent deployment filesystem
 
-- **Status**: Proposed (Phase 5 design; not implemented)
+- **Status**: Accepted (ratified Phase 6A; amendments in ADR-0009)
 - **Date**: 2026-08-19
 
 ## Context

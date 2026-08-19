@@ -15,7 +15,6 @@ RUN ./node_modules/.bin/prisma generate
 
 # Build Next.js (standalone output)
 RUN npm run build
-
 # ---------- prisma-cli ----------
 # Install prisma CLI with ALL transitive deps (keep version in sync with package.json)
 FROM node:20-alpine AS prisma-cli
@@ -37,6 +36,13 @@ COPY --from=prisma-cli /tmp/prisma/node_modules ./node_modules
 # Generated Prisma client + schema (needed for migrations)
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/prisma ./prisma
+
+# node-forge is used by the Agent PKI at runtime (CSR signing) and by the CA
+# bootstrap script; Next.js standalone tracing does not always include it.
+COPY --from=build /app/node_modules/node-forge ./node_modules/node-forge
+
+# CA bootstrap script (deliberate admin action; never runs automatically)
+COPY --from=build /app/scripts ./scripts
 
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh

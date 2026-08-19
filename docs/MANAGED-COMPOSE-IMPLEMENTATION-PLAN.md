@@ -1,7 +1,9 @@
 # HostPanel — Managed Compose Implementation Plan
 
-Status: **Proposed staging (Phase 5). Do NOT implement now.** This document recommends the safest
-dependency order for building managed Compose deployment after the architecture is approved.
+Status: **Phase 6A + 6B complete; 6C–6E remain.** Phase 6A (foundation) and Phase 6B (execution
+engine: release model, plan engine, secure-transport gate, HMAC replay protection, curated agent
+execution API, rollback) are implemented and tested (176 tests). TLS/PKI deployment (making a node
+`TLS_VERIFIED`) and the Phase 6C UI remain.
 
 Guiding principle: **ship safety-critical primitives first** (models, secrets-at-rest, validation,
 security analyzer) *before* any code path that can mutate a real Docker workload. Deployment

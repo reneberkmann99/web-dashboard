@@ -1,8 +1,9 @@
 # HostPanel — Managed Compose Threat Model
 
-Status: **Design artifact (Phase 5).** Deployment-specific threat model for the proposed managed
-Compose feature. Extends the existing SECURITY-REVIEW.md (agent authority, transport) and the
-deployment ownership model in `MANAGED-COMPOSE-ARCHITECTURE.md`.
+Status: **Phase 6A + 6B implemented; threat model remains current.** Phase 6B added HMAC request
+signing/replay protection and a secure-transport execution gate, closing the control-plane→agent
+replay and legacy-HTTP exposure for mutation. TLS/PKI deployment (making a node `TLS_VERIFIED`) is a
+follow-up; until then execution is DENIED on `LEGACY_HTTP` nodes. See ADR-0010.
 
 Trust boundaries:
 

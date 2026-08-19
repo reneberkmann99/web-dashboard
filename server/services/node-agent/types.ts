@@ -112,8 +112,64 @@ export const volumesInspectResponseSchema = z.object({
   volumes: z.array(volumeInfoSchema)
 });
 
+export const composeValidationResponseSchema = z.object({
+  nodeOnline: z.boolean(),
+  composeSupported: z.boolean(),
+  composeVersion: z.string().nullable(),
+  valid: z.boolean(),
+  errors: z.array(z.string()),
+  normalized: z.string().nullable()
+});
+
+// --- Managed deployment execution contract (Phase 6B) ---
+
+export const deploymentPreparedResponseSchema = z.object({
+  ok: z.boolean(),
+  prepared: z.boolean(),
+  revisionNumber: z.number().int().positive(),
+  error: z.string().nullable().optional()
+});
+
+export const deploymentPullResponseSchema = z.object({
+  ok: z.boolean(),
+  images: z.array(z.object({ serviceName: z.string(), imageRef: z.string(), digest: z.string().nullable() })),
+  error: z.string().nullable().optional()
+});
+
+export const deploymentApplyResponseSchema = z.object({
+  ok: z.boolean(),
+  applied: z.boolean(),
+  error: z.string().nullable().optional()
+});
+
+export const deploymentVerifyServiceSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  health: z.string().nullable(),
+  restartCount: z.number().int(),
+  /** Actual local image ID from `docker inspect .Image` (sha256:...). */
+  imageId: z.string().nullable().optional(),
+  /** Registry content-addressed identity when available (repo@sha256:...). */
+  repoDigest: z.string().nullable().optional(),
+  /** Image reference the container was created from. */
+  imageRef: z.string().nullable().optional()
+});
+
+export const deploymentVerifyResponseSchema = z.object({
+  verdict: z.enum(["CONVERGED_HEALTHY", "CONVERGED_DEGRADED", "DRIFTED", "FAILED"]),
+  services: z.array(deploymentVerifyServiceSchema)
+});
+
+export const deploymentStateResponseSchema = z.object({
+  exists: z.boolean(),
+  currentRevisionNumber: z.number().int().positive().nullable()
+});
+
 export type StorageSummaryEntry = z.infer<typeof storageSummaryEntrySchema>;
 export type NetworkInfo = z.infer<typeof networkInfoSchema>;
 export type VolumeInfo = z.infer<typeof volumeInfoSchema>;
+export type ComposeValidationResult = z.infer<typeof composeValidationResponseSchema>;
+export type DeploymentVerifyResult = z.infer<typeof deploymentVerifyResponseSchema>;
+export type DeploymentPullResult = z.infer<typeof deploymentPullResponseSchema>;
 
 export type RuntimeContainer = z.infer<typeof containerRuntimeSchema>;

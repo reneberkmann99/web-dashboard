@@ -1,8 +1,8 @@
 # HostPanel — Managed Compose API & Agent Contract
 
-Status: **Proposed. Do NOT implement.** Specifies the REST surface and the agent contract for managed
-Compose deployments, consistent with existing conventions (`ok(data)` / `fail(code,message,status,details)`,
-Zod validation, `requireApiCapability`, `cuidParamSchema`, CSRF double-submit on all mutating routes).
+Status: **Phase 6A + 6B implemented.** Phase 6B added the plan/deploy/rollback/operations endpoints
+and the signed agent execution API (`/deployments/:id/{prepare,pull,apply,verify,abort,state}`) with
+HMAC replay protection + a `TLS_VERIFIED` execution gate. See ADR-0010.
 
 ---
 

@@ -46,6 +46,71 @@ enum ProjectSource {
   COMPOSE
 }
 
+/**
+ * Where a managed deployment's revision content originates. Only HOSTPANEL is
+ * usable in Phase 6A; GIT is reserved for a future source (no code path
+ * creates it and the service layer rejects it).
+ */
+enum DeploymentSource {
+  HOSTPANEL
+  GIT
+}
+
+enum DeploymentOperationType {
+  DEPLOY
+  ROLLBACK
+}
+
+enum DeploymentOperationPhase {
+  VALIDATING
+  PLANNING
+  WAITING_FOR_CONFIRMATION
+  PREPARING
+  REVALIDATING
+  PULLING
+  APPLYING
+  VERIFYING
+  RECONCILING
+}
+
+enum FindingSeverity {
+  INFO
+  WARNING
+  HIGH_RISK
+  BLOCKED
+}
+
+enum FindingCategory {
+  SECURITY
+  UNSUPPORTED
+  INVALID
+}
+
+enum ReleaseHealth {
+  HEALTHY
+  DEGRADED
+}
+
+enum RuntimeState {
+  UNKNOWN
+  CONVERGED
+  DEGRADED
+  DRIFTED
+}
+
+enum NodeTransportMode {
+  LEGACY_HTTP
+  TLS_VERIFIED
+  TLS_ERROR
+}
+
+enum NodeCertificateStatus {
+  ACTIVE
+  SUPERSEDED
+  REVOKED
+  EXPIRED
+}
+
 model ClientAccount {
   id          String                @id @default(cuid())
   name        String
@@ -64,23 +129,27 @@ model ClientAccount {
 }
 
 model User {
-  id              String         @id @default(cuid())
-  email           String         @unique
-  displayName     String
-  passwordHash    String?        // null while a locally-managed account is still pending activation
-  authSource      AuthSource     @default(LOCAL)
-  pamUsername     String?        @unique
-  role            Role           @default(CLIENT_OPERATOR)
-  isActive        Boolean        @default(true)
-  lastLoginAt     DateTime?
-  clientAccountId String?
-  clientAccount   ClientAccount? @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
-  sessions        Session[]
-  auditLogs       AuditLog[]
-  operations      Operation[]
-  activationToken ActivationToken?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                                 String                              @id @default(cuid())
+  email                              String                              @unique
+  displayName                        String
+  passwordHash                       String? // null while a locally-managed account is still pending activation
+  authSource                         AuthSource                          @default(LOCAL)
+  pamUsername                        String?                             @unique
+  role                               Role                                @default(CLIENT_OPERATOR)
+  isActive                           Boolean                             @default(true)
+  lastLoginAt                        DateTime?
+  clientAccountId                    String?
+  clientAccount                      ClientAccount?                      @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  sessions                           Session[]
+  auditLogs                          AuditLog[]
+  operations                         Operation[]
+  deploymentRevisions                DeploymentRevision[]
+  secretVersions                     SecretVersion[]
+  deploymentSecurityAcknowledgements DeploymentSecurityAcknowledgement[]
+  deploymentOperations               DeploymentOperation[]
+  activationToken                    ActivationToken?
+  createdAt                          DateTime                            @default(now())
+  updatedAt                          DateTime                            @updatedAt
 
   @@index([clientAccountId])
   @@index([role])
@@ -88,13 +157,13 @@ model User {
 }
 
 model Session {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String   @unique
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
   expiresAt  DateTime
   lastUsedAt DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
@@ -113,27 +182,37 @@ model ActivationToken {
 }
 
 model Node {
-  id                 String               @id @default(cuid())
-  name               String
-  hostname           String               @unique
-  apiBaseUrl         String
-  apiKeyEncrypted    String
-  dockerContext      String?
-  status             NodeStatus           @default(UNKNOWN)
-  isActive           Boolean              @default(true)
-  lastHeartbeatAt    DateTime?
-  agentVersion       String?
-  dockerVersion      String?
-  osInfo             Json?
-  systemInfo         Json? // cpu / memory / disk snapshots from agent /info
-  enrollmentTokens   NodeEnrollmentToken[]
-  projects           Project[]
-  assignments        ContainerAssignment[]
-  containers         Container[]
-  grants             AccessGrant[]
-  operations         Operation[]
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  id                String                 @id @default(cuid())
+  name              String
+  hostname          String                 @unique
+  apiBaseUrl        String
+  apiKeyEncrypted   String
+  dockerContext     String?
+  status            NodeStatus             @default(UNKNOWN)
+  transportMode     NodeTransportMode      @default(LEGACY_HTTP)
+  isActive          Boolean                @default(true)
+  lastHeartbeatAt   DateTime?
+  agentVersion      String?
+  dockerVersion     String?
+  composeSupported  Boolean?
+  composeVersion    String?
+  // Secure agent transport. `transportMode` is a persisted STATUS/UX hint set
+  // only after a live verified-HTTPS check — it is never the root of trust:
+  // every managed mutation independently performs full TLS verification.
+  tlsApiBaseUrl     String?
+  lastTlsVerifiedAt DateTime?
+  lastTlsError      String?
+  certificates      NodeAgentCertificate[]
+  osInfo            Json?
+  systemInfo        Json? // cpu / memory / disk snapshots from agent /info
+  enrollmentTokens  NodeEnrollmentToken[]
+  projects          Project[]
+  assignments       ContainerAssignment[]
+  containers        Container[]
+  grants            AccessGrant[]
+  operations        Operation[]
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 
   @@index([isActive])
   @@index([status])
@@ -176,6 +255,7 @@ model Project {
   assignments     ContainerAssignment[]
   containers      Container[]
   grants          AccessGrant[]
+  deployment      Deployment?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -250,8 +330,8 @@ model ContainerAssignment {
 
 /**
  * Unified access grant. A grant targets exactly one of:
- *   - a Project (normal case: "Client X may operate stack Y")
- *   - a Container (exception case: container-specific access)
+ * - a Project (normal case: "Client X may operate stack Y")
+ * - a Container (exception case: container-specific access)
  */
 model AccessGrant {
   id              String        @id @default(cuid())
@@ -282,30 +362,30 @@ model AccessGrant {
  * in the migration: at most one active operation per container).
  */
 model Operation {
-  id                String          @id @default(cuid())
-  type              String // e.g. CONTAINER_START / CONTAINER_STOP / CONTAINER_RESTART
-  state             OperationState  @default(REQUESTED)
-  requestId         String // correlation id exposed to the caller
-  actorUserId       String?
-  actorUser         User?           @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorEmail        String?
-  actorRole         Role?
-  clientAccountId   String?
-  clientAccount     ClientAccount?  @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
-  nodeId            String
-  node              Node            @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  dockerContainerId String
-  containerId       String?
-  container         Container?      @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  id                 String         @id @default(cuid())
+  type               String // e.g. CONTAINER_START / CONTAINER_STOP / CONTAINER_RESTART
+  state              OperationState @default(REQUESTED)
+  requestId          String // correlation id exposed to the caller
+  actorUserId        String?
+  actorUser          User?          @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail         String?
+  actorRole          Role?
+  clientAccountId    String?
+  clientAccount      ClientAccount? @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  nodeId             String
+  node               Node           @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  dockerContainerId  String
+  containerId        String?
+  container          Container?     @relation(fields: [containerId], references: [id], onDelete: SetNull)
   targetAssignmentId String? // legacy ContainerAssignment id when the action originated there
-  error             String?
-  result            Json?
-  requestedAt       DateTime        @default(now())
-  queuedAt          DateTime?
-  startedAt         DateTime?
-  finishedAt        DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  error              String?
+  result             Json?
+  requestedAt        DateTime       @default(now())
+  queuedAt           DateTime?
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([nodeId, state])
   @@index([dockerContainerId, state])
@@ -313,20 +393,20 @@ model Operation {
 }
 
 model AuditLog {
-  id               String         @id @default(cuid())
-  actorUserId      String?
-  actorUser        User?          @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorEmail       String?
-  actorRole        Role?
-  clientAccountId  String?
-  clientAccount    ClientAccount? @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
-  action           String
-  targetType       String
-  targetId         String?
-  metadata         Json?
-  result           AuditResult
-  sourceIp         String?
-  createdAt        DateTime       @default(now())
+  id              String         @id @default(cuid())
+  actorUserId     String?
+  actorUser       User?          @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail      String?
+  actorRole       Role?
+  clientAccountId String?
+  clientAccount   ClientAccount? @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  action          String
+  targetType      String
+  targetId        String?
+  metadata        Json?
+  result          AuditResult
+  sourceIp        String?
+  createdAt       DateTime       @default(now())
 
   @@index([actorUserId])
   @@index([action])
@@ -334,4 +414,279 @@ model AuditLog {
   @@index([clientAccountId])
   @@index([clientAccountId, createdAt])
   @@index([result, createdAt])
+}
+
+/**
+ * Managed Compose deployment (Phase 6A).
+ * Ownership of a workload's deployment definition is represented by the
+ * PRESENCE of a Deployment row attached to a Project — never by a new
+ * Project.source value. `Project.source` stays MANUAL|COMPOSE (membership
+ * semantics). A workload is MANAGED_COMPOSE iff this relation exists.
+ * Deletion: Project -> Deployment is RESTRICT so a managed workload cannot be
+ * hard-deleted through cascades; normal application behavior uses
+ * deactivate/detach instead. Revision/secret history is likewise RESTRICT
+ * upstream so it cannot be silently wiped by removing a workload record.
+ */
+model Deployment {
+  id                   String                @id @default(cuid())
+  projectId            String                @unique
+  project              Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  source               DeploymentSource      @default(HOSTPANEL)
+  composeProjectName   String
+  // Runtime pointers. Both null until the first successful deployment.
+  //   currentReleaseId     = the DeploymentRelease HostPanel can prove matches
+  //                          current runtime config (may be a DEGRADED release)
+  //   lastHealthyReleaseId = most recent HEALTHY release (rollback default)
+  // These are plain CUID pointers to DeploymentRelease.id (no FK) — always set
+  // transactionally by the executor alongside release creation.
+  currentReleaseId     String?
+  lastHealthyReleaseId String?
+  runtimeState         RuntimeState          @default(UNKNOWN)
+  verifyGraceMs        Int                   @default(30000)
+  revisions            DeploymentRevision[]
+  secrets              Secret[]
+  operations           DeploymentOperation[]
+  releases             DeploymentRelease[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([projectId])
+}
+
+/**
+ * Immutable deployment revision. No UPDATE path mutates composeSource,
+ * composeCanonical, environmentSnapshot or secretReferences after creation.
+ * Identical content is deduplicated via the (deploymentId, contentSha256)
+ * unique constraint. Secret VALUES are never stored here — only the keys in
+ * secretReferences.
+ */
+model DeploymentRevision {
+  id                                 String                              @id @default(cuid())
+  deploymentId                       String
+  deployment                         Deployment                          @relation(fields: [deploymentId], references: [id], onDelete: Restrict)
+  revisionNumber                     Int
+  source                             DeploymentSource                    @default(HOSTPANEL)
+  sourceRef                          String?
+  composeSource                      String
+  composeCanonical                   String
+  environmentSnapshot                Json
+  secretReferences                   String[]
+  contentSha256                      String
+  deployNote                         String?
+  analyzerVersion                    String
+  createdById                        String?
+  createdBy                          User?                               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  findings                           DeploymentRevisionSecurityFinding[]
+  createdAt                          DateTime                            @default(now())
+  deploymentSecurityAcknowledgements DeploymentSecurityAcknowledgement[]
+  deploymentReleases                 DeploymentRelease[]
+
+  @@unique([deploymentId, revisionNumber])
+  @@unique([deploymentId, contentSha256])
+  @@index([deploymentId])
+}
+
+/**
+ * Deployment-scoped secret identity. No latest-version pointer — the latest
+ * version is the highest SecretVersion.versionNumber (immutable versions, no
+ * hard delete in normal behavior). Soft-disable via isActive=false.
+ */
+model Secret {
+  id           String          @id @default(cuid())
+  deploymentId String
+  deployment   Deployment      @relation(fields: [deploymentId], references: [id], onDelete: Restrict)
+  key          String
+  isActive     Boolean         @default(true)
+  versions     SecretVersion[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([deploymentId, key])
+  @@index([deploymentId])
+}
+
+/**
+ * Encrypted secret value version. ciphertext is AES-256-GCM(iv:tag:ct) keyed
+ * by DEPLOYMENT_SECRETS_KEY. Versions are immutable and appended on rotation.
+ */
+model SecretVersion {
+  id            String   @id @default(cuid())
+  secretId      String
+  secret        Secret   @relation(fields: [secretId], references: [id], onDelete: Restrict)
+  versionNumber Int
+  ciphertext    String
+  createdById   String?
+  createdBy     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+
+  @@unique([secretId, versionNumber])
+  @@index([secretId])
+}
+
+/**
+ * Snapshot of a security/unsupported/validation finding produced when a
+ * revision was created (analyzerVersion records the policy at that time).
+ * Fingerprint is deterministic and identity-bearing (see server analyzer).
+ */
+model DeploymentRevisionSecurityFinding {
+  id              String             @id @default(cuid())
+  revisionId      String
+  revision        DeploymentRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  ruleId          String
+  fingerprint     String
+  severity        FindingSeverity
+  category        FindingCategory
+  service         String?
+  resourcePath    String?
+  settingValue    String?
+  message         String
+  analyzerVersion String
+  createdAt       DateTime           @default(now())
+
+  @@unique([revisionId, fingerprint])
+  @@index([revisionId])
+}
+
+/**
+ * ADMIN acknowledgment of a HIGH_RISK finding, stored separately from the
+ * immutable revision so analyzer policy changes never mutate revision content.
+ * BLOCKED findings can never be acknowledged. Unique per (revision, fingerprint).
+ */
+model DeploymentSecurityAcknowledgement {
+  id                 String             @id @default(cuid())
+  revisionId         String
+  revision           DeploymentRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  findingFingerprint String
+  ruleId             String
+  acknowledgedById   String?
+  acknowledgedBy     User?              @relation(fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  acknowledgedAt     DateTime           @default(now())
+
+  @@unique([revisionId, findingFingerprint])
+  @@index([revisionId])
+}
+
+/**
+ * Future deployment execution lifecycle (Phase 6B). Established now only to
+ * fix the locking contract: at most one active (non-terminal) operation per
+ * deployment, enforced by a PARTIAL unique index added in the migration (see
+ * migration SQL, mirroring Operation_one_active_per_container). No executor
+ * uses this table in Phase 6A.
+ */
+model DeploymentOperation {
+  id             String                    @id @default(cuid())
+  type           DeploymentOperationType
+  state          OperationState            @default(REQUESTED)
+  phase          DeploymentOperationPhase?
+  requestId      String
+  deploymentId   String
+  deployment     Deployment                @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  revisionId     String?
+  fromRevisionId String?
+  actorUserId    String?
+  actorUser      User?                     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail     String?
+  actorRole      Role?
+  error          String?
+  result         Json?
+  requestedAt    DateTime                  @default(now())
+  queuedAt       DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@index([deploymentId, state])
+  @@index([requestId])
+}
+
+/**
+ * A runtime release: HostPanel observed the managed workload converge to a
+ * particular revision using a particular set of resolved runtime inputs
+ * (image digests, secret versions). Distinct from DeploymentRevision (desired
+ * config) — redeploying the same revision with a different secret version or
+ * image digest produces a DIFFERENT release.
+ */
+model DeploymentRelease {
+  id             String                    @id @default(cuid())
+  deploymentId   String
+  deployment     Deployment                @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  revisionId     String
+  revision       DeploymentRevision        @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  operationId    String?
+  healthVerdict  ReleaseHealth
+  composeVersion String?
+  appliedAt      DateTime?
+  verifiedAt     DateTime?
+  createdAt      DateTime                  @default(now())
+  images         DeploymentReleaseImage[]
+  secrets        DeploymentReleaseSecret[]
+
+  @@index([deploymentId, createdAt])
+  @@index([revisionId])
+}
+
+/**
+ * Actual image identity (tag + resolved digest) used by a release. Mutable tags
+ * can resolve to a different digest on each deployment of the same revision,
+ * so this snapshot belongs to the Release, never the Revision.
+ */
+model DeploymentReleaseImage {
+  id          String            @id @default(cuid())
+  releaseId   String
+  release     DeploymentRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  serviceName String
+  /// Desired image reference from the revision, e.g. "alpine:3.20" (mutable tag).
+  imageRef    String
+  /// ACTUAL local image ID of the running container (docker inspect .Image),
+  /// e.g. "sha256:...". Proves what image configuration actually ran.
+  imageId     String?
+  /// Registry content-addressed identity when available, e.g. "alpine@sha256:...".
+  repoDigest  String?
+
+  @@unique([releaseId, serviceName])
+  @@index([releaseId])
+}
+
+/**
+ * Issued agent server certificate metadata (never private keys). Exactly one
+ * ACTIVE certificate per node; the control plane pins the connection to this
+ * fingerprint/serial, so a cryptographically valid but superseded/revoked cert
+ * (or another node's valid cert) is rejected.
+ */
+model NodeAgentCertificate {
+  id                String                @id @default(cuid())
+  nodeId            String
+  node              Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  serialNumber      String
+  fingerprintSha256 String
+  subjectIdentity   String
+  status            NodeCertificateStatus @default(ACTIVE)
+  notBefore         DateTime
+  notAfter          DateTime
+  issuedAt          DateTime              @default(now())
+  verifiedAt        DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime              @default(now())
+
+  @@unique([fingerprintSha256])
+  @@index([nodeId, status])
+  @@index([notAfter])
+}
+
+/**
+ * Secret VERSION IDs used by a release — never values. Enables surfacing
+ * "secret changed since release; redeploy required".
+ */
+model DeploymentReleaseSecret {
+  id              String            @id @default(cuid())
+  releaseId       String
+  release         DeploymentRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  secretId        String
+  secretVersionId String
+  key             String
+  versionNumber   Int
+
+  @@unique([releaseId, key])
+  @@index([releaseId])
 }

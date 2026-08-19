@@ -74,6 +74,27 @@ function toOperationView(op: {
  * (unique partial index).
  */
 export async function requestOperation(input: RequestOperationInput): Promise<string> {
+  // Deployment/container mutual exclusion: a container start/stop/restart must
+  // not run while a managed deployment operation is mutating that workload.
+  if (input.containerId) {
+    const container = await prisma.container.findUnique({
+      where: { id: input.containerId },
+      select: { projectId: true }
+    });
+    if (container?.projectId) {
+      const activeDeploy = await prisma.deploymentOperation.findFirst({
+        where: {
+          deployment: { projectId: container.projectId },
+          state: { in: ["REQUESTED", "QUEUED", "RUNNING"] }
+        },
+        select: { id: true }
+      });
+      if (activeDeploy) {
+        throw new OperationConflictError("deploy-in-progress");
+      }
+    }
+  }
+
   let created: { id: string };
   try {
     created = await prisma.operation.create({

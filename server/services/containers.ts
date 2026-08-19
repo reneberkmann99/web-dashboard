@@ -283,6 +283,8 @@ export async function listContainersForSession(session: AuthSession): Promise<Co
           lastHeartbeatAt: new Date(),
           agentVersion: nodeInfo.agentVersion ?? undefined,
           dockerVersion: nodeInfo.dockerVersion ?? undefined,
+          composeSupported: nodeInfo.composeSupported ?? undefined,
+          composeVersion: nodeInfo.composeVersion ?? undefined,
           osInfo: (nodeInfo.osInfo as object) ?? undefined,
           systemInfo: (nodeInfo.systemInfo as object) ?? undefined
         }
@@ -537,6 +539,8 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
           lastHeartbeatAt: new Date(),
           agentVersion: nodeInfo.agentVersion ?? undefined,
           dockerVersion: nodeInfo.dockerVersion ?? undefined,
+          composeSupported: nodeInfo.composeSupported ?? undefined,
+          composeVersion: nodeInfo.composeVersion ?? undefined,
           osInfo: (nodeInfo.osInfo as object) ?? undefined,
           systemInfo: (nodeInfo.systemInfo as object) ?? undefined
         }

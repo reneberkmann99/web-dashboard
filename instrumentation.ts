@@ -11,5 +11,7 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { startOperationSweeper } = await import("@/server/services/operations");
     startOperationSweeper(30_000);
+    const { startDeploymentSweeper } = await import("@/server/services/deployment-executor");
+    startDeploymentSweeper(30_000);
   }
 }
