@@ -233,46 +233,91 @@ instead of a generic "Request failed".
    one refresh, produced a critical attention item with the last heartbeat, and
    disabled that node's container actions. ✅
 
+## Compose discovery & adoption (Phase 4)
+
+`/admin/compose` ("Discover Compose projects" from the Workloads page) lists
+Compose projects detected on enrolled nodes that are not yet adopted as
+workloads: compose project name, node, running/total containers, health,
+service names, network/volume counts, a "Container conflict" warning when
+containers already belong to another HostPanel workload, and last-observed
+time. Adopted projects show an "Open workload" shortcut.
+
+"Review & adopt" opens a 3-step wizard:
+1. **Project** — detected services + health, conflict warning if any,
+   editable workload name (defaults to the Compose project name).
+2. **Ownership** — "No client / internal workload" or "assign to existing
+   client" (assigning never auto-grants permissions; grants stay in the
+   access-grant system).
+3. **Review** — explicit will/will-NOT lists (create COMPOSE workload, track
+   services, preserve recreation; never restart containers, never modify
+   Compose files/env, never create/remove Docker resources), plus a mandatory
+   checkbox when containers must move from another workload.
+
+Adoption is conflict-safe: containers already in another workload block it
+(409 + structured conflicts) until the admin explicitly opts in. Re-adopting
+a previously detached project surfaces the stale remnant as a conflict and
+auto-suffixes the slug.
+
+Workload detail gains **Convert to Compose-managed** (shown only when the
+mapping is unambiguous — same label on all members, no outside members, full
+membership) and **Detach from Compose** (COMPOSE workloads only; explicit
+confirmation that no Docker resource is touched; converts to MANUAL with
+current members).
+
+## Networks & Volumes tabs (Phase 4)
+
+Workload detail (admin and client) now has read-only **Networks** and
+**Volumes** tabs. Networks show driver, scope, internal flag, subnets,
+gateways, attached workload containers, and a sharing badge: "Exclusive to
+this workload" or "Shared with N other containers" (e.g. mailcow's
+`nginx-network` shows it is shared with the nginx-proxy-manager container).
+Volumes differentiate named volumes (name, driver, destination, mode, mounted
+by) from bind mounts (source → destination, read-only/read-write) and tmpfs.
+CLIENT sessions never see host bind source paths — the API returns
+"Host path hidden" and the full path is withheld server-side; ADMIN sees the
+full source. No create/delete/disconnect actions exist (read-only by design).
+
+## Node Configuration tab (Phase 4)
+
+Populated read-only configuration: node ID, display name, hostname, agent
+endpoint, docker context, agent version, enabled state, enrollment mode,
+registration time, polling/reconciliation intervals, and a "Generate
+re-enrollment token" action (15-min single-use token for agent credential
+rotation; reuses the existing enrollment flow).
+
 ## Remaining UX debt
 
-Items resolved this phase (global search, server-side pagination, live logs,
-client team management, Compose discovery, workload restart, node storage) are
-removed from this list; what's left:
+Items resolved in Phase 4 (Compose adoption UI + wizard, Networks/Volumes tabs,
+convert/detach, node Configuration tab, SSE server-side limits, focus traps,
+ARIA tablists, hydration fix) are removed; what's left:
 
-1. **Workload detail lacks Networks and Volumes tabs.** The data is available
-   per container, but is not yet aggregated to stack level.
-2. **Row action menus.** Actions are inline buttons on most tables; the brief
+1. **Row action menus.** Actions are inline buttons on most tables; the brief
    asks for overflow/context menus once the action count grows — workload
-   detail now has one overflow-style secondary action (Restart), but most
-   tables are still flat button rows.
-3. **No bulk operations beyond workload restart.** There is no way to, say,
+   detail now has several secondary actions, but most tables are still flat
+   button rows.
+2. **No bulk operations beyond workload restart.** There is no way to, say,
    stop every container in a workload at once, or bulk-grant multiple clients.
-4. **Node detail Configuration tab** is not implemented (deliberately, since
-   credentials must not be displayed) — it currently has no non-secret content
-   worth a tab.
-5. **Attention items are not dismissible** and have no "acknowledge" state, so
+3. **Attention items are not dismissible** and have no "acknowledge" state, so
    a known-stopped container keeps appearing as informational noise.
-6. **Empty-state coverage is uneven.** Tables have good empty states; some
-    detail-tab panels still fall back to a plain sentence.
-7. **Accessibility passes are partial.** Dialogs, focus rings, labels and
-    semantic buttons are in place; a full keyboard-only and screen-reader audit
-    has not been performed, and tab bars are not yet wired as ARIA tablists.
-    The command palette is keyboard-navigable but has not had a screen-reader
-    pass.
-8. **Workload creation is still form-first** (inside the grants page) rather
-    than a guided flow. Compose-discovered projects can now be adopted via API
-    (`POST /api/admin/compose/adopt`) but there is no adoption UI yet — an
-    admin must currently drive it via the API or a follow-up screen.
-9. **Compose reconciliation is throttled (30s/node), not real-time.** A newly
-    recreated container can take up to 30s to reappear correctly attributed on
-    the dashboard/all-containers views after a Compose `up` — acceptable for
-    an operations console, called out explicitly since it's a deliberate
-    latency trade-off, not a bug.
-10. **No adoption UI for discovered Compose projects** and no UI to change a
-    workload's Compose vs Manual source after creation.
-11. **SSE log stream has no server-side line-count cap enforcement beyond the
-    agent's own `docker logs --follow`** — the browser bounds its buffer at
-    5000 lines, but a very chatty container could still push meaningful
-    bandwidth through the control plane for the stream's lifetime. Acceptable
-    for the current scale (single-digit concurrent viewers), worth revisiting
-    before wider client-side adoption.
+4. **Empty-state coverage is uneven.** Tables have good empty states; some
+   detail-tab panels still fall back to a plain sentence.
+5. **Accessibility is improved but not audited end-to-end.** Dialogs now trap
+   and restore focus, tab bars are ARIA tablists with arrow-key navigation,
+   status is never color-only — but no full screen-reader pass has been run.
+6. **Workload creation is still form-first** (inside the grants page) rather
+   than a guided flow; the Compose adoption wizard is the guided exception.
+7. **Compose reconciliation is throttled (30s/node), not real-time.** A newly
+   recreated container can take up to 30s to reappear correctly attributed on
+   the dashboard/all-containers views after a Compose `up` — acceptable for
+   an operations console, called out explicitly since it's a deliberate
+   latency trade-off, not a bug.
+8. **No Compose label-drift handling.** If containers are relabelled to a
+   different compose project name, HostPanel treats it as removal + new
+   discovery; there is no UI to change a workload's composeProject after
+   conversion/adoption (detach + re-adopt is the supported path).
+9. **Client workload detail containers tab derives membership via
+   name-matching** (pre-existing); the Networks/Volumes tabs are properly
+   grant-scoped, but the containers tab should eventually use project-scoped
+   resolution like the admin side.
+10. **Workload detail tabs are not deep-linkable** (no ?tab= URL param), so
+    sharing a link to the Networks tab isn't possible yet.

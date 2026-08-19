@@ -585,3 +585,127 @@ database) — 33 from the production-foundation phase plus:
   container recreation, new service, removed service, manual-workload
   untouched, grant survival
 - `tests/workload-restart.test.ts` (3) — 404, all-succeed, partial-failure
+
+---
+
+# Phase 4 (2026-08-19) — Compose adoption, workload topology & product polish
+
+A deliberately constrained phase closing the product gaps around workloads and
+discovered Compose projects. **No deployment management was added** (no Compose
+YAML/env/secret editors, no `docker compose up/down`, no image workflows) — that
+remains a separate product decision. All changes deployed and validated against
+the live control plane; test count now **90/90**.
+
+## Domain model changes
+
+```
+Project.clientAccountId   now NULLABLE — a workload may be "internal" (no
+                          client) until an AccessGrant is explicitly created.
+                          Ownership/ACL is ALWAYS resolved through AccessGrant,
+                          never inferred from this column.
+Project unique constraint  (nodeId, slug) replaces (clientAccountId, slug) —
+                          slug uniqueness is node-scoped so internal workloads
+                          participate; CASCADE → SET NULL on client delete.
+Migration                 20260819110000_project_nullable_client
+```
+
+## New services & API surface
+
+| Area | What |
+|---|---|
+| `compose.ts` | `listDiscoveredComposeProjects` (enriched: services/health/network+volume counts/conflicts/lastObserved), `getDiscoveredComposeProjectDetail`, conflict-aware `adoptComposeProject` (already-adopted / conflict / not-found result union; nullable clientAccountId; `moveConflictingContainers` explicit opt-in), `previewConvertToCompose` (unambiguous-only), `convertToComposeManaged` (in-place field update), `detachComposeTracking` (pure DB: source→MANUAL, composeProject→null — never touches Docker) |
+| `workload-resources.ts` | Networks/Volumes aggregation + shared-resource detection; one `listContainers()` + one batched inspect per node (no N+1); CLIENT sessions never receive host bind source paths |
+| `logs-stream.ts` | SSE relay hardened: 16 KiB line cap (truncated with marker), 1 MiB pending-buffer cap (drop with marker), backpressure-aware enqueue, teardown via `reader.cancel()` (fixed: cancelling a locked agent stream was a no-op) |
+
+New routes: `GET /api/admin/compose/discovered[/:nodeId/:composeProject]`,
+`POST /api/admin/compose/adopt`, `GET /api/admin/workloads/:id/convert-preview`,
+`POST /api/admin/workloads/:id/convert`, `POST /api/admin/workloads/:id/detach`,
+`GET /api/admin/workloads/:id/resources`,
+`GET /api/client/workloads/:id/resources`.
+
+## Agent surface additions
+
+- Per-container `networkNames` + `mountRefs` (name/type/source/destination/
+  mode/volumeName) captured during the EXISTING per-container inspect in
+  `listContainers()` — zero additional Docker calls per container.
+- `POST /networks/inspect` (batch, ≤50 names) and `POST /volumes/inspect`
+  (batch, ≤50 names) — `docker network inspect` / `docker volume inspect`
+  behind the same sanitization (strict name regex) and auth as everything
+  else on the agent. Read-only: no create/delete/connect endpoints exist.
+
+## Adoption / conversion / detach semantics
+
+- **Adoption** creates a COMPOSE workload (id/slug unique per node; slug
+  auto-suffixed on collision with a stale detached remnant). Containers are
+  associated in the same transaction flow; conflicts (containers already in
+  another workload) BLOCK adoption with a structured 409 unless the caller
+  passes `moveConflictingContainers: true`.
+- **Conversion** (MANUAL → COMPOSE) is in-place: id, friendly name, client,
+  grants and activity history are retained (plain `source`/`composeProject`
+  update). Only offered when unambiguous: every active member carries the same
+  compose label, no non-compose members, the compose project isn't adopted
+  elsewhere, and membership is already the full live set.
+- **Detach** converts COMPOSE → MANUAL with current active members as static
+  membership. Pure DB update — never stops/deletes containers, volumes,
+  networks, and never runs `docker compose down`. Future inventory refreshes
+  simply stop re-syncing membership (reconciler iterates `source: COMPOSE`
+  only). Grants and history untouched.
+
+## Shared-resource awareness
+
+Networks/volumes are marked `exclusive` or `shared_with_others` (with the
+count of containers outside the workload that also use them). Detection is
+computed from the same live inventory snapshot used for rendering — no extra
+Docker calls — so it's groundwork for future deployment/update workflows, per
+the brief ("do not assume resources named after a Compose project are safe to
+delete").
+
+## SSE limits (documented)
+
+Line cap 16 KiB (oversized lines truncated + `[log line truncated]`), pending
+buffer cap 1 MiB (excess dropped + `[buffer dropped]`), bounded per-frame
+enqueue with backpressure polling, agent stream teardown on browser
+disconnect / error / end. Normal continuous streams are never terminated on
+total byte count — only per-event and in-flight buffering are bounded.
+
+## Accessibility & polish
+
+- `useFocusTrap` hook (Tab/Shift+Tab cycling, focus restore) wired into
+  `Modal` and the command palette.
+- `TabBar` component: ARIA tablist/tab roles, arrow-key/Home/End navigation,
+  `aria-selected`; swapped into workload/node/client detail pages.
+- Fixed React #418 hydration mismatch (header clock rendered server-UTC vs
+  browser-local) by making the timestamp client-only.
+- Null-client rendering hardened across node detail / workload views.
+
+## Known limitations after Phase 4
+
+1. **Compose reconciliation remains throttled (30s/node)** — unchanged from
+   Phase 3; a recreated container can take up to 30s to re-appear correctly
+   attributed. Deliberate trade-off.
+2. **No Compose project rename / label-drift handling** — if a project's
+   containers are relabelled to a different compose project name, HostPanel
+   treats it as removal + new discovery (no silent merging across names).
+3. **Adoption wizard is single-admin, no bulk adoption.**
+4. **Client workload detail still derives containers via name-matching**
+   (pre-existing); the resources endpoints are properly grant-scoped, but the
+   containers tab's membership logic predates Phase 4 and should eventually
+   use project-scoped resolution like the admin side.
+5. **No deployment management by design** — explicitly out of scope; the next
+   product decision is whether HostPanel stays an operations-only control
+   plane or becomes a deploy/update platform.
+
+## Tests (current, Phase 4)
+
+**90 automated tests** — 66 from Phase 3 plus:
+
+- `tests/compose-adoption.test.ts` (13) — adoption (client / internal),
+  double-adoption, cross-node identity, conflict refusal + explicit move,
+  re-adopt-after-detach slug uniqueness, conversion (safe/ambiguous/
+  already-adopted/incomplete) with id+grant retention, detach semantics
+- `tests/workload-resources.test.ts` (7) — network aggregation, shared
+  network/volume detection, bind mounts, CLIENT host-path withholding,
+  grant-scoped visibility
+- `tests/logs-limits.test.ts` (4) — oversized line truncation, pending-buffer
+  bound under newline-free flood, disconnect teardown (caught the locked-
+  stream cancel bug), graceful stream end
