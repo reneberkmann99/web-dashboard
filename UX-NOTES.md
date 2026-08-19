@@ -11,7 +11,13 @@ with a **Settings** group below it (Users, All containers). "Assignments",
 managed from the workload or client context, users live under the client they
 belong to, and audit is presented as Activity.
 
-Client sidebar: **Overview · Workloads · Containers**.
+Client sidebar: **Overview · Workloads · Activity**, plus **Team** for
+`CLIENT_ADMIN` only. "Containers" as a standalone nav item was removed —
+containers are reached through workload detail pages; the deep container list
+was fleet-wide administrative furniture the client role doesn't need.
+
+Global search (Ctrl/Cmd+K) is reachable from every dashboard page via the
+header button or the hotkey — see "Global search" below.
 
 ## Screens
 
@@ -108,6 +114,88 @@ role, result, target type/id, source IP, timestamp and the full metadata JSON.
 operation and shows request → running → succeeded/failed with the failure
 reason.
 
+## Global search (Ctrl/Cmd+K)
+
+A command palette reachable from any dashboard page. Server-side, debounced
+(250ms), grouped results (Workloads / Containers / Nodes / Clients), fully
+keyboard-navigable (↑/↓, Enter, Esc), with loading and empty states.
+
+- **Admin** search spans the whole platform.
+- **Client** search is hard-scoped server-side to the caller's grants: it only
+  ever returns Workloads and Containers the tenant can already see, and never
+  Nodes or Clients — there is no client-role code path that can return another
+  tenant's data, verified by `tests/search.test.ts`.
+- Selecting a result navigates directly to its detail page.
+
+## Server-side data surfaces
+
+Containers (Settings → All containers), Activity, and Clients now do
+search/filter/sort/pagination entirely server-side (`ServerDataTable`
+component) — the browser receives one page (default 25 rows) plus
+`{ total, page, limit, pageCount }`, not the full table. Filters are reflected
+in the URL query string so pages are shareable and browser Back/Forward work
+correctly. RBAC/tenant scope is enforced in the query builder before
+pagination, never client-side.
+
+## Live container logs
+
+Container logs now stream live via Server-Sent Events: browser → control plane
+(`agentLogsToSSE`) → authenticated node agent (`docker logs --follow
+--timestamps`). The browser never talks to the agent directly. The
+`LogViewer` component provides tail-size selection, pause/resume (buffered up
+to 2000 lines while paused), client-side filter, auto-scroll only while
+already at the bottom, a live/disconnected indicator, automatic reconnect
+(2s backoff), a bounded 5000-line ring buffer, and download of the current
+filtered view. Authorization (tenant grant + `view_logs` capability) is
+resolved before the stream opens, via a DB-only resolver
+(`resolveLogTarget`/`getContainerLogsDirect`) so a denied request never
+reaches the agent.
+
+## Client self-service
+
+`CLIENT_ADMIN` now has a dedicated **Team** page
+(`server/services/client-team.ts`) to invite operators/viewers, reissue
+activation links, and deactivate/reactivate their own client's users — hard
+scoped to `session.clientAccountId` in every query. It can never create an
+ADMIN or another CLIENT_ADMIN, assign a user to a different client, or
+deactivate itself, a platform admin, or a PAM-managed account. Client Activity
+is a dedicated page (audit events scoped to the caller's client), and the
+client Overview now leads with workload health and recent activity instead of
+fleet-wide metrics.
+
+## Compose workload discovery
+
+Docker Compose projects (`com.docker.compose.project`/`service` labels) are
+now first-class citizens: `Project.source` is `MANUAL` or `COMPOSE`, and
+`Container.composeProject`/`composeService` record the discovered labels on
+every inventory refresh (throttled to once per 30s per node — see Known
+limitations). `server/services/compose.ts` reconciles COMPOSE workload
+membership automatically: recreated containers (new Docker id, same Compose
+service) are re-associated, new services are added, removed services are
+marked inactive (never deleted), and MANUAL workloads are never touched by
+this path. An admin can adopt a detected Compose project
+(`GET /api/admin/compose/discovered`, `POST /api/admin/compose/adopt`) as a
+COMPOSE-sourced workload; grants stay project-level so ordinary container
+recreation never disturbs tenant access.
+
+## Workload operations
+
+Workload detail now shows overall health, running/total containers, CPU/RAM,
+a Compose-source badge when applicable, and a banner listing recently
+failed/restarting containers. "Restart workload" is a secondary/danger action
+behind a `ConfirmDialog` that states the affected container count; it requests
+one `CONTAINER_RESTART` Operation per active container (reusing the existing
+conflict-protected lifecycle) and reports partial failures explicitly — it
+never collapses a partial failure into a false "success" toast.
+
+## Node operations
+
+Node detail now shows a Docker storage summary (`docker system df`: images,
+containers, local volumes, build cache — count/active/size/reclaimable) and a
+running/stopped/unhealthy container breakdown, alongside the existing
+heartbeat/version/host info. No historical monitoring database was added —
+current-state only, per scope.
+
 ## Shared building blocks
 
 - `DataTable` — search, sortable columns, pagination, sticky header, explicit
@@ -147,33 +235,44 @@ instead of a generic "Request failed".
 
 ## Remaining UX debt
 
-1. **No global search.** Search exists per table (workloads, nodes, clients,
-   containers, activity) but there is no cross-resource command palette; an
-   admin still has to pick the right screen first.
-2. **Workload detail lacks Networks and Volumes tabs.** The data is available
+Items resolved this phase (global search, server-side pagination, live logs,
+client team management, Compose discovery, workload restart, node storage) are
+removed from this list; what's left:
+
+1. **Workload detail lacks Networks and Volumes tabs.** The data is available
    per container, but is not yet aggregated to stack level.
-3. **Logs are polled, not streamed.** Refresh is every 10 s with a manual tail
-   selector; there is no follow/live mode (needs SSE or WebSocket support in
-   the agent).
-4. **Client-side users management.** `CLIENT_ADMIN` has the capability in the
-   policy layer, but no client-facing user-management screen exists yet;
-   invitations are admin-only in the UI.
-5. **Row action menus.** Actions are inline buttons on most tables; the brief
-   asks for overflow/context menus once the action count grows.
-6. **No bulk operations.** Restarting several containers means visiting each.
-7. **Node detail Configuration tab** is not implemented (deliberately, since
+2. **Row action menus.** Actions are inline buttons on most tables; the brief
+   asks for overflow/context menus once the action count grows — workload
+   detail now has one overflow-style secondary action (Restart), but most
+   tables are still flat button rows.
+3. **No bulk operations beyond workload restart.** There is no way to, say,
+   stop every container in a workload at once, or bulk-grant multiple clients.
+4. **Node detail Configuration tab** is not implemented (deliberately, since
    credentials must not be displayed) — it currently has no non-secret content
    worth a tab.
-8. **Attention items are not dismissible** and have no "acknowledge" state, so
+5. **Attention items are not dismissible** and have no "acknowledge" state, so
    a known-stopped container keeps appearing as informational noise.
-9. **Pagination is client-side.** All rows are fetched then paged in the
-   browser; at several thousand containers this needs server-side paging or
-   virtualization.
-10. **Empty-state coverage is uneven.** Tables have good empty states; some
+6. **Empty-state coverage is uneven.** Tables have good empty states; some
     detail-tab panels still fall back to a plain sentence.
-11. **Accessibility passes are partial.** Dialogs, focus rings, labels and
+7. **Accessibility passes are partial.** Dialogs, focus rings, labels and
     semantic buttons are in place; a full keyboard-only and screen-reader audit
     has not been performed, and tab bars are not yet wired as ARIA tablists.
-12. **Workload creation is still form-first** (inside the grants page) rather
-    than a guided flow, and containers are attached to stacks by database
-    linkage rather than through the UI.
+    The command palette is keyboard-navigable but has not had a screen-reader
+    pass.
+8. **Workload creation is still form-first** (inside the grants page) rather
+    than a guided flow. Compose-discovered projects can now be adopted via API
+    (`POST /api/admin/compose/adopt`) but there is no adoption UI yet — an
+    admin must currently drive it via the API or a follow-up screen.
+9. **Compose reconciliation is throttled (30s/node), not real-time.** A newly
+    recreated container can take up to 30s to reappear correctly attributed on
+    the dashboard/all-containers views after a Compose `up` — acceptable for
+    an operations console, called out explicitly since it's a deliberate
+    latency trade-off, not a bug.
+10. **No adoption UI for discovered Compose projects** and no UI to change a
+    workload's Compose vs Manual source after creation.
+11. **SSE log stream has no server-side line-count cap enforcement beyond the
+    agent's own `docker logs --follow`** — the browser bounds its buffer at
+    5000 lines, but a very chatty container could still push meaningful
+    bandwidth through the control plane for the stream's lifetime. Acceptable
+    for the current scale (single-digit concurrent viewers), worth revisiting
+    before wider client-side adoption.

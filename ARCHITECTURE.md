@@ -453,3 +453,135 @@ Operation — container actions are now asynchronous:
 auth, tenant isolation (incl. cross-tenant ID-swap negative tests),
 authorization matrix, operation lifecycle + conflict, node enrollment,
 consistency guards. See `tests/`.
+
+---
+
+# Phase 3 (2026-08-19) — Operations completeness / daily-driver UX
+
+This section records what the Phase 3 feature pass added on top of the
+Production-foundation refactor above. Everything below is deployed and
+verified against the live control plane (commits from `feat: global search`
+through `fix: throttle Compose reconciliation` on `main`); test count is now
+**66/66 passing**.
+
+## New domain model additions
+
+```
+Project.source            ProjectSource (MANUAL | COMPOSE), default MANUAL
+Project.composeProject    Docker Compose project name (COMPOSE projects only)
+                           unique per (nodeId, composeProject)
+Container.composeProject  com.docker.compose.project label, recorded on every
+Container.composeService  inventory refresh regardless of workload adoption
+```
+
+## New services
+
+| Service | Responsibility |
+|---|---|
+| `server/services/search.ts` | Global search: `searchForAdmin` (platform-wide), `searchForClient` (grant-scoped, workloads+containers only) |
+| `server/services/client-team.ts` | CLIENT_ADMIN team management, hard-scoped to `session.clientAccountId`; invite/reissue/deactivate for operator/viewer roles only |
+| `server/services/compose.ts` | Compose label recording, workload reconciliation (`reconcileComposeWorkloads`), throttled combined pass (`reconcileComposeIfDue`), discovery listing, adoption |
+| `server/services/logs-stream.ts` | Agent SSE relay for live logs (`agentLogsToSSE`) |
+
+`server/services/containers.ts` gained `queryAllContainersForAdmin` (server-side
+search/filter/sort/paginate over the live-gathered inventory) and
+`resolveLogTarget` (DB-only log-stream authorization, no agent round-trip).
+`server/services/workloads.ts` gained `restartWorkload` (batch Operation
+requests, partial-failure-aware).
+
+## New API surface
+
+```
+GET    /api/admin/search                       GET  /api/client/search
+GET    /api/client/team          POST /api/client/team
+PATCH  /api/client/team/:id      POST /api/client/team/:id   (reinvite)
+GET    /api/client/activity
+GET    /api/admin/containers/direct/:nodeId/:dockerId/logs/stream   (SSE, admin)
+GET    /api/client/containers/:id/logs/stream                       (SSE, client, view_logs-gated)
+GET    /api/admin/compose/discovered            POST /api/admin/compose/adopt
+POST   /api/admin/workloads/:id/restart
+```
+
+`GET /api/admin/containers`, `/api/admin/audit-logs`, and `/api/admin/clients`
+now accept `search/status/nodeId/clientId/sort/dir/page/limit`-style query
+parameters and return `{ data, total, page, limit, pageCount }` instead of the
+full table.
+
+## Node agent surface additions
+
+```
+GET  /containers/:id/logs/stream    -- docker logs --follow --timestamps, raw stream
+GET  /storage                       -- docker system df, structured summary
+```
+
+Both are additive to the existing curated, whitelisted agent surface (no new
+Docker API exposure, no shell/exec). `DockerAdapter` interface gained
+`streamContainerLogs()` and optional `getStorageSummary()`.
+
+## Compose reconciliation semantics
+
+- Runs on every inventory refresh, throttled to once per 30 seconds per node
+  (in-process `Map<nodeId, lastRunAt>` in `compose.ts`) — added after browser
+  smoke-testing showed the unthrottled version added 4-6s to every dashboard
+  poll on hosts with 30+ containers (per-container upserts on every request).
+- Only runs when the agent actually reported an online inventory (same guard
+  pattern as the existing stale-container sweep) — an offline/timed-out agent
+  can never trigger a reconcile or a deactivation.
+- Recreated containers (new Docker id, same `com.docker.compose.service`
+  label) are re-associated to the existing workload; the stale row is marked
+  `isActive=false`, never deleted.
+- MANUAL workloads are never touched by this path — the reconciler only
+  iterates `Project` rows with `source=COMPOSE`.
+- Grants remain project-level, so ordinary container recreation never disturbs
+  tenant access (verified in `tests/compose-reconcile.test.ts`).
+
+## Live logs transport
+
+```
+Browser --(SSE, credentials:include)--> Next.js route handler
+  --(authz: grant + view_logs, DB-only, no agent call)-->
+  --(plain HTTP fetch, streamed body)--> node agent
+  --(docker logs --tail N --follow --timestamps)--> Docker daemon
+```
+
+The browser never holds a direct connection to the agent. Stream teardown is
+symmetric: browser disconnect → `AbortController` on the client fetch →
+`ReadableStream.cancel()` on the SSE relay → `agentStream.cancel()` → agent's
+Express response `close` event → `child.kill("SIGTERM")` on the underlying
+`docker logs` process. No control-plane-side unbounded buffering: lines are
+relayed as they arrive, never accumulated server-side.
+
+## Known limitations after this phase
+
+1. **Compose reconciliation latency**: throttled to 30s/node, so a Compose
+   `up`/recreate can take up to that long to be correctly re-attributed on
+   dashboards. Deliberate trade-off, not a bug — see UX-NOTES.md.
+2. **No adoption UI** for discovered Compose projects yet; adoption is
+   API-only (`POST /api/admin/compose/adopt`).
+3. **SSE log streams have no server-side byte/line cap** beyond the agent's
+   own tail+follow; the browser bounds its own buffer at 5000 lines. Fine at
+   current concurrency; revisit before wider adoption.
+4. **Workload restart is sequential-request, not truly parallel-optimized** —
+   each container's `CONTAINER_RESTART` operation is requested in a loop and
+   executes via the existing fire-and-forget executor; at very large workload
+   sizes (dozens of containers) this could be batched, but no workload in
+   production today is large enough to justify it.
+
+## Tests (current, Phase 3)
+
+**66 automated tests** (`npm test`, vitest, isolated `hostpanel_test`
+database) — 33 from the production-foundation phase plus:
+
+- `tests/search.test.ts` (6) — admin search coverage, client tenant isolation,
+  grant scoping, href correctness
+- `tests/client-team.test.ts` (9) — CLIENT_ADMIN scoping, elevation
+  prevention, self-deactivation prevention, cross-client denial, non-admin
+  role rejection
+- `tests/logs.test.ts` (5) — log-stream authorization: grant-with-view_logs,
+  grant-without-view_logs, cross-tenant denial, non-existent grant
+- `tests/containers-query.test.ts` (4) — pagination totals/pageCount,
+  status/search filtering
+- `tests/compose-reconcile.test.ts` (5) — the five required scenarios:
+  container recreation, new service, removed service, manual-workload
+  untouched, grant survival
+- `tests/workload-restart.test.ts` (3) — 404, all-succeed, partial-failure
