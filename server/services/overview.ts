@@ -1,6 +1,6 @@
 import { prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
-import { recordComposeMetadata, reconcileComposeWorkloads } from "@/server/services/compose";
+import { reconcileComposeIfDue } from "@/server/services/compose";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { AttentionItem, WorkloadSummary } from "@/types/domain";
 import { humanizeAction } from "@/lib/format";
@@ -70,9 +70,10 @@ export async function collectOverviewSnapshot(): Promise<OverviewSnapshot> {
       status = "OFFLINE";
     }
 
-    // Compose discovery + reconciliation on every inventory refresh.
-    await recordComposeMetadata(node.id, containers);
-    await reconcileComposeWorkloads(node.id, containers);
+    // Compose discovery + reconciliation, throttled per node.
+    if (online) {
+      await reconcileComposeIfDue(node.id, containers);
+    }
 
     const running = containers.filter((c) => c.status === "running").length;
     const offline = status === "OFFLINE" || status === "UNKNOWN";

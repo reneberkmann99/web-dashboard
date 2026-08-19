@@ -28,6 +28,24 @@ export type ComposeContainerRef = {
   composeService?: string | null;
 };
 
+// Reconciliation does DB upserts per container; throttle it so frequent
+// dashboard polling (every 8-20s) doesn't force a full reconcile pass on
+// every request. A stale-by-at-most-N-seconds view is an acceptable
+// trade-off for interactive dashboards; the admin containers page still
+// triggers a reconcile on its own cadence.
+const RECONCILE_THROTTLE_MS = 30_000;
+const lastReconcileAt = new Map<string, number>();
+
+function shouldReconcile(nodeId: string): boolean {
+  const now = Date.now();
+  const last = lastReconcileAt.get(nodeId) ?? 0;
+  if (now - last < RECONCILE_THROTTLE_MS) {
+    return false;
+  }
+  lastReconcileAt.set(nodeId, now);
+  return true;
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -108,6 +126,20 @@ export async function reconcileComposeWorkloads(
   }
 
   return reconciled;
+}
+
+/**
+ * Throttled combined pass: record Compose labels + reconcile COMPOSE workload
+ * membership for a node's live inventory. Safe to call on every inventory
+ * refresh — internally skipped when the node was reconciled within the last
+ * RECONCILE_THROTTLE_MS.
+ */
+export async function reconcileComposeIfDue(nodeId: string, live: ComposeContainerRef[]): Promise<void> {
+  if (!shouldReconcile(nodeId)) {
+    return;
+  }
+  await recordComposeMetadata(nodeId, live);
+  await reconcileComposeWorkloads(nodeId, live);
 }
 
 /**
