@@ -180,7 +180,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
             </CardHeader>
             <CardContent>
               <LogViewer
-                streamUrl={(tail) => `/api/client/containers/${assignmentId}/logs/stream?tail=${tail}`}
+                streamPath={`/api/client/containers/${assignmentId}/logs/stream`}
                 downloadName={container.name}
               />
             </CardContent>

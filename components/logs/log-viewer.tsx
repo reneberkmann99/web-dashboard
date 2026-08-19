@@ -11,19 +11,27 @@ import { maskSecrets } from "@/lib/format";
  * Features: initial tail + live follow, pause/resume (buffered), client-side
  * filter, auto-scroll only while already at the bottom, connection status,
  * bounded line buffer, and download of the current view.
+ *
+ * Duplication guard: the server re-sends the full tail whenever a new SSE
+ * connection is established (initial load, tail change, or reconnect after a
+ * drop). The component therefore REPLACES the current lines when a fresh
+ * connection delivers its first data, instead of appending — so reconnects
+ * never double the buffer. `streamPath` must be a stable string (never an
+ * inline function), otherwise the effect re-runs on every parent render and
+ * reconnects in a loop.
  */
 
 const MAX_LINES = 5000;
 const MAX_PAUSE_BUFFER = 2000;
 
 type LogViewerProps = {
-  /** Returns the SSE endpoint for a given tail size. */
-  streamUrl: (tail: number) => string;
+  /** Base path of the SSE stream (no query string); `?tail=` is appended internally. Must be render-stable. */
+  streamPath: string;
   downloadName: string;
   initialTail?: number;
 };
 
-export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogViewerProps): React.JSX.Element {
+export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogViewerProps): React.JSX.Element {
   const [tail, setTail] = useState(initialTail);
   const [filter, setFilter] = useState("");
   const [paused, setPaused] = useState(false);
@@ -32,19 +40,12 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
   const [lines, setLines] = useState<string[]>([]);
 
   const pausedRef = useRef(paused);
+  const connectedRef = useRef(false);
   const bufferRef = useRef<string[]>([]);
   const preRef = useRef<HTMLPreElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
-
-  useEffect(() => {
-    pausedRef.current = paused;
-    if (!paused && bufferRef.current.length > 0) {
-      const buffered = bufferRef.current;
-      bufferRef.current = [];
-      setLines((prev) => prev.concat(buffered).slice(-MAX_LINES));
-    }
-  }, [paused]);
+  const connectRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     mountedRef.current = true;
@@ -66,9 +67,23 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
     setLines((prev) => prev.concat(line).slice(-MAX_LINES));
   }, []);
 
-  // Establish the SSE connection. Re-runs when tail changes; the connection is
-  // torn down on unmount or tail change. When it drops and the component is
-  // still mounted and not paused, it reconnects after a short delay.
+  // Pause/resume: flush the buffer on resume, and re-establish the stream if
+  // it dropped while paused (otherwise the view would stay stale forever).
+  useEffect(() => {
+    pausedRef.current = paused;
+    if (!paused) {
+      if (bufferRef.current.length > 0) {
+        const buffered = bufferRef.current;
+        bufferRef.current = [];
+        setLines((prev) => prev.concat(buffered).slice(-MAX_LINES));
+      }
+      if (!connectedRef.current) connectRef.current();
+    }
+  }, [paused]);
+
+  // Establish the SSE connection. Re-runs only when tail or streamPath change.
+  // On (re)connect the server re-sends the tail, so the first successful
+  // delivery replaces the line buffer rather than appending to it.
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -78,10 +93,11 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
       const controller = new AbortController();
       abortRef.current = controller;
       setConnected(false);
+      connectedRef.current = false;
 
       void (async () => {
         try {
-          const response = await fetch(streamUrl(tail), {
+          const response = await fetch(`${streamPath}?tail=${tail}`, {
             signal: controller.signal,
             credentials: "include",
             cache: "no-store"
@@ -90,6 +106,9 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
             throw new Error(`HTTP ${response.status}`);
           }
           setConnected(true);
+          connectedRef.current = true;
+          // Fresh connection → the incoming tail is the new baseline.
+          setLines([]);
 
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -109,8 +128,10 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
             }
           }
           setConnected(false);
+          connectedRef.current = false;
         } catch {
           setConnected(false);
+          connectedRef.current = false;
         } finally {
           if (!cancelled && mountedRef.current && !pausedRef.current) {
             retryTimer = setTimeout(connect, 2000);
@@ -119,13 +140,14 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
       })();
     };
 
+    connectRef.current = connect;
     connect();
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
       abortRef.current?.abort();
     };
-  }, [tail, streamUrl, appendLine]);
+  }, [tail, streamPath, appendLine]);
 
   // Auto-scroll: only pin to the bottom while the user is already at/near the
   // bottom and autoScroll is on.
@@ -223,7 +245,7 @@ export function LogViewer({ streamUrl, downloadName, initialTail = 200 }: LogVie
       <pre
         ref={preRef}
         onScroll={handleScroll}
-        className="h-[560px] max-h-[560px] overflow-auto rounded-lg border border-border bg-black/40 p-3 text-xs leading-relaxed text-slate-200"
+        className="log-scroll h-[560px] max-h-[560px] overflow-auto rounded-lg border border-border bg-black/40 p-3 text-[11px] leading-relaxed text-slate-200"
       >
         {filtered.length === 0 ? (
           <span className="text-muted">{filter ? "No log lines match." : "Waiting for logs…"}</span>

@@ -293,9 +293,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Logs</h2>
           </div>
           <LogViewer
-            streamUrl={(tail) =>
-              `/api/admin/containers/direct/${nodeId}/${dockerId}/logs/stream?tail=${tail}`
-            }
+            streamPath={`/api/admin/containers/direct/${nodeId}/${dockerId}/logs/stream`}
             downloadName={container.name}
           />
         </section>
