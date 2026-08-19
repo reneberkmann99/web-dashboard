@@ -41,7 +41,11 @@ const ADMIN_SETTINGS = [
 const CLIENT_NAV = [
   { href: "/client", label: "Overview", icon: LayoutDashboard },
   { href: "/client/workloads", label: "Workloads", icon: Workflow },
-  { href: "/client/containers", label: "Containers", icon: Boxes }
+  { href: "/client/activity", label: "Activity", icon: Activity }
+];
+
+const CLIENT_ADMIN_NAV = [
+  { href: "/client/team", label: "Team", icon: Users }
 ];
 
 export function DashboardShell({
@@ -54,7 +58,10 @@ export function DashboardShell({
   const pathname = usePathname();
   const router = useRouter();
   const isAdmin = session.role === "ADMIN";
-  const navItems = isAdmin ? ADMIN_NAV : CLIENT_NAV;
+  const isClientAdmin = session.role === "CLIENT_ADMIN";
+  const navItems = isAdmin
+    ? ADMIN_NAV
+    : [...CLIENT_NAV, ...(isClientAdmin ? CLIENT_ADMIN_NAV : [])];
   const settingsItems = isAdmin ? ADMIN_SETTINGS : [];
 
   return (

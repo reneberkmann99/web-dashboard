@@ -123,3 +123,10 @@ export const updateGrantSchema = z.object({
 export const containerActionSchema = z.object({
   action: z.enum(["start", "stop", "restart"])
 });
+
+/** CLIENT_ADMIN inviting a user to their own client (operators/viewers only). */
+export const inviteClientUserSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().min(2).max(100),
+  role: z.enum(["CLIENT_OPERATOR", "CLIENT_VIEWER"])
+});
