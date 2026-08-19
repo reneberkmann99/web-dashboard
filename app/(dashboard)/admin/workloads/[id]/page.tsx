@@ -222,6 +222,14 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         </div>
       )}
 
+      {/* Tab bar — above the panels so its position never shifts with content height */}
+      <TabBar
+        tabs={deployment?.managed ? TABS : TABS.filter((t) => t !== "Deployments" && t !== "Secrets")}
+        active={tab}
+        onChange={setTab}
+        idPrefix="workload"
+      />
+
       {/* Overview */}
       {tab === "Overview" && (
         <div className="space-y-6">
@@ -343,14 +351,6 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           )}
         </div>
       )}
-
-      {/* Tab bar */}
-      <TabBar
-        tabs={deployment?.managed ? TABS : TABS.filter((t) => t !== "Deployments" && t !== "Secrets")}
-        active={tab}
-        onChange={setTab}
-        idPrefix="workload"
-      />
 
       {rollbackOpen && deployment?.managed && deployment.deploymentId && (
         <RollbackFlow

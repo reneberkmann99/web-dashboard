@@ -95,6 +95,14 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         </p>
       </div>
 
+      {/* Tab bar — above the panels so its position never shifts with content height */}
+      <TabBar
+        tabs={canManageDeployment ? TABS : TABS.filter((t) => t !== "Deployments" && t !== "Secrets")}
+        active={tab}
+        onChange={setTab}
+        idPrefix="client-workload"
+      />
+
       {tab === "Containers" && (
         <DataTable
           columns={columns}
@@ -139,13 +147,6 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
       {tab === "Volumes" && (
         <WorkloadVolumesTab resourcesUrl={`/api/client/workloads/${workload.id}/resources`} />
       )}
-
-      <TabBar
-        tabs={canManageDeployment ? TABS : TABS.filter((t) => t !== "Deployments" && t !== "Secrets")}
-        active={tab}
-        onChange={setTab}
-        idPrefix="client-workload"
-      />
 
       {rollbackOpen && canManageDeployment && deployment?.deploymentId && (
         <RollbackFlow
