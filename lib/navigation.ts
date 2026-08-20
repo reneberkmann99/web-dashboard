@@ -90,7 +90,7 @@ export const ADMIN_ROOTS: Record<string, RootDef> = {
   attention: { key: "attention", href: "/admin/attention", label: "Attention" },
   activity: { key: "activity", href: "/admin/activity", label: "Activity" },
   users: { key: "users", href: "/admin/settings/users", label: "Users" },
-  containers: { key: "containers", href: "/admin/settings/containers", label: "Containers" },
+  containers: { key: "containers", href: "/admin/containers", label: "Containers" },
   notifications: { key: "notifications", href: "/admin/settings/notifications", label: "Notifications" }
 };
 

@@ -324,7 +324,7 @@ export default function AttentionPage(): React.JSX.Element {
           {!detail.resolvedAt && <div className="flex flex-wrap gap-2">
             {detail.acknowledgement ? <Button variant="secondary" onClick={() => unacknowledge.mutate()}>Unacknowledge</Button> : <Button onClick={() => setAckOpen(true)}>Acknowledge</Button>}
             <Button variant="secondary" onClick={() => setSilenceOpen(true)}><BellOff className="mr-2 h-4 w-4" />Silence</Button>
-            {detail.nodeId && <Link href={detail.resourceType === "NODE" ? `/admin/nodes/${detail.resourceId}` : detail.workloadId ? `/admin/workloads/${detail.workloadId}` : `/admin/settings/containers?nodeId=${detail.nodeId}`} className="inline-flex h-10 items-center rounded-md bg-panelAlt px-4 text-sm">View resource</Link>}
+            {detail.nodeId && <Link href={detail.resourceType === "NODE" ? `/admin/nodes/${detail.resourceId}` : detail.workloadId ? `/admin/workloads/${detail.workloadId}` : `/admin/containers?nodeId=${detail.nodeId}`} className="inline-flex h-10 items-center rounded-md bg-panelAlt px-4 text-sm">View resource</Link>}
           </div>}
           <div><h3 className="mb-2 font-medium">Recent relevant activity</h3><div className="max-h-48 space-y-1 overflow-y-auto">{detail.recentActivity.map((event) => <div key={event.id} className="flex justify-between gap-3 border-b border-border py-2 text-xs"><span>{event.action.replaceAll("_", " ").toLowerCase()} {event.actorEmail ? `by ${event.actorEmail}` : ""}</span><span className="shrink-0 text-muted">{localDate(event.createdAt)}</span></div>)}</div></div>
         </div>}

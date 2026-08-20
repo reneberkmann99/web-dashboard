@@ -36,6 +36,7 @@ type NavItem = { key: NavRootKey; href: string; label: string; icon: React.Compo
 const ADMIN_NAV: NavItem[] = [
   { key: "overview", href: "/admin", label: "Overview", icon: LayoutDashboard },
   { key: "workloads", href: "/admin/workloads", label: "Workloads", icon: Boxes },
+  { key: "containers", href: "/admin/containers", label: "Containers", icon: Container },
   { key: "nodes", href: "/admin/nodes", label: "Nodes", icon: Server },
   { key: "clients", href: "/admin/clients", label: "Clients", icon: Users },
   { key: "attention", href: "/admin/attention", label: "Attention", icon: ShieldAlert },
@@ -44,7 +45,6 @@ const ADMIN_NAV: NavItem[] = [
 
 const ADMIN_SETTINGS: NavItem[] = [
   { key: "users", href: "/admin/settings/users", label: "Users", icon: Users },
-  { key: "containers", href: "/admin/settings/containers", label: "Containers", icon: Container },
   { key: "notifications", href: "/admin/settings/notifications", label: "Notifications", icon: BellRing }
 ];
 
@@ -78,12 +78,12 @@ export function layoutVariantFor(pathname: string): LayoutVariant {
   const wideRoutes = new Set([
     "/admin",
     "/admin/workloads",
+    "/admin/containers",
     "/admin/nodes",
     "/admin/clients",
     "/admin/attention",
     "/admin/activity",
     "/admin/compose",
-    "/admin/settings/containers",
     "/admin/settings/users",
     "/admin/settings/notifications",
     "/client",

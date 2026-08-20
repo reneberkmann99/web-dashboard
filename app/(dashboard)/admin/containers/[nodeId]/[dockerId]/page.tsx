@@ -116,7 +116,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
         <p className="mt-1 text-xs text-muted">
           {detail.error instanceof Error ? detail.error.message : "The container may no longer exist on this node."}
         </p>
-        <div className="mt-4"><ContextBackLink fallback="/admin/settings/containers" label="Containers" allowedReturnPrefixes={["/admin/settings/containers", "/admin/nodes", "/admin/workloads"]} /></div>
+        <div className="mt-4"><ContextBackLink fallback="/admin/containers" label="Containers" allowedReturnPrefixes={["/admin/containers", "/admin/nodes", "/admin/workloads"]} /></div>
       </div>
     );
   }
