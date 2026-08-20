@@ -113,13 +113,19 @@ export function NavigationProvider({ children }: { children: React.ReactNode }):
   const renameCurrent = useCallback(
     (label: string) => {
       setCtx((prev) => {
-        const stack = [...prev.stack];
-        for (let i = stack.length - 1; i >= 0; i--) {
-          if (stack[i].kind === "resource") {
-            stack[i] = { ...stack[i], label };
-            break;
+        const index = (() => {
+          for (let i = prev.stack.length - 1; i >= 0; i--) {
+            if (prev.stack[i].kind === "resource") return i;
           }
+          return -1;
+        })();
+        if (index === -1 || prev.stack[index].label === label) {
+          // No change — return the same state so React bails out and the
+          // detail-page effect that calls renameCurrent cannot loop.
+          return prev;
         }
+        const stack = [...prev.stack];
+        stack[index] = { ...stack[index], label };
         const next = { ...prev, stack };
         saveContext(url, next);
         return next;
