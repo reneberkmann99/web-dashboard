@@ -21,13 +21,13 @@ export default function AdminDeploymentEditPage(): React.JSX.Element {
   });
 
   if (workload.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (workload.isError || !workload.data) return <p className="text-sm text-red-400">Failed to load workload.</p>;
+  if (workload.isError || !workload.data) return <p className="text-sm text-critical-foreground">Failed to load workload.</p>;
 
   const { deployment } = workload.data;
   if (!deployment.managed || !deployment.deploymentId) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-muted">This workload is not managed by HostPanel and has no deployment lifecycle.</p>
+        <p className="text-sm text-muted">This workload is not managed by Noderaft and has no deployment lifecycle.</p>
         <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/workloads/${params.id}`)}>
           ← Back to workload
         </Button>

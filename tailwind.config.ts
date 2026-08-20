@@ -10,23 +10,79 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)"],
+        mono: ["var(--font-mono)"]
+      },
       colors: {
-        background: "#05070d",
-        panel: "#0c1322",
-        panelAlt: "#111a2c",
-        border: "#1f2a44",
-        text: "#e9f1ff",
-        muted: "#8aa0c8",
-        accent: "#33d1ff",
-        success: "#22c55e",
-        warning: "#f59e0b",
-        danger: "#ef4444"
+        surface: {
+          hull: "rgb(var(--surface-hull) / <alpha-value>)",
+          deck: "rgb(var(--surface-deck) / <alpha-value>)",
+          raised: "rgb(var(--surface-raised) / <alpha-value>)",
+          overlay: "rgb(var(--surface-overlay) / <alpha-value>)"
+        },
+        border: {
+          DEFAULT: "rgb(var(--border-default) / <alpha-value>)",
+          strong: "rgb(var(--border-strong) / <alpha-value>)"
+        },
+        text: {
+          DEFAULT: "rgb(var(--text-primary) / <alpha-value>)",
+          muted: "rgb(var(--text-muted) / <alpha-value>)",
+          subtle: "rgb(var(--text-subtle) / <alpha-value>)",
+          inverse: "rgb(var(--text-inverse) / <alpha-value>)"
+        },
+        brand: {
+          DEFAULT: "rgb(var(--brand-accent) / <alpha-value>)",
+          hover: "rgb(var(--brand-hover) / <alpha-value>)",
+          contrast: "rgb(var(--brand-contrast) / <alpha-value>)"
+        },
+        success: {
+          DEFAULT: "rgb(var(--state-success) / <alpha-value>)",
+          foreground: "rgb(var(--state-success-foreground) / <alpha-value>)"
+        },
+        warning: {
+          DEFAULT: "rgb(var(--state-warning) / <alpha-value>)",
+          foreground: "rgb(var(--state-warning-foreground) / <alpha-value>)"
+        },
+        critical: {
+          DEFAULT: "rgb(var(--state-critical) / <alpha-value>)",
+          foreground: "rgb(var(--state-critical-foreground) / <alpha-value>)"
+        },
+        info: {
+          DEFAULT: "rgb(var(--state-info) / <alpha-value>)",
+          foreground: "rgb(var(--state-info-foreground) / <alpha-value>)"
+        },
+        focus: "rgb(var(--focus-ring) / <alpha-value>)",
+        selected: {
+          DEFAULT: "rgb(var(--selected-surface) / <alpha-value>)",
+          border: "rgb(var(--selected-border) / <alpha-value>)"
+        },
+        background: "rgb(var(--surface-hull) / <alpha-value>)",
+        panel: "rgb(var(--surface-deck) / <alpha-value>)",
+        panelAlt: "rgb(var(--surface-raised) / <alpha-value>)",
+        muted: "rgb(var(--text-muted) / <alpha-value>)",
+        accent: "rgb(var(--brand-accent) / <alpha-value>)",
+        danger: "rgb(var(--state-critical) / <alpha-value>)"
+      },
+      spacing: {
+        "control-sm": "var(--control-sm)",
+        control: "var(--control-md)",
+        "control-lg": "var(--control-lg)",
+        gutter: "var(--space-gutter)",
+        section: "var(--space-section)"
+      },
+      borderRadius: {
+        control: "var(--radius-control)",
+        panel: "var(--radius-panel)",
+        overlay: "var(--radius-overlay)"
       },
       boxShadow: {
-        panel: "0 12px 40px rgba(0, 0, 0, 0.35)"
+        panel: "var(--shadow-panel)",
+        overlay: "var(--shadow-overlay)"
       },
       backgroundImage: {
-        "hostpanel-grid": "radial-gradient(circle at top left, rgba(51, 209, 255, 0.07), transparent 55%), radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.06), transparent 40%)"
+        "brand-atmosphere": "var(--background-atmosphere)",
+        "hostpanel-grid": "var(--background-atmosphere)"
       }
     }
   },

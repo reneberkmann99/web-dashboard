@@ -55,7 +55,7 @@ export function OperationResultView({
           <Badge variant="warning">Deployment applied — health verification failed</Badge>
         </div>
         <p className="text-sm">
-          <span className="font-medium">The new configuration is currently running.</span> HostPanel could not verify
+          <span className="font-medium">The new configuration is currently running.</span> Noderaft could not verify
           that all services became healthy before the verification deadline.
         </p>
         <p className="mt-2 text-sm text-muted">

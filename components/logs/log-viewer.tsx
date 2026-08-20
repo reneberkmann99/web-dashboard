@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Pause, Play, Loader2, WifiOff } from "lucide-react";
 import { maskSecrets } from "@/lib/format";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 
 /**
  * Live container logs via Server-Sent Events (relayed through the control
@@ -211,41 +214,41 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
           {!connected && !paused && <Loader2 size={12} className="animate-spin text-muted" />}
         </div>
         <div className="flex items-center gap-2">
-          <input
+          <Input
             type="search"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter logs…"
             aria-label="Filter logs"
-            className="w-36 rounded-md border border-border bg-panelAlt px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent"
+            className="h-control-sm w-36 px-2 py-1 font-mono text-xs"
           />
-          <select
+          <Select
             value={tail}
             onChange={(e) => setTail(Number(e.target.value))}
             aria-label="Number of log lines"
-            className="rounded-md border border-border bg-panelAlt px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent"
+            className="h-control-sm w-auto px-2 py-1 font-mono text-xs"
           >
             {[100, 200, 500].map((n) => (
               <option key={n} value={n}>
                 {n} lines
               </option>
             ))}
-          </select>
-          <button
-            type="button"
+          </Select>
+          <Button
             onClick={download}
             aria-label="Download logs"
-            className="inline-flex items-center gap-1 rounded border border-border bg-panelAlt px-2 py-1 text-xs hover:text-text focus:outline-none focus:ring-2 focus:ring-accent"
+            variant="outline"
+            size="sm"
           >
             <Download size={12} /> Download
-          </button>
+          </Button>
         </div>
       </div>
 
       <pre
         ref={preRef}
         onScroll={handleScroll}
-        className="log-scroll h-[560px] max-h-[560px] overflow-auto rounded-lg border border-border bg-black/40 p-3 text-[11px] leading-relaxed text-slate-200"
+        className="log-scroll h-[560px] max-h-[560px] overflow-auto rounded-panel border border-border bg-surface-hull/80 p-3 font-mono text-[11px] leading-relaxed text-text"
       >
         {filtered.length === 0 ? (
           <span className="text-muted">{filter ? "No log lines match." : "Waiting for logs…"}</span>

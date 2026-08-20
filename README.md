@@ -1,6 +1,6 @@
-# HostPanel
+# Noderaft
 
-HostPanel is a full-stack hosting control panel MVP for managing client-assigned Docker workloads through a secure central dashboard.
+Noderaft is a full-stack control panel for managing client-assigned Docker workloads through a secure central dashboard.
 
 It is designed as a SaaS-style foundation with clean boundaries between UI, control plane, and node execution.
 
@@ -41,13 +41,13 @@ It is designed as a SaaS-style foundation with clean boundaries between UI, cont
 ### Core services
 - `Next.js app` (control plane + UI + API)
 - `PostgreSQL` (state, sessions, RBAC, audit)
-- `Node Agent` (runs on each node, executes Docker actions)
+- `Noderaft Agent` (runs on each node, executes Docker actions)
 
 ### Security boundary
 - Browser never talks to Docker directly.
 - Browser -> Next.js API only.
-- Next.js -> Node Agent (server-to-server, API key auth).
-- Node Agent -> local Docker runtime.
+- Next.js -> Noderaft Agent (server-to-server, API key auth).
+- Noderaft Agent -> local Docker runtime.
 
 This keeps Docker control server-side and supports rootless deployment models.
 
@@ -189,7 +189,7 @@ npm run setup
 ## Demo credentials
 
 - Admin:
-  - email: `admin@hostpanel.local`
+  - email: `admin@noderaft.local`
   - password: `ChangeMe123!`
 - Client:
   - email: `ops@acme-hosting.local`

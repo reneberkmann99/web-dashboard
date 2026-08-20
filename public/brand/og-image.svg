@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Noderaft — your fleet, on one deck">
+  <defs>
+    <radialGradient id="nrAtmosphere" cx="14%" cy="0%" r="70%"><stop offset="0%" stop-color="#33D1FF" stop-opacity="0.16"/><stop offset="100%" stop-color="#33D1FF" stop-opacity="0"/></radialGradient>
+    <radialGradient id="nrAtmosphere2" cx="86%" cy="24%" r="55%"><stop offset="0%" stop-color="#10B981" stop-opacity="0.11"/><stop offset="100%" stop-color="#10B981" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#05070D"/><rect width="1200" height="630" fill="url(#nrAtmosphere)"/><rect width="1200" height="630" fill="url(#nrAtmosphere2)"/>
+  <rect x="97.1" y="151.1" width="93.8" height="93.8" rx="27" fill="#0C1322" stroke="rgba(51,209,255,0.35)" stroke-width="2.2"/>
+  <g transform="translate(96 150) scale(1.5)"><g transform="rotate(-45 32 32)">
+    <rect x="17" y="17" width="30" height="7" rx="3.5" fill="#33D1FF" opacity="0.55"/><rect x="17" y="28.5" width="30" height="7" rx="3.5" fill="#33D1FF"/><rect x="17" y="40" width="30" height="7" rx="3.5" fill="#33D1FF" opacity="0.55"/>
+  </g></g>
+  <text x="220" y="215" font-family="IBM Plex Sans, 'Segoe UI', sans-serif" font-size="56" font-weight="600" letter-spacing="-1.7" fill="#E9F1FF">node<tspan fill="#33D1FF">raft</tspan></text>
+  <text x="96" y="360" font-family="IBM Plex Sans, 'Segoe UI', sans-serif" font-size="82" font-weight="600" letter-spacing="-2.6" fill="#E9F1FF">Your fleet, on one deck.</text>
+  <text x="96" y="428" font-family="IBM Plex Sans, 'Segoe UI', sans-serif" font-size="30" fill="#8AA0C8">Self-hosted control panel for nodes, workloads and containers.</text>
+  <text x="96" y="536" font-family="IBM Plex Mono, monospace" font-size="24" letter-spacing="4.5" fill="#33D1FF">NODERAFT.IO</text>
+  <rect x="96" y="470" width="1008" height="1.5" fill="#1F2A44"/>
+</svg>

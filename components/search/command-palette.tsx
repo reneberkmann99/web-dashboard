@@ -57,10 +57,10 @@ export function CommandPalette(): React.JSX.Element | null {
     };
     const onOpen = (): void => setOpen(true);
     window.addEventListener("keydown", onKey);
-    window.addEventListener("hostpanel:open-search", onOpen);
+    window.addEventListener("noderaft:open-search", onOpen);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("hostpanel:open-search", onOpen);
+      window.removeEventListener("noderaft:open-search", onOpen);
     };
   }, []);
 
@@ -166,7 +166,7 @@ export function CommandPalette(): React.JSX.Element | null {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[12vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/65 p-4 pt-[12vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
@@ -177,7 +177,7 @@ export function CommandPalette(): React.JSX.Element | null {
         aria-modal="true"
         aria-label="Global search"
         tabIndex={-1}
-        className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-panel shadow-2xl"
+        className="w-full max-w-xl overflow-hidden rounded-overlay border border-border bg-surface-overlay shadow-overlay"
       >
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Search size={16} className="text-muted" />
@@ -200,9 +200,9 @@ export function CommandPalette(): React.JSX.Element | null {
               <Loader2 size={14} className="animate-spin" /> Searching…
             </div>
           ) : error ? (
-            <p className="p-4 text-sm text-red-400">{error}</p>
+            <p className="p-4 text-sm text-critical-foreground">{error}</p>
           ) : !query.trim() ? (
-            <p className="p-4 text-sm text-muted">Type to search across HostPanel.</p>
+            <p className="p-4 text-sm text-text-muted">Type to search across Noderaft.</p>
           ) : flat.length === 0 ? (
             <p className="p-4 text-sm text-muted">No results for “{query}”.</p>
           ) : (
@@ -223,7 +223,7 @@ export function CommandPalette(): React.JSX.Element | null {
                       onMouseEnter={() => setCursor(index)}
                       className={cn(
                         "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition",
-                        cursor === index ? "bg-panelAlt text-text" : "text-muted"
+                        cursor === index ? "bg-selected text-text" : "text-text-muted"
                       )}
                     >
                       <Icon size={15} className="shrink-0 text-accent" />

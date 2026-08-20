@@ -14,8 +14,15 @@ export function AttentionBadge({
   severity: AttentionSeverity | "healthy" | "unknown";
   label?: string;
 }): React.JSX.Element {
-  const variant =
-    severity === "critical" ? "danger" : severity === "warning" ? "warning" : severity === "healthy" ? "success" : "default";
+  const variant = severity === "critical"
+    ? "danger"
+    : severity === "warning"
+      ? "warning"
+      : severity === "info"
+        ? "info"
+        : severity === "healthy"
+          ? "success"
+          : "default";
   const text = label ?? (severity === "healthy" ? "healthy" : severity === "unknown" ? "unknown" : severity);
   return <Badge variant={variant}>{text}</Badge>;
 }

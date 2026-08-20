@@ -36,7 +36,7 @@ export function ReleaseHistory({
     return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
   }
   if (query.isError || !query.data) {
-    return <p className="text-sm text-red-400">Failed to load release history.</p>;
+    return <p className="text-sm text-critical-foreground">Failed to load release history.</p>;
   }
   if (query.data.total === 0) {
     return (

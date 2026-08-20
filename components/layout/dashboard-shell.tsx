@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { isClientRole } from "@/types/domain";
 import { CommandPalette } from "@/components/search/command-palette";
+import { NoderaftLogo } from "@/components/brand/noderaft-logo";
 
 type ShellSession = {
   displayName: string;
@@ -53,6 +54,14 @@ const CLIENT_ADMIN_NAV = [
   { href: "/client/team", label: "Team", icon: Users }
 ];
 
+function isActiveNavPath(pathname: string, href: string): boolean {
+  if (pathname === href) return true;
+  // The role landing routes (/admin and /client) are exact matches; without
+  // this guard they would also match every descendant route.
+  if (href === "/admin" || href === "/client") return false;
+  return pathname.startsWith(`${href}/`);
+}
+
 export function DashboardShell({
   children,
   session
@@ -77,26 +86,29 @@ export function DashboardShell({
   }, []);
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
-      <aside className="border-r border-border bg-panel p-4">
-        <div className="rounded-lg border border-border bg-panelAlt p-4">
-          <p className="text-xs uppercase tracking-[0.2em] text-accent">HostPanel</p>
+    <div className="grid min-h-screen lg:grid-cols-[264px_1fr]">
+      <aside className="border-b border-border bg-surface-deck p-4 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+        <Link href={isAdmin ? "/admin" : "/client"} aria-label="Noderaft overview" className="inline-flex rounded-control focus:outline-none focus:ring-2 focus:ring-focus">
+          <NoderaftLogo priority />
+        </Link>
+
+        <div className="mt-5 rounded-panel border border-border bg-surface-raised/70 p-4">
           <p className="mt-3 font-medium">{session.displayName}</p>
-          <p className="text-xs text-muted">{session.email}</p>
-          <p className="mt-1 text-xs text-muted">
+          <p className="truncate font-mono text-[11px] text-text-muted">{session.email}</p>
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-brand">
             {isAdmin ? "Administrator" : session.clientAccountName}
           </p>
         </div>
 
         <nav className="mt-4 space-y-1" aria-label="Primary">
           {navItems.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active = isActiveNavPath(pathname, item.href);
             const Icon = item.icon;
             return (
               <Link
                 className={cn(
-                  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted transition hover:bg-panelAlt hover:text-text focus:outline-none focus:ring-2 focus:ring-accent",
-                  active && "bg-panelAlt text-text"
+                  "flex items-center gap-2 rounded-control border border-transparent px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
+                  active && "border-selected-border/35 bg-selected text-text"
                 )}
                 href={item.href}
                 key={item.href}
@@ -110,16 +122,16 @@ export function DashboardShell({
 
         {settingsItems.length > 0 && (
           <>
-            <p className="mt-6 px-3 text-xs uppercase tracking-wide text-muted">Settings</p>
+            <p className="mt-6 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-text-subtle">Settings</p>
             <nav className="mt-2 space-y-1" aria-label="Settings">
               {settingsItems.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const active = isActiveNavPath(pathname, item.href);
                 const Icon = item.icon;
                 return (
                   <Link
                     className={cn(
-                      "flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted transition hover:bg-panelAlt hover:text-text focus:outline-none focus:ring-2 focus:ring-accent",
-                      active && "bg-panelAlt text-text"
+                      "flex items-center gap-2 rounded-control border border-transparent px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
+                      active && "border-selected-border/35 bg-selected text-text"
                     )}
                     href={item.href}
                     key={item.href}
@@ -135,19 +147,19 @@ export function DashboardShell({
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:px-6 md:py-4">
-          <p className="hidden text-sm text-muted sm:block">{now ?? ""}</p>
-          <p className="text-sm text-muted sm:hidden">HostPanel</p>
+        <header className="sticky top-0 z-10 flex min-h-16 items-center justify-between border-b border-border bg-surface-hull/95 px-4 py-3 backdrop-blur md:px-6">
+          <p className="hidden font-mono text-xs text-text-muted sm:block">{now ?? ""}</p>
+          <NoderaftLogo compact className="sm:hidden" />
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent("hostpanel:open-search"))}
-              className="hidden items-center gap-2 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm text-muted transition hover:text-text focus:outline-none focus:ring-2 focus:ring-accent sm:flex"
+              onClick={() => window.dispatchEvent(new CustomEvent("noderaft:open-search"))}
+              className="hidden items-center gap-2 rounded-control border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text focus:outline-none focus:ring-2 focus:ring-focus sm:flex"
               aria-label="Open search"
             >
               <Search size={14} />
               <span>Search</span>
-              <kbd className="rounded border border-border px-1.5 text-[10px]">⌘K</kbd>
+              <kbd className="rounded-sm border border-border px-1.5 text-[10px]">⌘K</kbd>
             </button>
             <Button
               size="sm"
@@ -164,7 +176,7 @@ export function DashboardShell({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl p-4 md:p-6">{children}</main>
+        <main className="mx-auto w-full max-w-7xl p-gutter">{children}</main>
       </div>
       <CommandPalette />
     </div>

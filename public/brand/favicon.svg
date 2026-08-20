@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64" role="img" aria-label="Noderaft">
+  <defs><clipPath id="favClip"><rect x="0" y="0" width="64" height="64" rx="16"/></clipPath></defs>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="16" fill="#0C1322" stroke="rgba(51,209,255,0.4)" stroke-width="1.5"/>
+  <g clip-path="url(#favClip)"><g transform="rotate(-45 32 32)">
+    <rect x="17" y="17" width="30" height="7" rx="3.5" fill="#33D1FF" opacity="0.55"/>
+    <rect x="17" y="28.5" width="30" height="7" rx="3.5" fill="#33D1FF"/>
+    <rect x="17" y="40" width="30" height="7" rx="3.5" fill="#33D1FF" opacity="0.55"/>
+  </g></g>
+</svg>

@@ -82,7 +82,7 @@ export function WorkloadNetworksTab({ resourcesUrl }: { resourcesUrl: string }):
     );
   }
   if (query.isError) {
-    return <p className="text-sm text-red-400">Failed to load networks.</p>;
+    return <p className="text-sm text-critical-foreground">Failed to load networks.</p>;
   }
   const networks = query.data?.networks ?? [];
   if (networks.length === 0) {
@@ -163,7 +163,7 @@ export function WorkloadVolumesTab({ resourcesUrl }: { resourcesUrl: string }): 
     );
   }
   if (query.isError) {
-    return <p className="text-sm text-red-400">Failed to load volumes.</p>;
+    return <p className="text-sm text-critical-foreground">Failed to load volumes.</p>;
   }
   const volumes = query.data?.volumes ?? [];
   if (volumes.length === 0) {

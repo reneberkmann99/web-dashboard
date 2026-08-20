@@ -145,7 +145,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
     return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
   }
   if (query.isError || !query.data) {
-    return <p className="text-sm text-red-400">Failed to load workload.</p>;
+    return <p className="text-sm text-critical-foreground">Failed to load workload.</p>;
   }
 
   const { workload, activity, deployment, attentionItems, activeOperations, maintenance } = query.data;
@@ -231,7 +231,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       )}
 
       {failedOrRestarting.length > 0 && (
-        <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-300">
+        <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
           {failedOrRestarting.length} container{failedOrRestarting.length > 1 ? "s" : ""} recently failed or is restarting:{" "}
           {failedOrRestarting.map((c) => c.dockerName).join(", ")}
         </div>
@@ -248,7 +248,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       {/* Overview */}
       {tab === "Overview" && (
         <div className="space-y-6">
-          {maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-100">MAINTENANCE until {new Date(maintenance[0].endsAt).toLocaleString()}{maintenance[0].reason ? ` — ${maintenance[0].reason}` : ""}. Underlying workload health remains authoritative.</div>}
+          {maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">MAINTENANCE until {new Date(maintenance[0].endsAt).toLocaleString()}{maintenance[0].reason ? ` — ${maintenance[0].reason}` : ""}. Underlying workload health remains authoritative.</div>}
           {attentionItems.length > 0 && (
             <div className="space-y-2">
               {attentionItems.map((item) => (
@@ -261,7 +261,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
                   <div>
                     <p className="text-sm font-medium">{item.title}</p>
                     <p className="text-xs text-muted">{item.detail}</p>
-                    {item.acknowledgement && <p className="mt-1 text-xs text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}
+                    {item.acknowledgement && <p className="mt-1 text-xs text-info-foreground">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}
                     {item.silence && <p className="text-xs text-muted">Notifications silenced until {new Date(item.silence.endsAt).toLocaleString()}</p>}
                   </div>
                   <div className="flex items-center gap-2"><AttentionBadge severity={item.severity} /><Button size="sm" variant="ghost" onClick={() => router.push(`/admin/attention?conditionId=${item.id}`)}>View issue</Button></div>
@@ -349,7 +349,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         (deployment?.managed && deployment.deploymentId ? (
           <SecretsTab deploymentId={deployment.deploymentId} />
         ) : (
-          <p className="text-sm text-muted">This workload has no HostPanel-managed secrets.</p>
+          <p className="text-sm text-muted">This workload has no Noderaft-managed secrets.</p>
         ))}
 
       {/* Networks */}
@@ -427,7 +427,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           detachMutation.mutate();
         }}
         title={`Detach ${workload.name} from Compose?`}
-        impact="HostPanel will stop automatically tracking this Compose project and treat the workload as MANUAL. This does NOT stop or delete any containers, volumes, networks, or Docker Compose resources — those are left completely untouched."
+        impact="Noderaft will stop automatically tracking this Compose project and treat the workload as MANUAL. This does NOT stop or delete any containers, volumes, networks, or Docker Compose resources — those are left completely untouched."
         confirmLabel="Detach from Compose"
       />
 
@@ -439,7 +439,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           convertMutation.mutate();
         }}
         title={`Convert ${workload.name} to Compose-managed?`}
-        impact={`HostPanel will start tracking this workload from Compose project "${convertPreview.data?.preview.composeProject ?? ""}". Its ID, name, client, grants and activity history are retained. Membership will then sync automatically as containers are recreated.`}
+        impact={`Noderaft will start tracking this workload from Compose project "${convertPreview.data?.preview.composeProject ?? ""}". Its ID, name, client, grants and activity history are retained. Membership will then sync automatically as containers are recreated.`}
         confirmLabel="Convert to Compose-managed"
       />
     </div>
@@ -565,7 +565,7 @@ function GrantModal({
             </label>
           </div>
         </div>
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-critical-foreground">{error}</p>}
       </div>
     </Modal>
   );

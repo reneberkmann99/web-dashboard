@@ -3,6 +3,8 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Column } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
+import { StatePanel } from "@/components/ui/state-panel";
 
 /**
  * Server-side data table: the API returns one page; this component renders it
@@ -61,26 +63,21 @@ export function ServerDataTable<T>({
 
   if (error) {
     return (
-      <div className="rounded-lg border border-danger/30 bg-danger/5 p-6 text-center">
-        <p className="text-sm text-red-300">{error}</p>
-      </div>
+      <StatePanel tone="error" title="Unable to load data" description={error} />
     );
   }
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-panelAlt/50 p-8 text-center">
-        <p className="font-medium">{emptyTitle}</p>
-        {emptyBody && <p className="mx-auto mt-1 max-w-md text-sm text-muted">{emptyBody}</p>}
-      </div>
+      <StatePanel title={emptyTitle} description={emptyBody} />
     );
   }
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-lg border border-border">
+      <div className="overflow-x-auto rounded-panel border border-border bg-surface-deck">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-panel text-left text-xs uppercase tracking-wide text-muted">
+          <thead className="sticky top-0 bg-surface-raised/85 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted backdrop-blur">
             <tr>
               {columns.map((col) => (
                 <th key={col.key} className={cn("px-3 py-2.5 font-medium", col.className)}>
@@ -88,7 +85,7 @@ export function ServerDataTable<T>({
                     <button
                       type="button"
                       onClick={() => onSortChange(col.key)}
-                      className="inline-flex items-center gap-1 rounded hover:text-text focus:outline-none focus:ring-2 focus:ring-accent"
+                      className="inline-flex items-center gap-1 rounded-control hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
                       aria-label={`Sort by ${col.header}`}
                     >
                       {col.header}
@@ -108,8 +105,8 @@ export function ServerDataTable<T>({
                 key={rowKey ? rowKey(row) : `row-${rowIndex}`}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={cn(
-                  "border-t border-border",
-                  onRowClick && "cursor-pointer hover:bg-panelAlt/60"
+                  "border-t border-border transition-colors",
+                  onRowClick && "cursor-pointer hover:bg-surface-raised/60"
                 )}
               >
                 {columns.map((col) => (
@@ -137,25 +134,25 @@ export function ServerDataTable<T>({
           {total > 0 ? `${start}–${end} of ${total}` : "0 results"}
         </span>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <Button
             disabled={safePage <= 1}
             onClick={() => onPageChange(safePage - 1)}
-            className="rounded border border-border px-2 py-1 disabled:opacity-40 hover:bg-panelAlt focus:outline-none focus:ring-2 focus:ring-accent"
+            variant="outline"
+            size="sm"
           >
             Prev
-          </button>
+          </Button>
           <span>
             Page {safePage} of {pageCount}
           </span>
-          <button
-            type="button"
+          <Button
             disabled={safePage >= pageCount}
             onClick={() => onPageChange(safePage + 1)}
-            className="rounded border border-border px-2 py-1 disabled:opacity-40 hover:bg-panelAlt focus:outline-none focus:ring-2 focus:ring-accent"
+            variant="outline"
+            size="sm"
           >
             Next
-          </button>
+          </Button>
         </div>
       </div>
       {footer}

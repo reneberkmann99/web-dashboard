@@ -103,7 +103,7 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
 
       {nodesQuery.isLoading && <div className="h-20 animate-pulse rounded-lg bg-panelAlt" />}
       {nodesQuery.data && allowedNodes.length === 0 && (
-        <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-amber-200">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-warning-foreground">
           Your account has no deployment nodes assigned yet. Ask your administrator to grant node access before you
           can create a workload.
         </div>
@@ -117,7 +117,7 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
             </label>
             <Input id="wl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. My App (type your own name here)" />
             {name.trim().length === 0 && (
-              <p className="mt-1 text-xs text-amber-300">Required — the text above is a placeholder, not a value.</p>
+              <p className="mt-1 text-xs text-warning-foreground">Required — the text above is a placeholder, not a value.</p>
             )}
             {slug && <p className="mt-1 text-xs text-muted">Compose project: {slug}</p>}
           </div>
@@ -172,17 +172,17 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
                 Validation {validation.valid ? <Badge variant="success">valid</Badge> : <Badge variant="danger">invalid</Badge>}
               </p>
               {validation.composeErrors.map((err, i) => (
-                <p key={i} className="break-words font-mono text-xs text-red-300">
+                <p key={i} className="break-words font-mono text-xs text-critical-foreground">
                   {err}
                 </p>
               ))}
               {validation.blockedFindings.map((f) => (
-                <p key={f.ruleId + f.message} className="text-sm text-red-300">
+                <p key={f.ruleId + f.message} className="text-sm text-critical-foreground">
                   Blocked — {f.message}
                 </p>
               ))}
               {validation.highRiskFindings.map((f) => (
-                <p key={f.ruleId + f.message} className="mt-1 text-sm text-amber-300">
+                <p key={f.ruleId + f.message} className="mt-1 text-sm text-warning-foreground">
                   High risk — {f.message}
                 </p>
               ))}
@@ -196,12 +196,12 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
                     {create.isPending ? "Creating…" : "Create workload"}
                   </Button>
                   {validation.highRiskFindings.length > 0 && (
-                    <p className="mt-1.5 text-xs text-amber-300">
+                    <p className="mt-1.5 text-xs text-warning-foreground">
                       Resolve the high-risk findings above before creating this workload.
                     </p>
                   )}
                   {validation.highRiskFindings.length === 0 && name.trim().length < 2 && (
-                    <p className="mt-1.5 text-xs text-amber-300">
+                    <p className="mt-1.5 text-xs text-warning-foreground">
                       Enter a workload name above (at least 2 characters) to enable this button.
                     </p>
                   )}

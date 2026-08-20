@@ -56,7 +56,7 @@ export default function ClientDashboardPage(): React.JSX.Element {
       {/* Needs attention — workload-scoped only (§18); no node/infra detail is ever exposed to clients */}
       {attention.length > 0 && (
         <section aria-label="Needs attention">
-          <h2 className="mb-2 text-lg font-semibold text-amber-300">Needs attention</h2>
+          <h2 className="mb-2 text-lg font-semibold text-warning-foreground">Needs attention</h2>
           <div className="space-y-2">
             {attention.map((item) => (
               <button

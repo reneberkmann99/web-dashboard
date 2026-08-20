@@ -8,6 +8,8 @@ import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { MetricCard } from "@/components/ui/metric-card";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatePanel } from "@/components/ui/state-panel";
 import { timeAgo, humanizeAction } from "@/lib/format";
 import type { AttentionItem, WorkloadSummary, FleetSummary, RecentFailure, ActiveOperationSummary } from "@/types/domain";
 
@@ -59,10 +61,10 @@ export default function AdminOverviewPage(): React.JSX.Element {
   if (query.isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-10 w-64 animate-pulse rounded bg-panelAlt" />
+        <div className="h-10 w-64 animate-pulse rounded-control bg-surface-raised" />
         <div className="grid gap-4 md:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-lg bg-panelAlt" />
+            <div key={i} className="h-24 animate-pulse rounded-panel bg-surface-raised" />
           ))}
         </div>
       </div>
@@ -71,10 +73,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
 
   if (query.isError || !query.data) {
     return (
-      <div className="rounded-lg border border-danger/30 bg-danger/5 p-8 text-center">
-        <p className="text-sm text-red-300">Failed to load the dashboard.</p>
-        <p className="mt-1 text-xs text-muted">{query.error instanceof Error ? query.error.message : ""}</p>
-      </div>
+      <StatePanel tone="error" title="Failed to load the dashboard" description={query.error instanceof Error ? query.error.message : undefined} />
     );
   }
 
@@ -102,9 +101,9 @@ export default function AdminOverviewPage(): React.JSX.Element {
         <p className="text-sm font-medium">{item.title}</p>
         <p className="text-xs text-muted">{item.detail}</p>
         <div className="mt-1 space-y-0.5 text-xs text-muted">
-          {item.acknowledgement && <p className="text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy} · {timeAgo(item.acknowledgement.acknowledgedAt)}</p>}
+          {item.acknowledgement && <p className="text-info-foreground">Acknowledged by {item.acknowledgement.acknowledgedBy} · {timeAgo(item.acknowledgement.acknowledgedAt)}</p>}
           {item.silence && <p>Notifications silenced until {new Date(item.silence.endsAt).toLocaleString()}</p>}
-          {item.maintenance && <p className="text-amber-200">Maintenance until {new Date(item.maintenance.endsAt).toLocaleString()}</p>}
+          {item.maintenance && <p className="text-warning-foreground">Maintenance until {new Date(item.maintenance.endsAt).toLocaleString()}</p>}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -116,10 +115,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Overview</h1>
-        <p className="text-muted">Operational state of your fleet — and what requires attention.</p>
-      </div>
+      <PageHeader eyebrow="Fleet" title="Overview" description="Operational state of your fleet — and what requires attention." />
 
       {/* Fleet summary (§2) — concise counters, never a Grafana clone */}
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
@@ -154,9 +150,9 @@ export default function AdminOverviewPage(): React.JSX.Element {
 
       {/* Needs attention — the most important section, deduplicated server-side (§3/§4) */}
       <section aria-label="Needs attention">
-        <h2 className="mb-2 text-lg font-semibold text-amber-300">Needs attention</h2>
+        <h2 className="mb-2 text-lg font-semibold">Needs attention</h2>
         {!attentionVisible ? (
-          <div className="rounded-lg border border-border bg-panelAlt/40 p-4 text-sm text-muted">
+          <div className="rounded-panel border border-border bg-surface-raised/35 p-4 text-sm text-text-muted">
             No unexpected active issues. All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and{" "}
             {fleetSummary.workloadsTotal} workload{fleetSummary.workloadsTotal === 1 ? "" : "s"} are operating normally.
           </div>
@@ -170,7 +166,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
       {maintenanceAttention.length > 0 && (
         <section aria-label="Under maintenance">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-amber-200">Under maintenance</h2>
+            <h2 className="text-lg font-semibold text-warning-foreground">Under maintenance</h2>
             <Link href="/admin/attention?maintenance=active" className="text-sm text-accent hover:underline">View in Attention</Link>
           </div>
           <div className="space-y-2">{maintenanceAttention.map(renderAttentionCard)}</div>
@@ -224,14 +220,14 @@ export default function AdminOverviewPage(): React.JSX.Element {
               <Link
                 key={w.id}
                 href={`/admin/workloads/${w.id}`}
-                className="rounded-lg border border-border bg-panel p-4 transition hover:border-accent/40"
+                className="rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
               >
                 <div className="flex items-center justify-between">
                   <p className="font-medium">{w.name}</p>
                   <AttentionBadge severity={w.health === "down" ? "critical" : w.health === "degraded" ? "warning" : w.health} />
                 </div>
                 <p className="mt-0.5 text-xs text-muted">{w.nodeName}</p>
-                <p className="mt-3 text-sm">
+                <p className="mt-3 font-mono text-sm">
                   {w.runningContainers}/{w.totalContainers} containers running
                 </p>
                 {(w.cpuPercent !== null || w.memoryUsage) && (
@@ -260,7 +256,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
             <Link
               key={node.id}
               href={`/admin/nodes/${node.id}`}
-              className="rounded-lg border border-border bg-panel p-4 transition hover:border-accent/40"
+              className="rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
             >
               <div className="flex items-center justify-between">
                 <p className="font-medium">{node.name}</p>
@@ -270,7 +266,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
                   {node.offline ? "offline" : node.staleHeartbeat ? "stale" : "online"}
                 </Badge>
               </div>
-              <p className="mt-0.5 text-xs text-muted">
+              <p className="mt-0.5 font-mono text-xs text-text-muted">
                 {node.containerCount} containers · heartbeat {timeAgo(node.lastHeartbeatAt)}
               </p>
             </Link>

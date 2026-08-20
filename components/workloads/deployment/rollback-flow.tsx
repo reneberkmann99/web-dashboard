@@ -97,7 +97,7 @@ export function RollbackFlow({
         </div>
 
         {target.isLoading && <p className="text-sm text-muted">Resolving the rollback target…</p>}
-        {target.isError && <p className="text-sm text-red-400">Could not resolve a rollback target. {deploymentErrorMessage(target.error)}</p>}
+        {target.isError && <p className="text-sm text-critical-foreground">Could not resolve a rollback target. {deploymentErrorMessage(target.error)}</p>}
 
         {target.data && !opId && (
           <div className="space-y-4">
@@ -107,7 +107,7 @@ export function RollbackFlow({
                 <Badge variant="default">Revision {target.data.revisionNumber}</Badge>
                 <span className="ml-2">the configuration of the last healthy release.</span>
               </p>
-              <p className="mt-2 rounded border border-warning/30 bg-warning/10 p-2 text-amber-200">
+              <p className="mt-2 rounded border border-warning/30 bg-warning/10 p-2 text-warning-foreground">
                 Rollback restores the <span className="font-medium">configuration</span> from Revision {target.data.revisionNumber}. Secrets will
                 use their <span className="font-medium">current versions</span> — historical secret values are not restored. Persistent volumes
                 and networks are preserved.
@@ -119,7 +119,7 @@ export function RollbackFlow({
                 <Button onClick={() => void generatePlan()} disabled={busy}>
                   {busy ? "Generating plan…" : "Generate rollback plan"}
                 </Button>
-                {stale && <span className="text-sm text-amber-300">The previous plan is no longer valid.</span>}
+                {stale && <span className="text-sm text-warning-foreground">The previous plan is no longer valid.</span>}
               </div>
             )}
 

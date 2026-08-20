@@ -64,7 +64,7 @@ export function DeploymentsTab({
   });
 
   if (releases.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (releases.isError || !releases.data) return <p className="text-sm text-red-400">Failed to load deployment state.</p>;
+  if (releases.isError || !releases.data) return <p className="text-sm text-critical-foreground">Failed to load deployment state.</p>;
 
   const runtimeState = releases.data.runtimeState ?? "UNKNOWN";
 
@@ -121,7 +121,7 @@ export function DeploymentsTab({
           )}
           {activeOperation && (
             <div className="rounded border border-warning/30 bg-warning/10 p-2.5">
-              <p className="font-medium text-amber-200">
+              <p className="font-medium text-warning-foreground">
                 {activeOperation.type === "ROLLBACK" ? "Rollback" : "Deployment"} in progress
                 {activeOperation.actorEmail ? ` — ${activeOperation.actorEmail}` : ""}
               </p>
@@ -163,7 +163,7 @@ export function DeploymentsTab({
             </pre>
           </>
         ) : currentRelease ? (
-          <p className="text-sm text-red-400">Failed to load the active configuration.</p>
+          <p className="text-sm text-critical-foreground">Failed to load the active configuration.</p>
         ) : (
           <p className="text-sm text-muted">Create the first deployment from the editor.</p>
         )}

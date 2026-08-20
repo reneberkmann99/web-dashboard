@@ -252,7 +252,7 @@ export function DeploymentEditor({
       </div>
 
       {activeOperation && step !== "progress" && (
-        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-amber-200">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">
           A {activeOperation.type.toLowerCase()} operation is already in progress on this workload
           {activeOperation.actorEmail ? ` (started by ${activeOperation.actorEmail})` : ""}. You can edit and save
           configuration, but another deployment cannot be submitted until it completes.
@@ -267,7 +267,7 @@ export function DeploymentEditor({
       {step === "edit" && compose === null && !releases.isLoading &&
         (releases.isError || (noReleaseYet && latestRevision.isError) || (currentRelease && currentRevision.isError)) && (
         <div className="space-y-3">
-          <div className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-red-300">
+          <div className="rounded-lg border border-critical/30 bg-critical/10 p-4 text-sm text-critical-foreground">
             Failed to load the current configuration.
           </div>
           <div className="flex gap-2">
@@ -306,7 +306,7 @@ export function DeploymentEditor({
             <Button type="button" variant="secondary" onClick={() => router.push(backHref)}>
               Cancel
             </Button>
-            {dirty && <span className="text-xs text-amber-300">Unsaved changes</span>}
+            {dirty && <span className="text-xs text-warning-foreground">Unsaved changes</span>}
           </div>
 
           {validation && (
@@ -315,17 +315,17 @@ export function DeploymentEditor({
                 Validation {validation.valid ? <Badge variant="success">valid</Badge> : <Badge variant="danger">invalid</Badge>}
               </p>
               {validation.composeErrors.map((err, i) => (
-                <p key={i} className="break-words font-mono text-xs text-red-300">
+                <p key={i} className="break-words font-mono text-xs text-critical-foreground">
                   {err}
                 </p>
               ))}
               {validation.blockedFindings.map((f) => (
-                <p key={f.ruleId + f.message} className="text-sm text-red-300">
+                <p key={f.ruleId + f.message} className="text-sm text-critical-foreground">
                   BLOCKED — {f.message}
                 </p>
               ))}
               {validation.highRiskFindings.map((f) => (
-                <div key={f.fingerprint ?? f.ruleId + f.message} className="mt-1 text-sm text-amber-300">
+                <div key={f.fingerprint ?? f.ruleId + f.message} className="mt-1 text-sm text-warning-foreground">
                   High risk — {f.message}
                 </div>
               ))}
@@ -364,16 +364,16 @@ export function DeploymentEditor({
             <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
               Changes vs {currentRelease ? `revision ${currentRelease.revisionNumber}` : "last saved revision"}
             </h2>
-            <p className="mb-2 text-xs text-muted">What you changed in the configuration — separately from what HostPanel will mutate at deploy time.</p>
+            <p className="mb-2 text-xs text-muted">What you changed in the configuration — separately from what Noderaft will mutate at deploy time.</p>
             <pre className="max-h-96 overflow-auto rounded border border-border bg-panelAlt p-3 font-mono text-xs leading-relaxed">
               {diff.map((line, i) => (
                 <div
                   key={i}
                   className={
                     line.type === "added"
-                      ? "bg-success/10 text-green-300"
+                      ? "bg-success/10 text-success-foreground"
                       : line.type === "removed"
-                        ? "bg-danger/10 text-red-300"
+                        ? "bg-critical/10 text-critical-foreground"
                         : "text-muted"
                   }
                 >
@@ -413,7 +413,7 @@ export function DeploymentEditor({
         <div className="space-y-3">
           {stale && (
             <div className="rounded-lg border border-warning/40 bg-warning/10 p-3">
-              <p className="font-medium text-amber-200">Deployment plan is out of date</p>
+              <p className="font-medium text-warning-foreground">Deployment plan is out of date</p>
               <p className="mt-1 text-sm text-muted">
                 The workload or its secrets changed after this plan was generated. Review a fresh plan before deploying.
               </p>

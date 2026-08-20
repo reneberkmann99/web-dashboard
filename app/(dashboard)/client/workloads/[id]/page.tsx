@@ -62,7 +62,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
   }, [workload, containers.data]);
 
   if (workloads.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (!workload) return <p className="text-sm text-red-400">Workload not found or not accessible.</p>;
+  if (!workload) return <p className="text-sm text-critical-foreground">Workload not found or not accessible.</p>;
 
   const deployment = deploymentStatus.data;
   // Deployment lifecycle tabs only for workloads this client OWNS (not merely granted).
@@ -129,7 +129,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
           <p className="text-sm text-muted">
             {deployment?.managed
               ? "You have access to this workload's containers, but not to manage its deployment lifecycle."
-              : "This workload is not managed by HostPanel and has no deployment lifecycle."}
+              : "This workload is not managed by Noderaft and has no deployment lifecycle."}
           </p>
         ))}
 
@@ -137,7 +137,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         (canManageDeployment && deployment?.deploymentId ? (
           <SecretsTab deploymentId={deployment.deploymentId} apiBase={CLIENT_API_BASE} />
         ) : (
-          <p className="text-sm text-muted">This workload has no HostPanel-managed secrets you can manage.</p>
+          <p className="text-sm text-muted">This workload has no Noderaft-managed secrets you can manage.</p>
         ))}
 
       {tab === "Networks" && (

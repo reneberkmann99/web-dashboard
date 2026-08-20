@@ -205,7 +205,7 @@ export default function AdminActivityPage(): React.JSX.Element {
             {selected.metadata && (
               <div className="col-span-2">
                 <dt className="text-xs uppercase tracking-wide text-muted">Metadata</dt>
-                <dd className="mt-1 rounded border border-border bg-black/40 p-2 font-mono text-xs text-slate-200">
+                <dd className="mt-1 rounded border border-border bg-surface-hull/75 p-2 font-mono text-xs text-text">
                   {JSON.stringify(selected.metadata, null, 2)}
                 </dd>
               </div>

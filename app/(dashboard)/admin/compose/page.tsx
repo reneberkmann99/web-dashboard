@@ -221,7 +221,7 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
           <h1 className="text-3xl font-semibold">Compose discovery</h1>
         </div>
         <p className="text-muted">
-          Docker Compose projects detected on your nodes. Adopt one as a HostPanel workload — nothing is modified on
+          Docker Compose projects detected on your nodes. Adopt one as a Noderaft workload — nothing is modified on
           the Docker side by discovery or adoption.
         </p>
       </div>
@@ -239,7 +239,7 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
       />
 
       {adoptMutation.isError && (
-        <p className="text-sm text-red-400">{adoptMutation.error instanceof Error ? adoptMutation.error.message : "Adoption failed"}</p>
+        <p className="text-sm text-critical-foreground">{adoptMutation.error instanceof Error ? adoptMutation.error.message : "Adoption failed"}</p>
       )}
 
       {/* Adoption wizard */}
@@ -306,7 +306,7 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
                 </div>
 
                 {detail.conflicts.length > 0 && (
-                  <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-300">
+                  <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
                     <p className="font-medium"><AlertTriangle size={14} className="mr-1 inline" /> Containers already in another workload</p>
                     {detail.conflicts.map((c) => (
                       <p key={c.workloadId} className="mt-1 text-xs">
@@ -359,7 +359,7 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
             {step === 3 && (
               <div className="space-y-4">
                 <div className="rounded-lg border border-border bg-panelAlt p-3 text-sm">
-                  <p className="font-medium">HostPanel will:</p>
+                  <p className="font-medium">Noderaft will:</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
                     <li>create a <strong className="text-text">COMPOSE</strong> workload named "{name.trim() || detail.composeProject}"</li>
                     <li>associate the discovered Compose project "{detail.composeProject}" on {detail.nodeName}</li>
@@ -368,7 +368,7 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
                   </ul>
                 </div>
                 <div className="rounded-lg border border-border bg-panelAlt p-3 text-sm">
-                  <p className="font-medium">HostPanel will NOT:</p>
+                  <p className="font-medium">Noderaft will NOT:</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
                     <li>restart containers</li>
                     <li>modify Docker Compose files</li>
@@ -378,7 +378,7 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
                 </div>
 
                 {detail.conflicts.length > 0 && (
-                  <label className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-300">
+                  <label className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
                     <input
                       type="checkbox"
                       checked={moveConflicting}

@@ -112,7 +112,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
         detail.isError ? (
           <Card className="panel">
             <CardContent className="p-6">
-              <p className="text-sm text-red-400">Failed to load container details.</p>
+              <p className="text-sm text-critical-foreground">Failed to load container details.</p>
             </CardContent>
           </Card>
         ) : (
@@ -142,11 +142,11 @@ export default function ContainerDetailPage(): React.JSX.Element {
                   <span className="text-sm">Operation {operation.type.replace("CONTAINER_", "").toLowerCase()}</span>
                   <OperationStateBadge state={operation.state} />
                   {operation.state === "FAILED" && (
-                    <span className="text-sm text-red-400">{operation.error ?? "Unknown failure"}</span>
+                    <span className="text-sm text-critical-foreground">{operation.error ?? "Unknown failure"}</span>
                   )}
                 </div>
               )}
-              {pollError && !operation && <p className="text-sm text-red-400">{pollError}</p>}
+              {pollError && !operation && <p className="text-sm text-critical-foreground">{pollError}</p>}
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Info label="Container ID" value={container.containerId} />

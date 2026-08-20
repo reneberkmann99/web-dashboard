@@ -104,7 +104,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
   if (detail.isError || !container) {
     return (
       <div className="rounded-lg border border-danger/30 bg-danger/5 p-8 text-center">
-        <p className="text-sm text-red-300">Failed to load container.</p>
+        <p className="text-sm text-critical-foreground">Failed to load container.</p>
         <p className="mt-1 text-xs text-muted">
           {detail.error instanceof Error ? detail.error.message : "The container may no longer exist on this node."}
         </p>
@@ -121,7 +121,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
   // operation as the deployment workflow.
   const isManaged = Boolean(detail.data?.managedDeployment?.managed);
   const managedSuffix = isManaged
-    ? " This container belongs to a HostPanel-managed workload. A direct action does not create a deployment release and can diverge from the managed configuration."
+    ? " This container belongs to a Noderaft-managed workload. A direct action does not create a deployment release and can diverge from the managed configuration."
     : "";
 
   const actions: Array<{ action: "start" | "stop" | "restart"; label: string; danger?: boolean; impact: string }> =
@@ -162,16 +162,16 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      {detail.data?.maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-100">MAINTENANCE until {new Date(detail.data.maintenance[0].endsAt).toLocaleString()}{detail.data.maintenance[0].reason ? ` — ${detail.data.maintenance[0].reason}` : ""}. Container state remains {container.status}.</div>}
+      {detail.data?.maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">MAINTENANCE until {new Date(detail.data.maintenance[0].endsAt).toLocaleString()}{detail.data.maintenance[0].reason ? ` — ${detail.data.maintenance[0].reason}` : ""}. Container state remains {container.status}.</div>}
 
-      {detail.data?.attentionItems.map((item) => <div key={item.id} className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${item.severity === "critical" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"}`}><div><p className="text-sm font-medium">{item.title}</p><p className="text-xs text-muted">{item.detail}</p>{item.acknowledgement && <p className="mt-1 text-xs text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}{item.silence && <p className="text-xs text-muted">Notifications silenced until {new Date(item.silence.endsAt).toLocaleString()}</p>}</div><div className="flex items-center gap-2"><AttentionBadge severity={item.severity} /><Button size="sm" variant="ghost" onClick={() => router.push(`/admin/attention?conditionId=${item.id}`)}>View issue</Button></div></div>)}
+      {detail.data?.attentionItems.map((item) => <div key={item.id} className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${item.severity === "critical" ? "border-critical/30 bg-critical/5" : "border-warning/30 bg-warning/5"}`}><div><p className="text-sm font-medium">{item.title}</p><p className="text-xs text-muted">{item.detail}</p>{item.acknowledgement && <p className="mt-1 text-xs text-info-foreground">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}{item.silence && <p className="text-xs text-muted">Notifications silenced until {new Date(item.silence.endsAt).toLocaleString()}</p>}</div><div className="flex items-center gap-2"><AttentionBadge severity={item.severity} /><Button size="sm" variant="ghost" onClick={() => router.push(`/admin/attention?conditionId=${item.id}`)}>View issue</Button></div></div>)}
 
       {operation && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-panelAlt p-3">
           <span className="text-sm">{operation.type.replace("CONTAINER_", "").toLowerCase()}</span>
           <OperationStateBadge state={operation.state} />
           {operation.state === "FAILED" && (
-            <span className="text-sm text-red-400">{operation.error ?? "Unknown failure"}</span>
+            <span className="text-sm text-critical-foreground">{operation.error ?? "Unknown failure"}</span>
           )}
         </div>
       )}
@@ -179,7 +179,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
       {detail.data?.managedDeployment?.managed && (
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">
           <p className="font-medium">
-            Managed by HostPanel — workload <span className="font-mono text-xs">{container.projectName}</span>
+            Managed by Noderaft — workload <span className="font-mono text-xs">{container.projectName}</span>
             {detail.data.managedDeployment.currentRelease && (
               <>
                 {' '}· Release #{detail.data.managedDeployment.currentRelease.displayNumber ?? "—"} · Revision{" "}
@@ -244,7 +244,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
                 Actions are disabled because node <strong>{container.nodeName}</strong> is not responding.
               </p>
             ) : busy ? (
-              <p className="text-sm text-amber-300">
+              <p className="text-sm text-warning-foreground">
                 An operation is in progress — conflicting actions are disabled.
               </p>
             ) : actions.length === 0 ? (

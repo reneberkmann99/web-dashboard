@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { isApiError } from "@/lib/fetcher";
+import { NoderaftLogo } from "@/components/brand/noderaft-logo";
 
 type ActivateResponse = {
   user: { id: string; email: string; role: "ADMIN" | "CLIENT" };
@@ -119,7 +120,7 @@ function ActivateForm(): React.JSX.Element {
               required
             />
           </div>
-          {validationError && <p className="text-sm text-red-400">{validationError}</p>}
+          {validationError && <p className="text-sm text-critical-foreground">{validationError}</p>}
           <Button className="w-full" disabled={loading} type="submit">
             {loading ? "Activating…" : "Activate account"}
           </Button>
@@ -134,7 +135,7 @@ export default function ActivatePage(): React.JSX.Element {
     <main className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-16">
       <div className="grid w-full gap-8 lg:grid-cols-[1.2fr_1fr]">
         <section className="panel hidden p-12 lg:block">
-          <p className="text-sm uppercase tracking-[0.25em] text-accent">HostPanel</p>
+          <NoderaftLogo className="h-10" priority />
           <h1 className="mt-4 text-4xl font-semibold leading-tight">
             One click from your administrator, and you&apos;re in.
           </h1>

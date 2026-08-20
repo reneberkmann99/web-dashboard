@@ -10,6 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { TabBar } from "@/components/ui/tab-bar";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatePanel, LoadingBlock } from "@/components/ui/state-panel";
+import { CodePanel } from "@/components/ui/code-panel";
 import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { AttentionItem, AttentionSeverity } from "@/types/domain";
@@ -82,8 +85,8 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to generate token")
   });
 
-  if (detail.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (detail.isError || !detail.data) return <p className="text-sm text-red-400">Failed to load node.</p>;
+  if (detail.isLoading) return <LoadingBlock />;
+  if (detail.isError || !detail.data) return <StatePanel tone="error" title="Failed to load node" />;
 
   const { node, activity, attentionItems, maintenance } = detail.data;
   const offline = node.heartbeatState === "OFFLINE";
@@ -109,33 +112,21 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
   return (
     <div className="space-y-6">
       <div>
-        <button type="button" onClick={() => router.push("/admin/nodes")} className="mb-1 text-sm text-accent hover:underline">
-          ← Nodes
-        </button>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-semibold">{node.name}</h1>
-          <Badge variant={offline ? "danger" : stale ? "warning" : "success"}>
-            {offline ? "offline" : stale ? "stale heartbeat" : "online"}
-          </Badge>
-          {node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}
-          {!node.isActive && <Badge>disabled</Badge>}
-          <button
-            type="button"
-            onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}
-            className="ml-auto text-sm text-accent hover:underline"
-          >
-            View activity →
-          </button>
-        </div>
-        <p className="text-muted">{node.hostname}</p>
+        <PageHeader
+          eyebrow="Node"
+          title={node.name}
+          back={<button type="button" onClick={() => router.push("/admin/nodes")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Nodes</button>}
+          description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span><Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale heartbeat" : "online"}</Badge>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
+          actions={<Button variant="outline" size="sm" onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}>View activity →</Button>}
+        />
         {offline && (
-          <p className="mt-2 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-red-300">
-            This node is not responding. Last heartbeat: {timeAgo(node.lastHeartbeatAt)}. Check the agent container or
+          <p className="mt-2 rounded-lg border border-critical/30 bg-critical/5 p-3 text-sm text-critical-foreground">
+            This node is not responding. Last heartbeat: {timeAgo(node.lastHeartbeatAt)}. Check the Noderaft Agent container or
             host connectivity.
           </p>
         )}
         {maintenance[0] && (
-          <p className="mt-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-100">
+          <p className="mt-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
             MAINTENANCE until {formatDateTime(maintenance[0].endsAt)}{maintenance[0].reason ? ` — ${maintenance[0].reason}` : ""}. Underlying node state remains {node.status.toLowerCase()}.
           </p>
         )}
@@ -158,7 +149,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
                   <div>
                     <p className="text-sm font-medium">{item.title}</p>
                     <p className="text-xs text-muted">{item.detail}</p>
-                    {item.acknowledgement && <p className="mt-1 text-xs text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}
+                    {item.acknowledgement && <p className="mt-1 text-xs text-info-foreground">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}
                     {item.silence && <p className="text-xs text-muted">Notifications silenced until {formatDateTime(item.silence.endsAt)}</p>}
                   </div>
                   <div className="flex items-center gap-2"><AttentionBadge severity={item.severity} /><Button size="sm" variant="ghost" onClick={() => router.push(`/admin/attention?conditionId=${item.id}`)}>View issue</Button></div>
@@ -172,7 +163,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <Stat label="State" value={node.status.toLowerCase()} />
               <Stat label="Last heartbeat" value={timeAgo(node.lastHeartbeatAt)} />
-              <Stat label="Agent version" value={node.agentVersion ?? "—"} />
+              <Stat label="Noderaft Agent version" value={node.agentVersion ?? "—"} />
               <Stat label="Docker version" value={node.dockerVersion ?? "—"} />
               <Stat label="OS" value={String(node.osInfo?.os ?? "—")} />
               <Stat label="Architecture" value={String(node.osInfo?.arch ?? "—")} />
@@ -304,14 +295,14 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
       {tab === "Configuration" && (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-panel p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Agent configuration</h2>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Noderaft Agent configuration</h2>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <Stat label="Node ID" value={node.id} />
               <Stat label="Display name" value={node.name} />
               <Stat label="Hostname" value={node.hostname} />
-              <Stat label="Agent endpoint" value={node.apiBaseUrl} />
+              <Stat label="Noderaft Agent endpoint" value={node.apiBaseUrl} />
               <Stat label="Docker context" value={node.dockerContext ?? "default"} />
-              <Stat label="Agent version" value={node.agentVersion ?? "—"} />
+              <Stat label="Noderaft Agent version" value={node.agentVersion ?? "—"} />
               <Stat label="Enabled" value={node.isActive ? "yes" : "no"} />
               <Stat label="Enrollment mode" value={node.agentVersion ? "token (self-registered)" : "manual"} />
               <Stat label="Registered" value={formatDateTime(node.createdAt)} />
@@ -321,7 +312,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Polling & reconciliation</h2>
             <dl className="grid grid-cols-2 gap-3 text-sm">
-              <Stat label="Agent list cache" value="15 s" />
+              <Stat label="Noderaft Agent list cache" value="15 s" />
               <Stat label="Compose reconcile" value="every 30 s (throttled)" />
               <Stat label="Dashboard poll" value="8–20 s" />
               <Stat label="Heartbeat" value="on inventory refresh" />
@@ -329,9 +320,9 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           </div>
 
           <div className="rounded-lg border border-border bg-panel p-4 lg:col-span-2">
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted">Agent credential rotation</h2>
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted">Noderaft Agent credential rotation</h2>
             <p className="mb-3 text-sm text-muted">
-              Generate a one-time re-enrollment token (15 min TTL). The agent rotates its API key the next time it
+              Generate a one-time re-enrollment token (15 min TTL). Noderaft Agent rotates its API key the next time it
               starts with <code className="rounded bg-panelAlt px-1">AGENT_ENROLL_TOKEN</code> set; the old key stops
               working immediately after re-enrollment.
             </p>
@@ -339,9 +330,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
               {enrollMutation.isPending ? "Generating…" : "Generate re-enrollment token"}
             </Button>
             {enrollToken && (
-              <p className="mt-3 break-all rounded border border-border bg-black/40 p-2 font-mono text-xs text-slate-200">
-                {enrollToken}
-              </p>
+              <CodePanel className="mt-3" label="One-time enrollment token"><span className="break-all">{enrollToken}</span></CodePanel>
             )}
           </div>
         </div>
@@ -374,7 +363,7 @@ function Stat({ label, value }: { label: string; value: string }): React.JSX.Ele
   return (
     <div>
       <dt className="text-xs uppercase tracking-wide text-muted">{label}</dt>
-      <dd className="mt-0.5">{value}</dd>
+      <dd className="mt-0.5 break-words font-mono text-sm">{value}</dd>
     </div>
   );
 }

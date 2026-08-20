@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="64" viewBox="0 0 280 64" role="img" aria-label="Noderaft">
+  <defs><clipPath id="nrHL"><rect x="0" y="0" width="64" height="64" rx="18"/></clipPath></defs>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="18" fill="#0B1524"/>
+  <g clip-path="url(#nrHL)"><g transform="rotate(-45 32 32)">
+    <rect x="17" y="17" width="30" height="7" rx="3.5" fill="#33D1FF" opacity="0.55"/>
+    <rect x="17" y="28.5" width="30" height="7" rx="3.5" fill="#33D1FF"/>
+    <rect x="17" y="40" width="30" height="7" rx="3.5" fill="#33D1FF" opacity="0.55"/>
+  </g></g>
+  <g transform="translate(82 9)"><text x="0" y="32.56" font-family="IBM Plex Sans, 'Segoe UI', sans-serif" font-size="44" font-weight="600" letter-spacing="-1.32" fill="#0B1524">node<tspan fill="#0B8FBD">raft</tspan></text></g>
+</svg>

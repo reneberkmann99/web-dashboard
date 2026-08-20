@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { StatePanel } from "@/components/ui/state-panel";
 
 export type Column<T> = {
   key: string;
@@ -85,28 +88,22 @@ export function DataTable<T>({
   if (loading) {
     return (
       <div className="space-y-3" aria-busy="true">
-        <div className="h-10 animate-pulse rounded bg-panelAlt" />
-        <div className="h-10 animate-pulse rounded bg-panelAlt" />
-        <div className="h-10 animate-pulse rounded bg-panelAlt" />
+        <div className="h-control animate-pulse rounded-control bg-surface-raised" />
+        <div className="h-control animate-pulse rounded-control bg-surface-raised" />
+        <div className="h-control animate-pulse rounded-control bg-surface-raised" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-lg border border-danger/30 bg-danger/5 p-6 text-center">
-        <p className="text-sm text-red-300">{error}</p>
-      </div>
+      <StatePanel tone="error" title="Unable to load data" description={error} />
     );
   }
 
   if (filtered.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-panelAlt/50 p-8 text-center">
-        <p className="font-medium">{emptyTitle}</p>
-        {emptyBody && <p className="mx-auto mt-1 max-w-md text-sm text-muted">{emptyBody}</p>}
-        {emptyAction && <div className="mt-4 flex justify-center">{emptyAction}</div>}
-      </div>
+      <StatePanel title={emptyTitle} description={emptyBody} action={emptyAction} />
     );
   }
 
@@ -115,7 +112,7 @@ export function DataTable<T>({
       {searchableText && (
         <div className="relative max-w-sm">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
+          <Input
             type="search"
             value={query}
             onChange={(event) => {
@@ -124,14 +121,14 @@ export function DataTable<T>({
             }}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            className="w-full rounded-md border border-border bg-panelAlt py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-accent"
+            className="pl-9"
           />
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-border">
+      <div className="overflow-x-auto rounded-panel border border-border bg-surface-deck">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-panel text-left text-xs uppercase tracking-wide text-muted">
+          <thead className="sticky top-0 bg-surface-raised/85 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted backdrop-blur">
             <tr>
               {columns.map((col) => (
                 <th key={col.key} className={cn("px-3 py-2.5 font-medium", col.className)}>
@@ -139,7 +136,7 @@ export function DataTable<T>({
                     <button
                       type="button"
                       onClick={() => toggleSort(col.key)}
-                      className="inline-flex items-center gap-1 hover:text-text focus:outline-none focus:ring-2 focus:ring-accent rounded"
+                      className="inline-flex items-center gap-1 rounded-control hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
                       aria-label={`Sort by ${col.header}`}
                     >
                       {col.header}
@@ -159,9 +156,9 @@ export function DataTable<T>({
                 key={rowKey ? rowKey(row) : `row-${rowIndex}`}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={cn(
-                  "border-t border-border",
-                  onRowClick && "cursor-pointer hover:bg-panelAlt/60",
-                  "max-sm:hidden" // fallback handled below
+                  "border-t border-border transition-colors",
+                  onRowClick && "cursor-pointer hover:bg-surface-raised/60",
+                  "max-md:hidden" // fallback handled below
                 )}
               >
                 {columns.map((col) => (
@@ -206,22 +203,22 @@ export function DataTable<T>({
             {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, filtered.length)} of {filtered.length}
           </span>
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
               disabled={safePage === 0}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
-              className="rounded border border-border px-2 py-1 disabled:opacity-40 hover:bg-panelAlt focus:outline-none focus:ring-2 focus:ring-accent"
+              variant="outline"
+              size="sm"
             >
               Prev
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               disabled={safePage >= pageCount - 1}
               onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              className="rounded border border-border px-2 py-1 disabled:opacity-40 hover:bg-panelAlt focus:outline-none focus:ring-2 focus:ring-accent"
+              variant="outline"
+              size="sm"
             >
               Next
-            </button>
+            </Button>
           </div>
         </div>
       )}

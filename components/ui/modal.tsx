@@ -49,7 +49,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-[8vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 p-4 pt-[8vh]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -61,7 +61,7 @@ export function Modal({
         aria-labelledby={titleId}
         tabIndex={-1}
         className={cn(
-          "panel w-full rounded-xl border border-border shadow-2xl outline-none",
+          "w-full rounded-overlay border border-border bg-surface-overlay shadow-overlay outline-none",
           width
         )}
       >
@@ -76,7 +76,7 @@ export function Modal({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="rounded p-1 text-muted hover:bg-panelAlt hover:text-text focus:outline-none focus:ring-2 focus:ring-accent"
+            className="rounded-control p-1.5 text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
           >
             <X size={18} />
           </button>

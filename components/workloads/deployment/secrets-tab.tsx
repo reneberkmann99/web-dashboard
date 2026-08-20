@@ -37,11 +37,11 @@ export function SecretsTab({
   });
 
   if (secrets.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (secrets.isError || !secrets.data) return <p className="text-sm text-red-400">Failed to load secrets.</p>;
+  if (secrets.isError || !secrets.data) return <p className="text-sm text-critical-foreground">Failed to load secrets.</p>;
   if (secrets.data.total === 0) {
     return (
       <div className="rounded-lg border border-border bg-panel p-6 text-center text-sm text-muted">
-        This workload has no HostPanel-managed secrets.
+        This workload has no Noderaft-managed secrets.
       </div>
     );
   }
@@ -239,7 +239,7 @@ function RotateFlow({
             Secret rotated to <span className="font-medium">v{newVersion}</span>. Configuration revision is unchanged — reconcile the workload
             to apply the new value.
           </p>
-          {stale && <p className="text-sm text-amber-300">The plan is out of date.</p>}
+          {stale && <p className="text-sm text-warning-foreground">The plan is out of date.</p>}
           <PlanView
             plan={plan}
             confirmLabel="Deploy to reconcile"

@@ -178,7 +178,7 @@ export default function AdminNodesPage(): React.JSX.Element {
         loading={query.isLoading}
         error={query.isError ? "Failed to load nodes" : null}
         emptyTitle="No nodes yet"
-        emptyBody="Install the HostPanel agent on your first Docker server to begin managing workloads."
+        emptyBody="Install Noderaft Agent on your first Docker server to begin managing workloads."
         emptyAction={<Button onClick={() => setEnrollOpen(true)}>Add node</Button>}
         rowKey={(n) => n.id}
         initialSort="attention"
@@ -227,14 +227,14 @@ export default function AdminNodesPage(): React.JSX.Element {
               Run this on the node host. The token expires at{" "}
               <strong>{new Date(enrollment.expiresAt).toLocaleString()}</strong> and can only be used once.
             </p>
-            <pre className="overflow-x-auto rounded border border-border bg-black/40 p-3 text-xs text-slate-200">
+            <pre className="overflow-x-auto rounded border border-border bg-surface-hull/75 p-3 text-xs text-text">
               {enrollmentCommand}
             </pre>
           </div>
         ) : (
           <p className="text-sm text-muted">
             For compose-managed agents, set <code>CONTROL_PLANE_URL</code>, <code>AGENT_ENROLL_TOKEN</code> and{" "}
-            <code>AGENT_KEY_FILE</code> on the agent service.
+            <code>AGENT_KEY_FILE</code> on the Noderaft Agent service.
           </p>
         )}
       </Modal>

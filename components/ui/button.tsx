@@ -3,20 +3,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center rounded-md text-sm font-medium transition disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-control border border-transparent text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-hull disabled:pointer-events-none disabled:opacity-45",
   {
     variants: {
       variant: {
-        default: "bg-accent px-4 py-2 text-slate-900 hover:bg-cyan-300",
-        secondary: "bg-panelAlt px-4 py-2 text-text hover:bg-[#1a2947]",
-        danger: "bg-danger px-4 py-2 text-white hover:bg-red-500",
-        warning: "bg-warning px-4 py-2 text-slate-900 hover:bg-amber-400",
-        ghost: "px-3 py-2 hover:bg-panelAlt"
+        default: "bg-brand px-4 py-2 text-brand-contrast hover:bg-brand-hover",
+        secondary: "border-border bg-surface-raised px-4 py-2 text-text hover:border-border-strong hover:bg-surface-overlay",
+        danger: "bg-critical px-4 py-2 text-white hover:bg-critical/85",
+        warning: "bg-warning px-4 py-2 text-text-inverse hover:bg-warning/85",
+        ghost: "px-3 py-2 text-text-muted hover:bg-surface-raised hover:text-text",
+        outline: "border-border bg-transparent px-4 py-2 text-text-muted hover:border-border-strong hover:bg-surface-raised hover:text-text"
       },
       size: {
-        default: "h-10",
-        sm: "h-8 rounded px-3 text-xs",
-        lg: "h-11 rounded-md px-6"
+        default: "h-control",
+        sm: "h-control-sm px-3 text-xs",
+        lg: "h-control-lg px-6"
       }
     },
     defaultVariants: {

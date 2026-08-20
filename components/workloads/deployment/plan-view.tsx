@@ -113,7 +113,7 @@ export function PlanView({
       </div>
 
       <div className="rounded-lg border border-border bg-panelAlt p-4 text-sm">
-        <p className="mb-1 font-semibold">HostPanel will NOT:</p>
+        <p className="mb-1 font-semibold">Noderaft will NOT:</p>
         <ul className="list-inside list-disc space-y-0.5 text-muted">
           <li>remove named volumes or persistent networks</li>
           <li>run <span className="font-mono text-xs">docker compose down</span> or remove unrelated containers</li>
@@ -121,7 +121,7 @@ export function PlanView({
         </ul>
       </div>
 
-      {note && <p className="text-sm text-amber-300">{note}</p>}
+      {note && <p className="text-sm text-warning-foreground">{note}</p>}
 
       <div className="flex items-center gap-2">
         <Button variant={confirmTone} onClick={onConfirm} disabled={busy || !hasImpact}>

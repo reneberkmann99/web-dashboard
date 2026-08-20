@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { StatePanel } from "@/components/ui/state-panel";
 
 /**
  * Confirmation dialog with a clearly identified target and a stated impact.
@@ -57,7 +58,7 @@ export function ConfirmDialog({
       }
     >
       <p className="text-sm text-muted">{impact}</p>
-      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && <StatePanel className="mt-3" compact tone="error" title="Action failed" description={error} />}
     </Modal>
   );
 }

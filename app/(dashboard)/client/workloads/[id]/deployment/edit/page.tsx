@@ -31,7 +31,7 @@ export default function ClientDeploymentEditPage(): React.JSX.Element {
   const workload = workloads.data?.workloads.find((w) => w.id === params.id);
 
   if (workloads.isLoading || deploymentStatus.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (!workload) return <p className="text-sm text-red-400">Workload not found or not accessible.</p>;
+  if (!workload) return <p className="text-sm text-critical-foreground">Workload not found or not accessible.</p>;
 
   const deployment = deploymentStatus.data;
   if (!deployment?.managed || !deployment.isOwner || !deployment.deploymentId) {
@@ -40,7 +40,7 @@ export default function ClientDeploymentEditPage(): React.JSX.Element {
         <p className="text-sm text-muted">
           {deployment?.managed
             ? "You don't have permission to manage this workload's deployment."
-            : "This workload is not managed by HostPanel and has no deployment lifecycle."}
+            : "This workload is not managed by Noderaft and has no deployment lifecycle."}
         </p>
         <Button size="sm" variant="secondary" onClick={() => router.push(`/client/workloads/${params.id}`)}>
           ← Back to workload

@@ -238,7 +238,7 @@ export default function AttentionPage(): React.JSX.Element {
 
       <div className="flex flex-wrap gap-2 border-b border-border pb-3">
         {tabs.map(([key, label]) => (
-          <button key={key} type="button" onClick={() => setView(key)} className={`rounded-md px-3 py-1.5 text-sm ${view === key ? "bg-accent text-slate-900" : "bg-panelAlt text-muted hover:text-text"}`}>
+          <button key={key} type="button" onClick={() => setView(key)} className={`rounded-md px-3 py-1.5 text-sm ${view === key ? "bg-brand text-brand-contrast" : "bg-panelAlt text-muted hover:text-text"}`}>
             {label}
           </button>
         ))}
@@ -264,7 +264,7 @@ export default function AttentionPage(): React.JSX.Element {
 
       <section className="space-y-2" aria-label={`${view} attention conditions`}>
         {conditionsQuery.isLoading && <div className="h-24 animate-pulse rounded-lg bg-panelAlt" />}
-        {conditionsQuery.isError && <p className="rounded-lg border border-danger/30 bg-danger/5 p-4 text-red-300">Failed to load attention conditions.</p>}
+        {conditionsQuery.isError && <p className="rounded-lg border border-critical/30 bg-critical/5 p-4 text-critical-foreground">Failed to load attention conditions.</p>}
         {!conditionsQuery.isLoading && conditions.length === 0 && <p className="rounded-lg border border-border bg-panelAlt/40 p-5 text-sm text-muted">No conditions match these filters.</p>}
         {conditions.map((condition) => (
           <button key={condition.id} type="button" onClick={() => setSelectedId(condition.id)} className={`w-full rounded-lg border p-4 text-left transition hover:border-accent/50 ${condition.resolvedAt ? "border-border bg-panelAlt/30 opacity-75" : condition.severity === "CRITICAL" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"}`}>
@@ -280,7 +280,7 @@ export default function AttentionPage(): React.JSX.Element {
                 <p className="mt-0.5 text-sm text-muted">{condition.detail}</p>
                 <div className="mt-2 space-y-1 text-xs text-muted">
                   <p>{condition.resolvedAt ? `Resolved ${localDate(condition.resolvedAt)}` : `First observed ${timeAgo(condition.firstObservedAt)}`}</p>
-                  {condition.acknowledgement && <p className="text-cyan-200">Acknowledged by {actorName(condition.acknowledgement.acknowledgedBy)} · {localDate(condition.acknowledgement.acknowledgedAt)}</p>}
+                  {condition.acknowledgement && <p className="text-info-foreground">Acknowledged by {actorName(condition.acknowledgement.acknowledgedBy)} · {localDate(condition.acknowledgement.acknowledgedAt)}</p>}
                   {condition.activeSilences[0] && <p>Notifications silenced until {localDate(condition.activeSilences[0].endsAt)}</p>}
                 </div>
               </div>

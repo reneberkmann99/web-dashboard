@@ -13,16 +13,16 @@ export function MetricCard({
   icon?: LucideIcon;
 }): React.JSX.Element {
   return (
-    <Card className="panel">
-      <CardHeader className="pb-1">
+    <Card>
+      <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          {Icon && <Icon size={14} className="text-muted" />}
+          {Icon && <Icon size={14} className="text-text-muted" />}
           <CardDescription>{label}</CardDescription>
         </div>
       </CardHeader>
       <CardContent>
         <p className="metric-value">{value}</p>
-        {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
+        {sub && <p className="mt-2 text-xs text-text-muted">{sub}</p>}
       </CardContent>
     </Card>
   );

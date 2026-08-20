@@ -74,14 +74,14 @@ export function DeploymentCard({
       )}
 
       {current && (
-        <p className={`mt-2 text-sm ${runtimeState === "DEGRADED" ? "text-amber-300" : runtimeState === "DRIFTED" ? "text-red-300" : "text-muted"}`}>
+        <p className={`mt-2 text-sm ${runtimeState === "DEGRADED" ? "text-warning-foreground" : runtimeState === "DRIFTED" ? "text-critical-foreground" : "text-muted"}`}>
           {runtimeLabel}
         </p>
       )}
 
       {deployment.activeOperation && (
         <div className="mt-3 rounded border border-warning/30 bg-warning/10 p-2.5 text-sm">
-          <p className="font-medium text-amber-200">
+          <p className="font-medium text-warning-foreground">
             {deployment.activeOperation.type === "ROLLBACK" ? "Rollback" : "Deployment"} in progress
             {deployment.activeOperation.actorEmail ? ` — started by ${deployment.activeOperation.actorEmail}` : ""}
           </p>

@@ -115,7 +115,7 @@ export function OperationProgress({
             const done = i < currentIndex;
             const active = i === currentIndex;
             return (
-              <div key={stage.key} className={`flex items-center gap-2 ${done ? "text-green-300" : active ? "text-text" : "text-muted/60"}`}>
+              <div key={stage.key} className={`flex items-center gap-2 ${done ? "text-success-foreground" : active ? "text-text" : "text-muted/60"}`}>
                 <span className="w-2">{done ? "✓" : active ? "●" : "○"}</span>
                 <span>{stage.label}</span>
                 {stage.key === "VERIFYING" && active && <span className="text-xs text-muted">(health checks can take up to a minute)</span>}
@@ -125,7 +125,7 @@ export function OperationProgress({
         </div>
       )}
 
-      {error && <p className="mt-3 text-sm text-amber-300">{error}</p>}
+      {error && <p className="mt-3 text-sm text-warning-foreground">{error}</p>}
 
       {op && TERMINAL.has(op.state) && (
         <p className="mt-2 text-sm text-muted">

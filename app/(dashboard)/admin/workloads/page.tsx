@@ -8,6 +8,8 @@ import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/ui/page-header";
+import { Select } from "@/components/ui/select";
 import { timeAgo } from "@/lib/format";
 import type { WorkloadSummary } from "@/types/domain";
 
@@ -74,7 +76,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       key: "node",
       header: "Node",
       sortValue: (w) => w.nodeName,
-      render: (w) => <span className="text-sm">{w.nodeName}</span>,
+      render: (w) => <span className="font-mono text-sm">{w.nodeName}</span>,
       hideBelow: "sm"
     },
     {
@@ -96,7 +98,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       header: "Containers",
       sortValue: (w) => w.runningContainers,
       render: (w) => (
-        <span className="text-sm">
+        <span className="font-mono text-sm">
           {w.runningContainers}/{w.totalContainers} running
         </span>
       )
@@ -122,7 +124,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       header: "Resources",
       hideBelow: "md",
       render: (w) => (
-        <span className="text-xs text-muted">
+        <span className="font-mono text-xs text-muted">
           {w.cpuPercent !== null ? `${w.cpuPercent}% CPU` : "— CPU"}
           {w.memoryUsage ? ` · ${w.memoryUsage}` : ""}
         </span>
@@ -147,23 +149,22 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">Workloads</h1>
-          <p className="text-muted">Logical services running across your infrastructure.</p>
-        </div>
-        <Button variant="secondary" onClick={() => router.push("/admin/compose")}>
+      <PageHeader
+        eyebrow="Fleet"
+        title="Workloads"
+        description="Logical services running across your infrastructure."
+        actions={<Button variant="secondary" onClick={() => router.push("/admin/compose")}>
           <Compass size={14} className="mr-2" />
           Discover Compose projects
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <div className="flex flex-wrap gap-2">
-        <select
+        <Select
           value={nodeFilter}
           onChange={(e) => setNodeFilter(e.target.value)}
           aria-label="Filter by node"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All nodes</option>
           {(refsQuery.data?.nodes ?? []).map((n) => (
@@ -171,12 +172,12 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
               {n.name}
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           value={clientFilter}
           onChange={(e) => setClientFilter(e.target.value)}
           aria-label="Filter by client"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All clients</option>
           {(refsQuery.data?.clients ?? []).map((c) => (
@@ -184,31 +185,31 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
               {c.name}
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
           aria-label="Filter by state"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-36"
         >
           <option value="">All states</option>
           <option value="healthy">Healthy</option>
           <option value="degraded">Degraded</option>
           <option value="down">Down</option>
           <option value="unknown">Unknown</option>
-        </select>
-        <select
+        </Select>
+        <Select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
           aria-label="Filter by source type"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All types</option>
           <option value="MANUAL">Manual</option>
           <option value="COMPOSE">External Compose</option>
           <option value="MANAGED">Managed</option>
-        </select>
-        <label className="flex items-center gap-2 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm">
+        </Select>
+        <label className="flex h-control items-center gap-2 rounded-control border border-border bg-surface-raised px-3 text-sm text-text-muted">
           <input
             type="checkbox"
             checked={needsAttentionOnly}

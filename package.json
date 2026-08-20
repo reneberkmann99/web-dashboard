@@ -1,5 +1,5 @@
 {
-  "name": "hostpanel",
+  "name": "noderaft",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -22,6 +22,8 @@
     "test:browser:phase6e": "playwright test phase6e-browser.spec.ts"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.6",
+    "@fontsource/ibm-plex-sans": "^5.2.6",
     "@prisma/client": "^6.6.0",
     "@tanstack/react-query": "^5.74.4",
     "@types/node-forge": "^1.3.14",

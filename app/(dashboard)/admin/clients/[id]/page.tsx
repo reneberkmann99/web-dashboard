@@ -131,7 +131,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
   });
 
   if (query.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (query.isError || !query.data) return <p className="text-sm text-red-400">Failed to load client.</p>;
+  if (query.isError || !query.data) return <p className="text-sm text-critical-foreground">Failed to load client.</p>;
 
   const { client, activity } = query.data;
 
@@ -432,7 +432,7 @@ function ClientDeploymentNodesTab({ clientId }: { clientId: string }): React.JSX
     return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
   }
   if (allowedQuery.isError || allNodesQuery.isError || !allowedQuery.data || !allNodesQuery.data) {
-    return <p className="text-sm text-red-400">Failed to load node access.</p>;
+    return <p className="text-sm text-critical-foreground">Failed to load node access.</p>;
   }
 
   const allowedIds = new Set(allowedQuery.data.data.map((n) => n.nodeId));

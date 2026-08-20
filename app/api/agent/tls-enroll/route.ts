@@ -32,7 +32,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       case "invalid_token":
         return fail("INVALID_TOKEN", "Enrollment token is invalid, already used, or expired", 401);
       case "ca_not_configured":
-        return fail("AGENT_CA_NOT_CONFIGURED", "HostPanel Agent CA is not configured", 503);
+        return fail("AGENT_CA_NOT_CONFIGURED", "Noderaft Agent CA is not configured", 503);
       case "invalid_csr":
         return fail("INVALID_CSR", "Certificate signing request could not be processed", 400);
       case "issued":

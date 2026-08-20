@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NoderaftLogo } from "@/components/brand/noderaft-logo";
 
 type LoginResponse = {
   user: {
@@ -57,13 +58,13 @@ export default function LoginPage(): React.JSX.Element {
     <main className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-16">
       <div className="grid w-full gap-8 lg:grid-cols-[1.2fr_1fr]">
         <section className="panel hidden p-12 lg:block">
-          <p className="text-sm uppercase tracking-[0.25em] text-accent">HostPanel</p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight">
-            Control client infrastructure from one hardened dashboard.
+          <NoderaftLogo className="h-10" priority />
+          <p className="eyebrow mt-12">Self-hosted control panel · Rootless Docker</p>
+          <h1 className="mt-4 max-w-lg text-5xl font-semibold leading-[1.05] tracking-[-0.04em]">
+            Your fleet,<br />on one deck.
           </h1>
-          <p className="mt-6 max-w-xl text-muted">
-            Modern hosting panel MVP with role-based access, node health visibility, rootless Docker support,
-            and server-to-server control through secure node agents.
+          <p className="mt-6 max-w-xl text-text-muted">
+            A single calm surface for every node, workload and container — with the state that needs you kept at the top.
           </p>
         </section>
 
@@ -71,7 +72,7 @@ export default function LoginPage(): React.JSX.Element {
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
             <CardDescription>
-              Use your HostPanel account credentials, or your Linux system username/password.
+              Use your Noderaft account credentials, or your Linux system username/password.
             </CardDescription>
           </CardHeader>
           <CardContent>

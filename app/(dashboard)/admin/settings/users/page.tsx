@@ -153,7 +153,7 @@ export default function AdminUsersPage(): React.JSX.Element {
               <div className="h-10 animate-pulse rounded bg-panelAlt" />
             </div>
           ) : query.isError ? (
-            <p className="text-sm text-red-400">Failed to load users.</p>
+            <p className="text-sm text-critical-foreground">Failed to load users.</p>
           ) : !(query.data?.users ?? []).length ? (
             <p className="text-sm text-muted">No users yet.</p>
           ) : (
@@ -196,9 +196,9 @@ export default function AdminUsersPage(): React.JSX.Element {
                     </td>
                     <td className="py-3">
                       {user.isActive ? (
-                        <span className="text-emerald-400">Active</span>
+                        <span className="text-success-foreground">Active</span>
                       ) : (
-                        <span className="text-amber-400">Pending</span>
+                        <span className="text-warning-foreground">Pending</span>
                       )}
                     </td>
                     <td className="py-3">

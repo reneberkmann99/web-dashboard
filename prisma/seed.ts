@@ -14,7 +14,7 @@ import { encryptSecret } from "../server/security/crypto";
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@hostpanel.local";
+  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@noderaft.local";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD;
 
   if (!adminPassword || adminPassword.length < 12) {
@@ -28,14 +28,14 @@ async function main(): Promise<void> {
   await prisma.user.upsert({
     where: { email: adminEmail },
     update: {
-      displayName: "HostPanel Admin",
+      displayName: "Noderaft Admin",
       role: Role.ADMIN,
       isActive: true,
       passwordHash: await hashPassword(adminPassword)
     },
     create: {
       email: adminEmail,
-      displayName: "HostPanel Admin",
+      displayName: "Noderaft Admin",
       role: Role.ADMIN,
       isActive: true,
       passwordHash: await hashPassword(adminPassword)
