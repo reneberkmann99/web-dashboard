@@ -2,6 +2,8 @@ import { prisma } from "@/server/db";
 import { ATTENTION_CONFIG } from "@/server/services/attention-config";
 import { logAuditEvent } from "@/server/audit";
 import { getCertificateAttentionItems } from "@/server/services/node-tls";
+import { clearAcknowledgementsForResolvedState, getLifecyclePolicyContexts, type LifecyclePolicyContext } from "@/server/services/attention-lifecycle";
+import { createConditionNotificationEvent } from "@/server/services/notifications";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { OverviewSnapshot, NodeOperationalView } from "@/server/services/overview";
 import type { AttentionItem, AttentionSeverity, RecentFailure, ActiveOperationSummary, FleetSummary } from "@/types/domain";
@@ -792,7 +794,7 @@ export async function syncAttentionState(conditions: DerivedCondition[], preserv
     const key = `${c.resourceType}:${c.resourceId}:${c.conditionType}`;
     const prior = existingByKey.get(key);
     if (!prior) {
-      await prisma.attentionState.upsert({
+      const opened = await prisma.attentionState.upsert({
         where: { resourceType_resourceId_conditionType: { resourceType: c.resourceType, resourceId: c.resourceId, conditionType: c.conditionType } },
         create: {
           resourceType: c.resourceType,
@@ -820,6 +822,12 @@ export async function syncAttentionState(conditions: DerivedCondition[], preserv
       if (c.severity !== "info") {
         await logTransition(c, "became", c.nodeId);
       }
+      await createConditionNotificationEvent({
+        state: opened,
+        type: "CONDITION_OPENED",
+        dedupeKey: `${opened.id}:opened:${opened.firstObservedAt.toISOString()}`,
+        occurredAt: opened.firstObservedAt
+      });
     } else {
       // Still active — refresh detail/severity/lastObservedAt only; never
       // spam Activity for an already-open condition.
@@ -828,7 +836,7 @@ export async function syncAttentionState(conditions: DerivedCondition[], preserv
         prior.detail !== c.detail ||
         Date.now() - prior.lastObservedAt.getTime() > 60_000
       ) {
-        await prisma.attentionState.update({
+        const refreshed = await prisma.attentionState.update({
           where: { id: prior.id },
           data: {
             severity: c.severity.toUpperCase() as "CRITICAL" | "WARNING" | "INFO",
@@ -838,6 +846,16 @@ export async function syncAttentionState(conditions: DerivedCondition[], preserv
             lastObservedAt: now
           }
         });
+        const priorRank = prior.severity === "CRITICAL" ? 2 : prior.severity === "WARNING" ? 1 : 0;
+        const refreshedRank = refreshed.severity === "CRITICAL" ? 2 : refreshed.severity === "WARNING" ? 1 : 0;
+        if (refreshedRank > priorRank) {
+          await createConditionNotificationEvent({
+            state: refreshed,
+            type: "SEVERITY_ESCALATED",
+            dedupeKey: `${refreshed.id}:escalated:${prior.severity}:${refreshed.severity}:${refreshed.lastObservedAt.toISOString()}`,
+            occurredAt: refreshed.lastObservedAt
+          });
+        }
       }
     }
   }
@@ -856,7 +874,14 @@ export async function syncAttentionState(conditions: DerivedCondition[], preserv
       // preserve it until telemetry resumes or the node becomes OFFLINE.
       continue;
     }
-    await prisma.attentionState.update({ where: { id: prior.id }, data: { resolvedAt: now } });
+    const resolved = await prisma.attentionState.update({ where: { id: prior.id }, data: { resolvedAt: now } });
+    await clearAcknowledgementsForResolvedState(prior.id, now);
+    await createConditionNotificationEvent({
+      state: resolved,
+      type: "CONDITION_RESOLVED",
+      dedupeKey: `${resolved.id}:resolved:${now.toISOString()}`,
+      occurredAt: now
+    });
     if (prior.severity !== "INFO") {
       await logTransition(
         {
@@ -952,12 +977,22 @@ function toAttentionItem(
     firstObservedAt: Date;
     lastObservedAt: Date;
     metadata: unknown;
+    acknowledgements?: Array<{
+      id: string;
+      acknowledgedAt: Date;
+      note: string | null;
+      acknowledgedBy: { displayName: string; email: string } | null;
+    }>;
   },
-  role: "ADMIN" | "CLIENT"
+  role: "ADMIN" | "CLIENT",
+  lifecycle?: LifecyclePolicyContext
 ): AttentionItem {
   const severity = state.severity.toLowerCase() as AttentionSeverity;
   const nodeId = state.resourceType === "NODE" ? state.resourceId : state.resourceType === "CONTAINER" ? state.resourceId.split(":")[0] : null;
   const meta = (state.metadata as Record<string, unknown>) ?? {};
+  const acknowledgement = role === "ADMIN" ? state.acknowledgements?.[0] ?? null : null;
+  const silence = lifecycle?.activeSilences[0] ?? null;
+  const maintenance = lifecycle?.activeMaintenance[0] ?? null;
   return {
     id: state.id,
     severity,
@@ -971,7 +1006,27 @@ function toAttentionItem(
     href: href(state.resourceType, state.resourceId, role),
     firstObservedAt: state.firstObservedAt.toISOString(),
     lastObservedAt: state.lastObservedAt.toISOString(),
-    affectedCount: typeof meta.affectedCount === "number" ? meta.affectedCount : undefined
+    affectedCount: typeof meta.affectedCount === "number" ? meta.affectedCount : undefined,
+    ...(role === "ADMIN" ? {
+      acknowledgement: acknowledgement ? {
+        id: acknowledgement.id,
+        acknowledgedBy: acknowledgement.acknowledgedBy?.displayName ?? acknowledgement.acknowledgedBy?.email ?? "Unknown administrator",
+        acknowledgedAt: acknowledgement.acknowledgedAt.toISOString(),
+        note: acknowledgement.note
+      } : null,
+      silence: silence ? {
+        id: silence.id,
+        endsAt: silence.endsAt.toISOString(),
+        reason: silence.reason,
+        createdBy: silence.createdBy?.displayName ?? silence.createdBy?.email ?? null
+      } : null,
+      maintenance: maintenance ? {
+        id: maintenance.id,
+        startsAt: maintenance.startsAt.toISOString(),
+        endsAt: maintenance.endsAt.toISOString(),
+        reason: maintenance.reason
+      } : null
+    } : {})
   };
 }
 
@@ -984,7 +1039,15 @@ function toAttentionItem(
 async function getDeduplicatedAdminAttentionRows() {
   const rows = await prisma.attentionState.findMany({
     where: { resolvedAt: null, severity: { in: ["CRITICAL", "WARNING"] } },
-    orderBy: [{ severity: "asc" }, { lastObservedAt: "desc" }]
+    orderBy: [{ severity: "asc" }, { lastObservedAt: "desc" }],
+    include: {
+      acknowledgements: {
+        where: { clearedAt: null },
+        orderBy: { acknowledgedAt: "desc" },
+        take: 1,
+        include: { acknowledgedBy: { select: { displayName: true, email: true } } }
+      }
+    }
   });
 
   const offlineNodeIds = new Set(
@@ -1012,6 +1075,7 @@ async function getDeduplicatedAdminAttentionRows() {
 
 export async function getAttentionFeedForAdmin(): Promise<AttentionItem[]> {
   const filtered = await getDeduplicatedAdminAttentionRows();
+  const lifecycle = await getLifecyclePolicyContexts(filtered);
 
   const items = filtered
     .sort((a, b) => {
@@ -1019,7 +1083,7 @@ export async function getAttentionFeedForAdmin(): Promise<AttentionItem[]> {
       return b.lastObservedAt.getTime() - a.lastObservedAt.getTime();
     })
     .slice(0, ATTENTION_CONFIG.feed.maxItems)
-    .map((r) => toAttentionItem(r, "ADMIN"));
+    .map((r) => toAttentionItem(r, "ADMIN", lifecycle.get(r.id)));
 
   return items;
 }

@@ -3,21 +3,23 @@ import crypto from "node:crypto";
 /**
  * Security: AES-256-GCM encryption with a typed key purpose.
  *
- * Two independent master keys are used, one per purpose, each supplied via the
+ * Independent master keys are used, one per purpose, each supplied via the
  * environment only (never the database) and each 64 hex chars (32 bytes):
- *   - NODE_CREDENTIALS   -> NODE_CREDENTIALS_KEY   (encrypts Node.apiKeyEncrypted)
- *   - DEPLOYMENT_SECRETS -> DEPLOYMENT_SECRETS_KEY (encrypts SecretVersion.ciphertext)
+ *   - NODE_CREDENTIALS         -> NODE_CREDENTIALS_KEY         (encrypts Node.apiKeyEncrypted)
+ *   - DEPLOYMENT_SECRETS       -> DEPLOYMENT_SECRETS_KEY       (encrypts SecretVersion.ciphertext)
+ *   - NOTIFICATION_DESTINATIONS -> NOTIFICATION_DESTINATIONS_KEY (encrypts NotificationDestination webhook URL/auth header/signing secret)
  *
  * Each encryption uses a unique 12-byte IV; GCM auth tag is verified on
  * decrypt. A wrong/missing/malformed key fails closed (throws) rather than
  * silently producing a bad result.
  */
 
-export type EncryptionPurpose = "NODE_CREDENTIALS" | "DEPLOYMENT_SECRETS";
+export type EncryptionPurpose = "NODE_CREDENTIALS" | "DEPLOYMENT_SECRETS" | "NOTIFICATION_DESTINATIONS";
 
 const PURPOSE_ENV: Record<EncryptionPurpose, string> = {
   NODE_CREDENTIALS: "NODE_CREDENTIALS_KEY",
-  DEPLOYMENT_SECRETS: "DEPLOYMENT_SECRETS_KEY"
+  DEPLOYMENT_SECRETS: "DEPLOYMENT_SECRETS_KEY",
+  NOTIFICATION_DESTINATIONS: "NOTIFICATION_DESTINATIONS_KEY"
 };
 
 function getKey(purpose: EncryptionPurpose): Buffer {

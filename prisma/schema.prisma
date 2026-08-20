@@ -56,7 +56,9 @@ enum DeploymentSource {
   GIT
 }
 
-/** Security policy under which a revision was authored + must be re-validated. */
+/**
+ * Security policy under which a revision was authored + must be re-validated.
+ */
 enum DeploymentPolicy {
   ADMIN
   CLIENT
@@ -117,20 +119,58 @@ enum NodeCertificateStatus {
   EXPIRED
 }
 
-/** Operational attention severity (Phase 6D). Distinct from Docker runtime state. */
+/**
+ * Operational attention severity (Phase 6D). Distinct from Docker runtime state.
+ */
 enum AttentionSeverity {
   CRITICAL
   WARNING
   INFO
 }
 
-/** What kind of resource an AttentionState/condition targets. */
+/**
+ * What kind of resource an AttentionState/condition targets.
+ */
 enum AttentionResourceType {
   NODE
   CONTAINER
   WORKLOAD
   OPERATION
   DEPLOYMENT
+}
+
+/**
+ * Phase 6E: what an AttentionSilence or MaintenanceWindow targets.
+ */
+enum LifecycleScopeType {
+  CONDITION
+  NODE
+  WORKLOAD
+}
+
+enum MaintenanceNotificationBehavior {
+  SUPPRESS
+  KEEP
+}
+
+enum NotificationDestinationType {
+  WEBHOOK
+}
+
+enum NotificationEventType {
+  CONDITION_OPENED
+  SEVERITY_ESCALATED
+  CONDITION_RESOLVED
+  SILENCE_EXPIRED_STILL_ACTIVE
+  TEST_NOTIFICATION
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
+  SUPPRESSED
 }
 
 model ClientAccount {
@@ -188,6 +228,13 @@ model User {
   deploymentSecurityAcknowledgements DeploymentSecurityAcknowledgement[]
   deploymentOperations               DeploymentOperation[]
   activationToken                    ActivationToken?
+  attentionAcknowledgementsMade      AttentionAcknowledgement[]          @relation("AttentionAcknowledgedBy")
+  attentionAcknowledgementsCleared   AttentionAcknowledgement[]          @relation("AttentionAcknowledgementCleared")
+  attentionSilencesCreated           AttentionSilence[]                  @relation("AttentionSilenceCreatedBy")
+  attentionSilencesCancelled         AttentionSilence[]                  @relation("AttentionSilenceCancelledBy")
+  maintenanceWindowsCreated          MaintenanceWindow[]                 @relation("MaintenanceWindowCreatedBy")
+  maintenanceWindowsCancelled        MaintenanceWindow[]                 @relation("MaintenanceWindowCancelledBy")
+  notificationDestinationsCreated    NotificationDestination[]
   createdAt                          DateTime                            @default(now())
   updatedAt                          DateTime                            @updatedAt
 
@@ -222,38 +269,40 @@ model ActivationToken {
 }
 
 model Node {
-  id                String                 @id @default(cuid())
-  name              String
-  hostname          String                 @unique
-  apiBaseUrl        String
-  apiKeyEncrypted   String
-  dockerContext     String?
-  status            NodeStatus             @default(UNKNOWN)
-  transportMode     NodeTransportMode      @default(LEGACY_HTTP)
-  isActive          Boolean                @default(true)
-  lastHeartbeatAt   DateTime?
-  agentVersion      String?
-  dockerVersion     String?
-  composeSupported  Boolean?
-  composeVersion    String?
+  id                 String                 @id @default(cuid())
+  name               String
+  hostname           String                 @unique
+  apiBaseUrl         String
+  apiKeyEncrypted    String
+  dockerContext      String?
+  status             NodeStatus             @default(UNKNOWN)
+  transportMode      NodeTransportMode      @default(LEGACY_HTTP)
+  isActive           Boolean                @default(true)
+  lastHeartbeatAt    DateTime?
+  agentVersion       String?
+  dockerVersion      String?
+  composeSupported   Boolean?
+  composeVersion     String?
   // Secure agent transport. `transportMode` is a persisted STATUS/UX hint set
   // only after a live verified-HTTPS check — it is never the root of trust:
   // every managed mutation independently performs full TLS verification.
-  tlsApiBaseUrl     String?
-  lastTlsVerifiedAt DateTime?
-  lastTlsError      String?
-  certificates      NodeAgentCertificate[]
-  osInfo            Json?
-  systemInfo        Json? // cpu / memory / disk snapshots from agent /info
-  enrollmentTokens  NodeEnrollmentToken[]
-  projects          Project[]
-  assignments       ContainerAssignment[]
-  containers        Container[]
-  grants            AccessGrant[]
-  operations        Operation[]
-  clientAccess      ClientNodeAccess[]
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  tlsApiBaseUrl      String?
+  lastTlsVerifiedAt  DateTime?
+  lastTlsError       String?
+  certificates       NodeAgentCertificate[]
+  osInfo             Json?
+  systemInfo         Json? // cpu / memory / disk snapshots from agent /info
+  enrollmentTokens   NodeEnrollmentToken[]
+  projects           Project[]
+  assignments        ContainerAssignment[]
+  containers         Container[]
+  grants             AccessGrant[]
+  operations         Operation[]
+  clientAccess       ClientNodeAccess[]
+  attentionSilences  AttentionSilence[]
+  maintenanceWindows MaintenanceWindow[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   @@index([isActive])
   @@index([status])
@@ -282,23 +331,25 @@ model NodeEnrollmentToken {
  * collide with anything else on the same node regardless of client.
  */
 model Project {
-  id              String                @id @default(cuid())
-  name            String
-  slug            String
-  description     String?
-  source          ProjectSource         @default(MANUAL)
-  composeProject  String?
-  isActive        Boolean               @default(true)
-  clientAccountId String?
-  clientAccount   ClientAccount?        @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
-  nodeId          String
-  node            Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  assignments     ContainerAssignment[]
-  containers      Container[]
-  grants          AccessGrant[]
-  deployment      Deployment?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id                 String                @id @default(cuid())
+  name               String
+  slug               String
+  description        String?
+  source             ProjectSource         @default(MANUAL)
+  composeProject     String?
+  isActive           Boolean               @default(true)
+  clientAccountId    String?
+  clientAccount      ClientAccount?        @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  nodeId             String
+  node               Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  assignments        ContainerAssignment[]
+  containers         Container[]
+  grants             AccessGrant[]
+  deployment         Deployment?
+  attentionSilences  AttentionSilence[]
+  maintenanceWindows MaintenanceWindow[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
   @@unique([nodeId, slug])
   @@unique([nodeId, composeProject])
@@ -735,7 +786,6 @@ model DeploymentReleaseSecret {
 
 /**
  * Attention model (Phase 6D — fleet operations UX).
- *
  * Restart-rate detection: a lightweight append-only sample is written only
  * when a container's cumulative `RestartCount` (as reported by `docker
  * inspect`) increases since the last observed value. Rate is derived by
@@ -764,12 +814,12 @@ model ContainerRestartSample {
  * series platform — see ARCHITECTURE.md Phase 6D notes.
  */
 model NodeResourceSample {
-  id         String   @id @default(cuid())
-  nodeId     String
-  cpuPercent Float?
-  memPercent Float?
+  id          String   @id @default(cuid())
+  nodeId      String
+  cpuPercent  Float?
+  memPercent  Float?
   diskPercent Float?
-  observedAt DateTime @default(now())
+  observedAt  DateTime @default(now())
 
   @@index([nodeId, observedAt])
 }
@@ -779,34 +829,250 @@ model NodeResourceSample {
  * (resourceType, resourceId, conditionType) — NOT a full incidents/history
  * table (see ARCHITECTURE.md "Known limitations" for the documented
  * trade-off). Exists so:
- *   1. Activity logging records only STATE TRANSITIONS ("X became offline",
- *      "X recovered"), never one entry per poll.
- *   2. The "needs attention" list can be deduplicated/backend-derived
- *      instead of purely recomputed frontend state.
- *   3. A future notifier can subscribe to the same backend-derived condition
- *      set (NODE_OFFLINE, WORKLOAD_DEGRADED, CONTAINER_CRASH_LOOP, …)
- *      without scraping UI state (see brief §25).
+ * 1. Activity logging records only STATE TRANSITIONS ("X became offline",
+ * "X recovered"), never one entry per poll.
+ * 2. The "needs attention" list can be deduplicated/backend-derived
+ * instead of purely recomputed frontend state.
+ * 3. A future notifier can subscribe to the same backend-derived condition
+ * set (NODE_OFFLINE, WORKLOAD_DEGRADED, CONTAINER_CRASH_LOOP, …)
+ * without scraping UI state (see brief §25).
  * `resolvedAt` is cleared (set back to null) and `firstObservedAt` reset when
  * a previously-resolved condition re-opens — no separate history rows are
  * kept per re-occurrence; that is the documented limitation of this phase.
  */
 model AttentionState {
-  id              String                @id @default(cuid())
-  resourceType    AttentionResourceType
-  resourceId      String
-  conditionType   String
-  severity        AttentionSeverity
-  title           String
-  detail          String
-  href            String?
-  metadata        Json?
-  firstObservedAt DateTime              @default(now())
-  lastObservedAt  DateTime              @default(now())
-  resolvedAt      DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id                 String                     @id @default(cuid())
+  resourceType       AttentionResourceType
+  resourceId         String
+  conditionType      String
+  severity           AttentionSeverity
+  title              String
+  detail             String
+  href               String?
+  metadata           Json?
+  firstObservedAt    DateTime                   @default(now())
+  lastObservedAt     DateTime                   @default(now())
+  resolvedAt         DateTime?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  acknowledgements   AttentionAcknowledgement[]
+  silences           AttentionSilence[]
+  notificationEvents NotificationEvent[]
 
   @@unique([resourceType, resourceId, conditionType])
   @@index([resolvedAt])
   @@index([severity, resolvedAt])
+}
+
+/**
+ * Operator-lifecycle model (Phase 6E). Kept as separate relations from
+ * AttentionState rather than nullable fields bolted onto it — see
+ * ARCHITECTURE.md "Phase 6E" for the rationale (AttentionState stays a pure
+ * derived-condition mirror; lifecycle/audit concerns live here so a future
+ * notifier/acker never has to distinguish "derived" vs "operator-entered"
+ * fields on the same row).
+ * Acknowledgement history is append-only: acknowledging creates a new row;
+ * unacknowledging sets `clearedAt` on the currently active row (never a hard
+ * delete) so the full operator history survives. At most one ACTIVE
+ * (clearedAt IS NULL) acknowledgement per AttentionState is enforced by a
+ * partial unique index added in the migration SQL (mirrors the existing
+ * Operation one-active-per-container pattern).
+ * When the underlying AttentionState resolves, the active acknowledgement is
+ * also auto-cleared (clearedReason="condition_resolved") by the same sync
+ * pass that resolves the condition — see server/services/attention.ts. This
+ * keeps acknowledgement scoped to a single occurrence: AttentionState rows
+ * are reused across resolve/reopen cycles (see that model's doc comment), so
+ * a stale acknowledgement must never silently carry over into a genuinely
+ * new occurrence of the same condition type on the same resource.
+ */
+model AttentionAcknowledgement {
+  id               String         @id @default(cuid())
+  attentionStateId String
+  attentionState   AttentionState @relation(fields: [attentionStateId], references: [id], onDelete: Cascade)
+  acknowledgedById String?
+  acknowledgedBy   User?          @relation("AttentionAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  acknowledgedAt   DateTime       @default(now())
+  note             String?
+  clearedById      String?
+  clearedBy        User?          @relation("AttentionAcknowledgementCleared", fields: [clearedById], references: [id], onDelete: SetNull)
+  clearedAt        DateTime?
+  clearedReason    String? // e.g. "manual" | "condition_resolved"
+
+  @@index([attentionStateId])
+  @@index([attentionStateId, clearedAt])
+}
+
+/**
+ * Temporary notification silence (Phase 6E). Suppresses NotificationDelivery
+ * for a scope without altering AttentionState/operational severity. Backend
+ * is the sole authority on "is this silence currently active" — computed as
+ * `cancelledAt IS NULL AND now() < endsAt` at read/notify time, never a
+ * client-side timer. `scope=CONDITION` targets one AttentionState directly;
+ * `scope=NODE`/`scope=WORKLOAD` target every condition rooted at that
+ * resource (see server/services/notifications.ts silence-resolution logic,
+ * mirroring the existing attention node/workload rollup).
+ * `expiredNotifiedAt` makes "one still-active notification when a silence
+ * expires while the condition remains active" (brief §6) idempotent: set
+ * once the SILENCE_EXPIRED_STILL_ACTIVE NotificationEvent has been created
+ * for this silence, so a poll loop never floods duplicates.
+ */
+model AttentionSilence {
+  id                String             @id @default(cuid())
+  scope             LifecycleScopeType
+  attentionStateId  String?
+  attentionState    AttentionState?    @relation(fields: [attentionStateId], references: [id], onDelete: Cascade)
+  nodeId            String?
+  node              Node?              @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  workloadId        String?
+  workload          Project?           @relation(fields: [workloadId], references: [id], onDelete: Cascade)
+  createdById       String?
+  createdBy         User?              @relation("AttentionSilenceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  reason            String?
+  startsAt          DateTime           @default(now())
+  endsAt            DateTime
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelledBy       User?              @relation("AttentionSilenceCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  expiredNotifiedAt DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([attentionStateId])
+  @@index([nodeId])
+  @@index([workloadId])
+  @@index([endsAt])
+}
+
+/**
+ * Intentional maintenance metadata (Phase 6E). Policy/notification-suppression
+ * only — beginning or ending a maintenance window never mutates Docker state
+ * or AttentionState. Underlying telemetry stays truthful throughout (brief
+ * §9): an OFFLINE node under maintenance is still reported OFFLINE, just with
+ * maintenance context attached and (per `notificationBehavior`) ordinary
+ * notifications suppressed.
+ * `endedProcessedAt` makes the end-of-maintenance re-evaluation (brief §10:
+ * "if still offline after maintenance ends, notify once") idempotent per
+ * window, independent of AttentionState's own transition bookkeeping;
+ * `startedRecordedAt` similarly makes the automatic Activity transition at
+ * the scheduled start idempotent across process restarts.
+ */
+model MaintenanceWindow {
+  id                   String                          @id @default(cuid())
+  scope                LifecycleScopeType
+  nodeId               String?
+  node                 Node?                           @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  workloadId           String?
+  workload             Project?                        @relation(fields: [workloadId], references: [id], onDelete: Cascade)
+  createdById          String?
+  createdBy            User?                           @relation("MaintenanceWindowCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  reason               String?
+  startsAt             DateTime
+  endsAt               DateTime
+  notificationBehavior MaintenanceNotificationBehavior @default(SUPPRESS)
+  cancelledAt          DateTime?
+  cancelledById        String?
+  cancelledBy          User?                           @relation("MaintenanceWindowCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  startedRecordedAt    DateTime?
+  endedProcessedAt     DateTime?
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
+
+  @@index([nodeId])
+  @@index([workloadId])
+  @@index([startsAt, endsAt])
+}
+
+/**
+ * Notification destination (Phase 6E). URL and any auth token are stored
+ * encrypted (AES-256-GCM via server/security/crypto.ts, a new
+ * NOTIFICATION_DESTINATIONS purpose) and are never returned in full by any
+ * API response after creation (see server/services/notifications.ts —
+ * responses only ever include a masked suffix).
+ */
+model NotificationDestination {
+  id                     String                      @id @default(cuid())
+  name                   String
+  type                   NotificationDestinationType @default(WEBHOOK)
+  enabled                Boolean                     @default(true)
+  urlEncrypted           String
+  urlMasked              String // safe-to-display masked form, e.g. https://hooks.example.com/••••••
+  authHeaderEncrypted    String?
+  signingSecretEncrypted String
+  minSeverity            AttentionSeverity           @default(WARNING)
+  eventTypes             NotificationEventType[]
+  scopeNodeIds           String[]                    @default([])
+  scopeWorkloadIds       String[]                    @default([])
+  consecutiveFailures    Int                         @default(0)
+  lastDeliveryStatus     NotificationDeliveryStatus?
+  lastDeliveryAt         DateTime?
+  lastSuccessAt          DateTime?
+  createdById            String?
+  createdBy              User?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries             NotificationDelivery[]
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+
+  @@index([enabled])
+}
+
+/**
+ * A logical notification-worthy event, derived from one attention transition
+ * (brief §11-13). `dedupeKey` is the idempotency anchor — deterministic from
+ * the attention transition itself (e.g. `${attentionStateId}:OPENED:${firstObservedAt}`),
+ * never from wall-clock "now", so a duplicate sync pass, worker restart, or
+ * retried HTTP request can never create a second logical event for the same
+ * transition (unique constraint, migration-enforced upsert-or-skip).
+ * `payload` is the exact versioned structured payload later sent to every
+ * matching destination — computed once here, not re-derived per delivery.
+ */
+model NotificationEvent {
+  id               String                 @id @default(cuid())
+  dedupeKey        String                 @unique
+  type             NotificationEventType
+  attentionStateId String?
+  attentionState   AttentionState?        @relation(fields: [attentionStateId], references: [id], onDelete: SetNull)
+  severity         AttentionSeverity?
+  resourceType     String?
+  resourceId       String?
+  summary          String
+  payload          Json
+  occurredAt       DateTime               @default(now())
+  deliveries       NotificationDelivery[]
+  createdAt        DateTime               @default(now())
+
+  @@index([attentionStateId])
+  @@index([occurredAt])
+}
+
+/**
+ * One delivery ATTEMPT of one NotificationEvent to one NotificationDestination
+ * (brief's own conceptual model: "NotificationDelivery: one attempt to one
+ * configured destination"). Retries append new rows
+ * (notificationEventId, destinationId, attemptNumber) rather than mutating a
+ * prior attempt — a manual retry is a new deliberate attempt, never a
+ * duplicate of the logical event (brief §23). Secret request headers/tokens
+ * are never persisted here, only the sanitized outcome.
+ */
+model NotificationDelivery {
+  id                  String                     @id @default(cuid())
+  notificationEventId String
+  notificationEvent   NotificationEvent          @relation(fields: [notificationEventId], references: [id], onDelete: Cascade)
+  destinationId       String
+  destination         NotificationDestination    @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  attemptNumber       Int                        @default(1)
+  status              NotificationDeliveryStatus @default(PENDING)
+  httpStatus          Int?
+  error               String?
+  isTest              Boolean                    @default(false)
+  isManualRetry       Boolean                    @default(false)
+  requestedAt         DateTime                   @default(now())
+  startedAt           DateTime?
+  respondedAt         DateTime?
+  nextRetryAt         DateTime?
+  createdAt           DateTime                   @default(now())
+
+  @@unique([notificationEventId, destinationId, attemptNumber])
+  @@index([destinationId, status])
+  @@index([notificationEventId])
+  @@index([status, nextRetryAt])
 }

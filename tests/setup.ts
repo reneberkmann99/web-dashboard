@@ -15,6 +15,13 @@ const repoRoot = path.resolve(__dirname, "..");
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 process.env.NODE_CREDENTIALS_KEY = process.env.NODE_CREDENTIALS_KEY ?? "a".repeat(64);
 process.env.DEPLOYMENT_SECRETS_KEY = process.env.DEPLOYMENT_SECRETS_KEY ?? "b".repeat(64);
+process.env.NOTIFICATION_DESTINATIONS_KEY = process.env.NOTIFICATION_DESTINATIONS_KEY ?? "c".repeat(64);
+// Vitest loads the repository .env before setup; force the deterministic test
+// origin so production's VPN URL can never leak into payload assertions.
+process.env.HOSTPANEL_PUBLIC_BASE_URL = "https://hostpanel.test";
+process.env.WEBHOOK_ALLOW_PRIVATE_NETWORKS = "true";
+process.env.NOTIFICATION_RETRY_DELAY_2_MS = "1";
+process.env.NOTIFICATION_RETRY_DELAY_3_MS = "1";
 process.env.PAM_BRIDGE_URL = "http://127.0.0.1:19999";
 process.env.PAM_BRIDGE_KEY = "test-pam-key";
 process.env.PAM_ADMIN_USERS = "rene";

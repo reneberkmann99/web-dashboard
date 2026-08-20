@@ -40,6 +40,23 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "NOT_FOUND") {
       return fail("NOT_FOUND", "Resource not found", 404);
     }
+    if (error.message === "ATTENTION_NOT_ACTIVE") {
+      return fail("ATTENTION_NOT_ACTIVE", "The attention condition is no longer active", 409);
+    }
+    if (error.message === "INVALID_TIME_RANGE" || error.message === "INVALID_SCOPE") {
+      return fail(error.message, "Invalid lifecycle scope or time range", 422);
+    }
+    if (error.message === "NOTIFICATION_ENCRYPTION_NOT_CONFIGURED") {
+      return fail(error.message, "Notification credential encryption is not configured", 503);
+    }
+    if (
+      error.message.startsWith("WEBHOOK_") ||
+      error.message === "INVALID_AUTH_HEADER" ||
+      error.message === "INVALID_SIGNING_SECRET" ||
+      error.message === "HOSTPANEL_PUBLIC_BASE_URL_MUST_BE_HTTPS"
+    ) {
+      return fail(error.message, "Notification destination configuration was rejected", 422);
+    }
   }
 
   // Security: never expose internal error details to the client.

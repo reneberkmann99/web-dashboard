@@ -42,7 +42,8 @@ export async function GET(
       select: { id: true, action: true, actorEmail: true, result: true, createdAt: true, metadata: true }
     });
 
-    const [deployment, attentionFeed, activeOperations] = await Promise.all([
+    const now = new Date();
+    const [deployment, attentionFeed, activeOperations, maintenance] = await Promise.all([
       getAdminWorkloadDeploymentStatus(project.id),
       getAttentionFeedForAdmin(),
       prisma.operation.findMany({
@@ -53,6 +54,16 @@ export async function GET(
         },
         orderBy: { requestedAt: "desc" },
         select: { id: true, type: true, state: true, dockerContainerId: true, requestedAt: true }
+      }),
+      prisma.maintenanceWindow.findMany({
+        where: {
+          cancelledAt: null,
+          startsAt: { lte: now },
+          endsAt: { gt: now },
+          OR: [{ workloadId: project.id }, { nodeId: project.node.id }]
+        },
+        orderBy: { endsAt: "asc" },
+        select: { id: true, scope: true, startsAt: true, endsAt: true, reason: true, notificationBehavior: true }
       })
     ]);
     const memberContainerIds = new Set(project.containers.map((c) => `${project.node.id}:${c.dockerContainerId}`));
@@ -62,7 +73,7 @@ export async function GET(
         (item.resourceType === "container" && item.resourceId && memberContainerIds.has(item.resourceId))
     );
 
-    return ok({ workload: detail, activity, deployment, attentionItems, activeOperations });
+    return ok({ workload: detail, activity, deployment, attentionItems, activeOperations, maintenance });
   } catch (error) {
     return fromError(error);
   }

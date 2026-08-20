@@ -11,13 +11,16 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogViewer } from "@/components/logs/log-viewer";
 import { shortId, timeAgo } from "@/lib/format";
-import type { ContainerView, OperationView, OperationState } from "@/types/domain";
+import type { AttentionItem, ContainerView, OperationView, OperationState } from "@/types/domain";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 
 type DetailResponse = {
   container: ContainerView;
   nodeOnline: boolean;
   managedDeployment: import("@/components/workloads/deployment/types").WorkloadDeploymentStatus | null;
   activeOperation: { id: string; type: string; state: OperationState; requestedAt: string } | null;
+  attentionItems: AttentionItem[];
+  maintenance: Array<{ id: string; scope: string; startsAt: string; endsAt: string; reason: string | null }>;
 };
 type ActionResponse = { operationId: string };
 
@@ -158,6 +161,10 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
           {!nodeOnline && <Badge variant="danger">Node unreachable</Badge>}
         </div>
       </div>
+
+      {detail.data?.maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-100">MAINTENANCE until {new Date(detail.data.maintenance[0].endsAt).toLocaleString()}{detail.data.maintenance[0].reason ? ` — ${detail.data.maintenance[0].reason}` : ""}. Container state remains {container.status}.</div>}
+
+      {detail.data?.attentionItems.map((item) => <div key={item.id} className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${item.severity === "critical" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"}`}><div><p className="text-sm font-medium">{item.title}</p><p className="text-xs text-muted">{item.detail}</p>{item.acknowledgement && <p className="mt-1 text-xs text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}{item.silence && <p className="text-xs text-muted">Notifications silenced until {new Date(item.silence.endsAt).toLocaleString()}</p>}</div><div className="flex items-center gap-2"><AttentionBadge severity={item.severity} /><Button size="sm" variant="ghost" onClick={() => router.push(`/admin/attention?conditionId=${item.id}`)}>View issue</Button></div></div>)}
 
       {operation && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-panelAlt p-3">

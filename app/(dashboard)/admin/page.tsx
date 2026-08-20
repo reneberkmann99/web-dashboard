@@ -79,7 +79,40 @@ export default function AdminOverviewPage(): React.JSX.Element {
   }
 
   const { fleetSummary, nodes, attention, workloads, recentActivity, recentFailures, activeOperations } = query.data;
-  const attentionVisible = attention.length > 0;
+  const unexpectedAttention = attention.filter((item) => !item.maintenance);
+  const maintenanceAttention = attention.filter((item) => item.maintenance);
+  const attentionVisible = unexpectedAttention.length > 0;
+
+  const renderAttentionCard = (item: AttentionItem): React.JSX.Element => (
+    <button
+      key={item.id}
+      type="button"
+      onClick={() => item.href && router.push(item.href)}
+      className={`flex w-full items-start justify-between gap-3 rounded-lg border p-3 text-left transition ${
+        item.href ? "cursor-pointer hover:border-accent/40" : "cursor-default"
+      } ${item.acknowledgement && item.severity !== "critical" ? "opacity-80" : ""} ${
+        item.severity === "critical"
+          ? "border-danger/30 bg-danger/5"
+          : item.severity === "warning"
+            ? "border-warning/30 bg-warning/5"
+            : "border-border bg-panelAlt/60"
+      }`}
+    >
+      <div>
+        <p className="text-sm font-medium">{item.title}</p>
+        <p className="text-xs text-muted">{item.detail}</p>
+        <div className="mt-1 space-y-0.5 text-xs text-muted">
+          {item.acknowledgement && <p className="text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy} · {timeAgo(item.acknowledgement.acknowledgedAt)}</p>}
+          {item.silence && <p>Notifications silenced until {new Date(item.silence.endsAt).toLocaleString()}</p>}
+          {item.maintenance && <p className="text-amber-200">Maintenance until {new Date(item.maintenance.endsAt).toLocaleString()}</p>}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <AttentionBadge severity={item.severity} />
+        {item.href && <ArrowRight size={14} className="text-muted" />}
+      </div>
+    </button>
+  );
 
   return (
     <div className="space-y-6">
@@ -124,39 +157,25 @@ export default function AdminOverviewPage(): React.JSX.Element {
         <h2 className="mb-2 text-lg font-semibold text-amber-300">Needs attention</h2>
         {!attentionVisible ? (
           <div className="rounded-lg border border-border bg-panelAlt/40 p-4 text-sm text-muted">
-            No active issues. All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and{" "}
+            No unexpected active issues. All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and{" "}
             {fleetSummary.workloadsTotal} workload{fleetSummary.workloadsTotal === 1 ? "" : "s"} are operating normally.
           </div>
         ) : (
           <div className="space-y-2">
-            {attention.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => item.href && router.push(item.href)}
-                className={`flex w-full items-start justify-between gap-3 rounded-lg border p-3 text-left transition ${
-                  item.href ? "cursor-pointer hover:border-accent/40" : "cursor-default"
-                } ${
-                  item.severity === "critical"
-                    ? "border-danger/30 bg-danger/5"
-                    : item.severity === "warning"
-                      ? "border-warning/30 bg-warning/5"
-                      : "border-border bg-panelAlt/60"
-                }`}
-              >
-                <div>
-                  <p className="text-sm font-medium">{item.title}</p>
-                  <p className="text-xs text-muted">{item.detail}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <AttentionBadge severity={item.severity} />
-                  {item.href && <ArrowRight size={14} className="text-muted" />}
-                </div>
-              </button>
-            ))}
+            {unexpectedAttention.map(renderAttentionCard)}
           </div>
         )}
       </section>
+
+      {maintenanceAttention.length > 0 && (
+        <section aria-label="Under maintenance">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-amber-200">Under maintenance</h2>
+            <Link href="/admin/attention?maintenance=active" className="text-sm text-accent hover:underline">View in Attention</Link>
+          </div>
+          <div className="space-y-2">{maintenanceAttention.map(renderAttentionCard)}</div>
+        </section>
+      )}
 
       {/* Active operations (§12) */}
       {activeOperations.length > 0 && (

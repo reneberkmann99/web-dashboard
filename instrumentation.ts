@@ -13,5 +13,7 @@ export async function register(): Promise<void> {
     startOperationSweeper(30_000);
     const { startDeploymentSweeper } = await import("@/server/services/deployment-executor");
     startDeploymentSweeper(30_000);
+    const { startNotificationWorker } = await import("@/server/services/notifications");
+    startNotificationWorker(5_000);
   }
 }

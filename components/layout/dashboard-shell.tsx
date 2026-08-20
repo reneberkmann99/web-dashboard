@@ -5,12 +5,14 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
+  BellRing,
   Boxes,
   LayoutDashboard,
   LogOut,
   Search,
   Server,
   Settings,
+  ShieldAlert,
   Users,
   Workflow
 } from "lucide-react";
@@ -31,12 +33,14 @@ const ADMIN_NAV = [
   { href: "/admin/workloads", label: "Workloads", icon: Boxes },
   { href: "/admin/nodes", label: "Nodes", icon: Server },
   { href: "/admin/clients", label: "Clients", icon: Users },
+  { href: "/admin/attention", label: "Attention", icon: ShieldAlert },
   { href: "/admin/activity", label: "Activity", icon: Activity }
 ];
 
 const ADMIN_SETTINGS = [
-  { href: "/admin/settings/users", label: "Users" },
-  { href: "/admin/settings/containers", label: "All containers" }
+  { href: "/admin/settings/users", label: "Users", icon: Settings },
+  { href: "/admin/settings/containers", label: "All containers", icon: Settings },
+  { href: "/admin/settings/notifications", label: "Notifications", icon: BellRing }
 ];
 
 const CLIENT_NAV = [
@@ -110,6 +114,7 @@ export function DashboardShell({
             <nav className="mt-2 space-y-1" aria-label="Settings">
               {settingsItems.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const Icon = item.icon;
                 return (
                   <Link
                     className={cn(
@@ -119,7 +124,7 @@ export function DashboardShell({
                     href={item.href}
                     key={item.href}
                   >
-                    <Settings className="h-4 w-4" />
+                    <Icon className="h-4 w-4" />
                     <span>{item.label}</span>
                   </Link>
                 );

@@ -88,6 +88,24 @@ export type AttentionItem = {
   lastObservedAt: string;
   /** Count of lower-level items suppressed/rolled up into this one (§4 dedup). */
   affectedCount?: number;
+  acknowledgement?: {
+    id: string;
+    acknowledgedBy: string;
+    acknowledgedAt: string;
+    note: string | null;
+  } | null;
+  silence?: {
+    id: string;
+    endsAt: string;
+    reason: string | null;
+    createdBy: string | null;
+  } | null;
+  maintenance?: {
+    id: string;
+    startsAt: string;
+    endsAt: string;
+    reason: string | null;
+  } | null;
 };
 
 /** Workload (Project/Stack) summary for the Workloads page. */

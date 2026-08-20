@@ -6,6 +6,7 @@ import { containerActionSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
 import { prisma } from "@/server/db";
+import { getAttentionFeedForAdmin } from "@/server/services/attention";
 
 const ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/;
 
@@ -33,12 +34,27 @@ export async function GET(
     const managedDeployment = container.projectId
       ? await getAdminWorkloadDeploymentStatus(container.projectId)
       : null;
-    const activeOperation = await prisma.operation.findFirst({
-      where: { nodeId, dockerContainerId: dockerId, state: { in: ["REQUESTED", "QUEUED", "RUNNING"] } },
-      orderBy: { requestedAt: "desc" },
-      select: { id: true, type: true, state: true, requestedAt: true }
-    });
-    return ok({ container, nodeOnline, managedDeployment, activeOperation });
+    const now = new Date();
+    const [activeOperation, attentionFeed, maintenance] = await Promise.all([
+      prisma.operation.findFirst({
+        where: { nodeId, dockerContainerId: dockerId, state: { in: ["REQUESTED", "QUEUED", "RUNNING"] } },
+        orderBy: { requestedAt: "desc" },
+        select: { id: true, type: true, state: true, requestedAt: true }
+      }),
+      getAttentionFeedForAdmin(),
+      prisma.maintenanceWindow.findMany({
+        where: {
+          cancelledAt: null,
+          startsAt: { lte: now },
+          endsAt: { gt: now },
+          OR: [{ nodeId }, ...(container.projectId ? [{ workloadId: container.projectId }] : [])]
+        },
+        orderBy: { endsAt: "asc" },
+        select: { id: true, scope: true, startsAt: true, endsAt: true, reason: true, notificationBehavior: true }
+      })
+    ]);
+    const attentionItems = attentionFeed.filter((item) => item.resourceType === "container" && item.resourceId === `${nodeId}:${dockerId}`);
+    return ok({ container, nodeOnline, managedDeployment, activeOperation, attentionItems, maintenance });
   } catch (error) {
     return fromError(error);
   }

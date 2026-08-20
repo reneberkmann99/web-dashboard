@@ -843,3 +843,33 @@ unchanged.
   offline/recovery with grouped impact, unhealthy/recovery with direct log
   navigation, crash-loop threshold/recovery, managed `DEGRADED` semantics, and
   a failed operation appearing in Recent failures.
+
+# Phase 6E — attention lifecycle, notification delivery and HTTPS
+
+Phase 6E extends (rather than replaces) `AttentionState`. Operator-entered
+state lives in separate append-only/policy relations:
+`AttentionAcknowledgement`, `AttentionSilence`, and `MaintenanceWindow`.
+Logical notification transitions and their individual attempts live in
+`NotificationEvent` and `NotificationDelivery`; destinations are global/admin
+only and store encrypted URL/auth/signing material. Partial/check constraints
+enforce one active acknowledgement and exact scope targets.
+
+Attention sync creates idempotent opened/escalated/resolved events from backend
+condition transitions. A database-backed worker performs signed webhook HTTP
+outside the poll transaction, persists bounded attempts, recovers pending work
+after restart, and exposes pipeline failures without recursively notifying
+about them. Silence/maintenance are delivery policy only: health and severity
+never change. Expiry/end processing is backend-owned and idempotent.
+
+Browser TLS terminates at a read-only nginx proxy on the existing VPN-only host
+port 1337. The Next.js port is Compose-internal. Self-signed material persists
+at `/etc/hostpanel/tls`, includes the real WireGuard/Meshnet IP SANs, and is
+never regenerated at container startup. SSE has explicit no-buffering rules;
+secure cookies, proxy-overwritten forwarded headers and HTTPS notification deep
+links complete the same-origin HTTPS boundary. See `docs/HTTPS-TLS.md` and
+`docs/NOTIFICATIONS.md`.
+
+Host-disk telemetry remains explicit: TCP Docker agents or layouts where the
+socket path is not on the host data filesystem must bind the Docker data
+filesystem read-only and set `AGENT_HOST_DISK_PATH`. Missing telemetry is
+reported UNKNOWN/unavailable, never healthy.

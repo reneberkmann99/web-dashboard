@@ -20,6 +20,7 @@ import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
 import type { WorkloadDeploymentStatus } from "@/components/workloads/deployment/types";
 import { timeAgo } from "@/lib/format";
 import { humanizeAction } from "@/lib/format";
+import type { AttentionItem } from "@/types/domain";
 
 type WorkloadDetailPayload = {
   workload: {
@@ -56,7 +57,8 @@ type WorkloadDetailPayload = {
   };
   activity: Array<{ id: string; action: string; actorEmail: string | null; result: string; createdAt: string }>;
   deployment: WorkloadDeploymentStatus | null;
-  attentionItems: Array<{ id: string; severity: "critical" | "warning" | "info"; title: string; detail: string; href: string | null }>;
+  attentionItems: AttentionItem[];
+  maintenance: Array<{ id: string; scope: string; startsAt: string; endsAt: string; reason: string | null; notificationBehavior: "SUPPRESS" | "KEEP" }>;
   activeOperations: Array<{ id: string; type: string; state: string; dockerContainerId: string; requestedAt: string }>;
 };
 
@@ -146,7 +148,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
     return <p className="text-sm text-red-400">Failed to load workload.</p>;
   }
 
-  const { workload, activity, deployment, attentionItems, activeOperations } = query.data;
+  const { workload, activity, deployment, attentionItems, activeOperations, maintenance } = query.data;
   const healthVariant =
     workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : workload.health === "down" ? "danger" : "default";
   const failedOrRestarting = workload.containerSummaries.filter(
@@ -246,6 +248,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       {/* Overview */}
       {tab === "Overview" && (
         <div className="space-y-6">
+          {maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-100">MAINTENANCE until {new Date(maintenance[0].endsAt).toLocaleString()}{maintenance[0].reason ? ` — ${maintenance[0].reason}` : ""}. Underlying workload health remains authoritative.</div>}
           {attentionItems.length > 0 && (
             <div className="space-y-2">
               {attentionItems.map((item) => (
@@ -258,8 +261,10 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
                   <div>
                     <p className="text-sm font-medium">{item.title}</p>
                     <p className="text-xs text-muted">{item.detail}</p>
+                    {item.acknowledgement && <p className="mt-1 text-xs text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}
+                    {item.silence && <p className="text-xs text-muted">Notifications silenced until {new Date(item.silence.endsAt).toLocaleString()}</p>}
                   </div>
-                  <AttentionBadge severity={item.severity} />
+                  <div className="flex items-center gap-2"><AttentionBadge severity={item.severity} /><Button size="sm" variant="ghost" onClick={() => router.push(`/admin/attention?conditionId=${item.id}`)}>View issue</Button></div>
                 </div>
               ))}
             </div>

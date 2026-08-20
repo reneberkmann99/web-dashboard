@@ -13,4 +13,5 @@ dist
 /playwright/.cache/
 /playwright/.auth/
 .env.test
+deploy/tls/
 tsconfig.tsbuildinfo

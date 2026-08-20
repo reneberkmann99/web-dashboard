@@ -12,7 +12,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { TabBar } from "@/components/ui/tab-bar";
 import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
-import type { AttentionSeverity } from "@/types/domain";
+import type { AttentionItem, AttentionSeverity } from "@/types/domain";
 
 type NodeDetailPayload = {
   node: {
@@ -39,7 +39,8 @@ type NodeDetailPayload = {
     attention: AttentionSeverity | "healthy" | "unknown";
     projects: Array<{ id: string; name: string; slug: string; clientAccount: { name: string } | null; _count: { containers: number } }>;
   };
-  attentionItems: Array<{ id: string; severity: AttentionSeverity; title: string; detail: string; href: string | null }>;
+  attentionItems: AttentionItem[];
+  maintenance: Array<{ id: string; startsAt: string; endsAt: string; reason: string | null; notificationBehavior: "SUPPRESS" | "KEEP" }>;
   activity: Array<{ id: string; action: string; actorEmail: string | null; result: string; createdAt: string }>;
 };
 
@@ -84,7 +85,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
   if (detail.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
   if (detail.isError || !detail.data) return <p className="text-sm text-red-400">Failed to load node.</p>;
 
-  const { node, activity, attentionItems } = detail.data;
+  const { node, activity, attentionItems, maintenance } = detail.data;
   const offline = node.heartbeatState === "OFFLINE";
   const stale = node.heartbeatState === "STALE";
 
@@ -133,6 +134,11 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
             host connectivity.
           </p>
         )}
+        {maintenance[0] && (
+          <p className="mt-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-100">
+            MAINTENANCE until {formatDateTime(maintenance[0].endsAt)}{maintenance[0].reason ? ` — ${maintenance[0].reason}` : ""}. Underlying node state remains {node.status.toLowerCase()}.
+          </p>
+        )}
       </div>
 
       {/* Tab bar — above the panels so its position never shifts with content height */}
@@ -152,8 +158,10 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
                   <div>
                     <p className="text-sm font-medium">{item.title}</p>
                     <p className="text-xs text-muted">{item.detail}</p>
+                    {item.acknowledgement && <p className="mt-1 text-xs text-cyan-200">Acknowledged by {item.acknowledgement.acknowledgedBy}</p>}
+                    {item.silence && <p className="text-xs text-muted">Notifications silenced until {formatDateTime(item.silence.endsAt)}</p>}
                   </div>
-                  <AttentionBadge severity={item.severity} />
+                  <div className="flex items-center gap-2"><AttentionBadge severity={item.severity} /><Button size="sm" variant="ghost" onClick={() => router.push(`/admin/attention?conditionId=${item.id}`)}>View issue</Button></div>
                 </div>
               ))}
             </div>

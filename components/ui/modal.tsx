@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/components/ui/use-focus-trap";
@@ -28,6 +28,7 @@ export function Modal({
   size?: "sm" | "md" | "lg";
 }): React.JSX.Element | null {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
   useFocusTrap(ref, open, true);
 
@@ -57,7 +58,7 @@ export function Modal({
         ref={ref}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
         tabIndex={-1}
         className={cn(
           "panel w-full rounded-xl border border-border shadow-2xl outline-none",
@@ -66,7 +67,7 @@ export function Modal({
       >
         <div className="flex items-start justify-between border-b border-border px-5 py-4">
           <div>
-            <h2 id="modal-title" className="text-lg font-semibold">
+            <h2 id={titleId} className="text-lg font-semibold">
               {title}
             </h2>
             {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}

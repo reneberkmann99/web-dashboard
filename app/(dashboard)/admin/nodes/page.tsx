@@ -53,7 +53,7 @@ export default function AdminNodesPage(): React.JSX.Element {
     }
   });
 
-  const controlPlaneUrl = typeof window !== "undefined" ? window.location.origin : "http://172.28.0.1:1337";
+  const controlPlaneUrl = typeof window !== "undefined" ? window.location.origin : "";
   const enrollmentCommand = enrollment
     ? [
         "docker run -d --name hostpanel-agent \\",

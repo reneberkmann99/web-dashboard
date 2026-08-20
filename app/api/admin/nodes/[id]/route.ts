@@ -48,7 +48,8 @@ export async function GET(
     const stopped = containers.filter((c) => c.status === "stopped").length;
     const storageSummary = await nodeAgentClient.getStorageSummary(node);
 
-    const [activity, attentionMap, attentionFeed] = await Promise.all([
+    const now = new Date();
+    const [activity, attentionMap, attentionFeed, maintenance] = await Promise.all([
       prisma.auditLog.findMany({
         where: { OR: [{ targetType: "NODE", targetId: node.id }, { metadata: { path: ["nodeId"], equals: node.id } }] },
         orderBy: { createdAt: "desc" },
@@ -56,7 +57,12 @@ export async function GET(
         select: { id: true, action: true, actorEmail: true, result: true, createdAt: true }
       }),
       getAttentionMap(),
-      getAttentionFeedForAdmin()
+      getAttentionFeedForAdmin(),
+      prisma.maintenanceWindow.findMany({
+        where: { nodeId: node.id, cancelledAt: null, startsAt: { lte: now }, endsAt: { gt: now } },
+        orderBy: { endsAt: "asc" },
+        select: { id: true, startsAt: true, endsAt: true, reason: true, notificationBehavior: true }
+      })
     ]);
 
     const effectiveNode = freshNode ?? node;
@@ -91,6 +97,7 @@ export async function GET(
         counts: node._count
       },
       attentionItems: nodeAttentionItems,
+      maintenance,
       activity
     });
   } catch (error) {

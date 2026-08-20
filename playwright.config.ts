@@ -31,6 +31,10 @@ export default defineConfig({
      * live HostPanel control plane for regression/operational qualification
      * (this repo has no isolated preview deploy — see ARCHITECTURE.md). */
     baseURL: process.env.HOSTPANEL_URL ?? 'http://localhost:1337',
+    /* Phase 6E intentionally uses a private self-signed certificate. Browser
+     * qualification still verifies the certificate SAN/fingerprint
+     * separately with OpenSSL; Playwright may bypass only the trust warning. */
+    ignoreHTTPSErrors: process.env.HOSTPANEL_IGNORE_HTTPS_ERRORS === '1',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
