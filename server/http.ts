@@ -40,6 +40,12 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "NOT_FOUND") {
       return fail("NOT_FOUND", "Resource not found", 404);
     }
+    if (error.message === "LAST_ADMIN") {
+      return fail("LAST_ADMIN", "Cannot remove the last active administrator", 409);
+    }
+    if (error.message === "ALREADY_ACTIVE") {
+      return fail("ALREADY_ACTIVE", "This account is already active", 409);
+    }
     if (error.message === "ATTENTION_NOT_ACTIVE") {
       return fail("ATTENTION_NOT_ACTIVE", "The attention condition is no longer active", 409);
     }

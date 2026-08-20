@@ -39,6 +39,7 @@ export default function AdminUsersPage(): React.JSX.Element {
   const [clientAccountId, setClientAccountId] = useState("");
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
   const [confirmDisable, setConfirmDisable] = useState<UserRecord | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<UserRecord | null>(null);
 
   const query = useQuery({
     queryKey: ["admin-users"],
@@ -73,12 +74,43 @@ export default function AdminUsersPage(): React.JSX.Element {
         method: "PATCH",
         body: JSON.stringify(input)
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] })
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Update failed")
+  });
+
+  const resendMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ activationUrl: string; activationExpiresAt: string }>(`/api/admin/users/${id}/resend-activation`, {
+        method: "POST"
+      }),
+    onSuccess: (data) => {
+      toast.success("Activation link regenerated");
+      setActivationUrl(data.activationUrl);
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Resend failed")
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ deleted: boolean }>(`/api/admin/users/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("User deleted");
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Delete failed")
   });
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     createMutation.mutate();
+  }
+
+  function statusLabel(user: UserRecord): string {
+    if (!user.isActive) {
+      return user.pending ? "Pending activation" : "Disabled";
+    }
+    return "Active";
   }
 
   return (
@@ -145,7 +177,7 @@ export default function AdminUsersPage(): React.JSX.Element {
       <Card className="panel">
         <CardHeader>
           <CardTitle>Users</CardTitle>
-          <CardDescription>Role changes take effect on the user&apos;s next request.</CardDescription>
+          <CardDescription>Disable to revoke access reversibly; delete to permanently remove the account.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {query.isLoading ? (
@@ -175,7 +207,30 @@ export default function AdminUsersPage(): React.JSX.Element {
                       <p>{user.displayName}</p>
                       <p className="text-xs text-muted">{user.email}</p>
                     </td>
-                    <td className="py-3">{user.clientAccount?.name ?? "—"}</td>
+                    <td className="py-3">
+                      {user.role === "ADMIN" ? (
+                        <span className="text-muted">—</span>
+                      ) : (
+                        <Select
+                          value={user.clientAccountId ?? ""}
+                          onChange={(event) =>
+                            updateMutation.mutate({
+                              id: user.id,
+                              role: user.role,
+                              isActive: user.isActive,
+                              clientAccountId: event.target.value || null
+                            })
+                          }
+                        >
+                          <option value="">Unassigned</option>
+                          {(query.data?.clients ?? []).map((client) => (
+                            <option key={client.id} value={client.id}>
+                              {client.name}
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                    </td>
                     <td className="py-3">
                       <Select
                         value={user.role}
@@ -198,20 +253,36 @@ export default function AdminUsersPage(): React.JSX.Element {
                     <td className="py-3">
                       {user.isActive ? (
                         <span className="text-success-foreground">Active</span>
+                      ) : user.pending ? (
+                        <span className="text-warning-foreground">Pending activation</span>
                       ) : (
-                        <span className="text-warning-foreground">Pending</span>
+                        <span className="text-critical-foreground">Disabled</span>
                       )}
                     </td>
                     <td className="py-3">
                       <Menu
                         label={`Actions for ${user.displayName}`}
-                        items={[{
-                          label: user.isActive ? "Disable user" : "Enable user",
-                          tone: user.isActive ? "danger" : "default",
-                          onSelect: () => user.isActive
-                            ? setConfirmDisable(user)
-                            : updateMutation.mutate({ id: user.id, role: user.role, isActive: true, clientAccountId: user.clientAccountId })
-                        }]}
+                        items={[
+                          ...(user.pending
+                            ? [{
+                                label: "Resend activation",
+                                tone: "default" as const,
+                                onSelect: () => resendMutation.mutate(user.id)
+                              }]
+                            : []),
+                          {
+                            label: user.isActive ? "Disable user" : "Enable user",
+                            tone: "default" as const,
+                            onSelect: () => user.isActive
+                              ? setConfirmDisable(user)
+                              : updateMutation.mutate({ id: user.id, role: user.role, isActive: true, clientAccountId: user.clientAccountId })
+                          },
+                          {
+                            label: "Delete user",
+                            tone: "danger" as const,
+                            onSelect: () => setConfirmDelete(user)
+                          }
+                        ]}
                       />
                     </td>
                   </tr>
@@ -230,8 +301,21 @@ export default function AdminUsersPage(): React.JSX.Element {
           setConfirmDisable(null);
         }}
         title={`Disable ${confirmDisable?.displayName ?? "this user"}?`}
-        impact="They will lose access on their next request."
+        impact="They will lose access on their next request. This is reversible."
         confirmLabel="Disable user"
+        danger
+      />
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={async () => {
+          if (confirmDelete) await deleteMutation.mutateAsync(confirmDelete.id);
+          setConfirmDelete(null);
+        }}
+        title={`Delete ${confirmDelete?.displayName ?? "this user"}?`}
+        impact={`${confirmDelete?.email ?? "This user"} will be permanently removed and can no longer authenticate. Their past actions remain in Activity/Audit history. This cannot be undone.`}
+        confirmLabel="Delete user"
         danger
       />
     </div>

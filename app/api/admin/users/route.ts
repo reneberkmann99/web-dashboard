@@ -33,7 +33,13 @@ export async function GET(): Promise<Response> {
       })
     ]);
 
-    return ok({ users, clients });
+    // `pending` distinguishes "invited, not yet activated" from "deactivated".
+    const usersWithState = users.map(({ activationToken, ...rest }) => ({
+      ...rest,
+      pending: !rest.isActive && activationToken?.usedAt == null
+    }));
+
+    return ok({ users: usersWithState, clients });
   } catch (error) {
     return fromError(error);
   }

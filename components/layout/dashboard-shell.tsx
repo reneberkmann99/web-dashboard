@@ -219,6 +219,10 @@ function DashboardShellInner({
               trigger={<><span className="max-w-36 truncate">{session.displayName}</span><ChevronDown className="ml-1 h-3.5 w-3.5" /></>}
               items={[
                 {
+                  label: "Account settings",
+                  onSelect: () => router.push("/account")
+                },
+                {
                   label: "Sign out",
                   tone: "danger",
                   onSelect: () => {

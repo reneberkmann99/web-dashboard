@@ -4,6 +4,7 @@ import { fromError, fail, ok } from "@/server/http";
 import { updateUserSchema, cuidParamSchema } from "@/server/validation/admin";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
+import { deleteUser } from "@/server/services/user-lifecycle";
 
 export async function PATCH(
   request: Request,
@@ -60,6 +61,26 @@ export async function PATCH(
     });
 
     return ok({ success: true });
+  } catch (error) {
+    return fromError(error);
+  }
+}
+
+/**
+ * DELETE /api/admin/users/:id — hard-delete a user (removes PPI, preserves
+ * audit history via actor snapshots). Refuses to remove the last active admin.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<Response> {
+  try {
+    const session = await requireApiRole("ADMIN");
+    const sourceIp = getSourceIpFromRequest(request);
+    const id = cuidParamSchema.parse((await params).id);
+
+    const snapshot = await deleteUser(session, id, sourceIp);
+    return ok({ id: snapshot.id, deleted: true });
   } catch (error) {
     return fromError(error);
   }

@@ -259,6 +259,7 @@ export type UserRecord = {
   displayName: string;
   role: UserRole;
   isActive: boolean;
+  pending: boolean;
   clientAccountId: string | null;
   clientAccount: { id: string; name: string } | null;
 };

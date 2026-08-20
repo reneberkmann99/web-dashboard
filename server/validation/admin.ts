@@ -43,6 +43,21 @@ export const activateAccountSchema = z.object({
     .regex(/\d/, "Must contain at least one digit")
 });
 
+/** Self-service profile update: display name only (role/client are admin-managed). */
+export const updateSelfSchema = z.object({
+  displayName: z.string().min(2).max(100)
+});
+
+/** Self-service password change (LOCAL accounts only). */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: z.string().min(12).max(128).regex(/[a-zA-Z]/, "Must contain at least one letter")
+    .regex(/\d/, "Must contain at least one digit")
+}).refine((v) => v.currentPassword !== v.newPassword, {
+  message: "New password must differ from the current password",
+  path: ["newPassword"]
+});
+
 export const createNodeSchema = z.object({
   name: z.string().min(2).max(120),
   hostname: z.string().min(2).max(255),

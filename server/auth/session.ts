@@ -119,6 +119,18 @@ export async function destroySessionByToken(rawToken: string): Promise<void> {
     .catch(() => undefined);
 }
 
+/**
+ * Invalidate every session for a user except the caller's current session
+ * (self-service "log out other sessions"). Never deletes the current
+ * session row, so the caller stays authenticated.
+ */
+export async function destroyOtherSessions(userId: string, exceptSessionId: string): Promise<number> {
+  const result = await prisma.session.deleteMany({
+    where: { userId, id: { not: exceptSessionId } }
+  });
+  return result.count;
+}
+
 export function sessionCookieName(): string {
   return SESSION_COOKIE;
 }
