@@ -33,7 +33,7 @@ export type ExecutionEligibility = {
 
 const REASON_MESSAGES: Record<EligibilityReason, string> = {
   NODE_DISABLED: "Node is disabled or inactive.",
-  AGENT_CA_NOT_CONFIGURED: "The HostPanel Agent CA is not configured on the control plane.",
+  AGENT_CA_NOT_CONFIGURED: "The Noderaft Agent CA is not configured on the control plane.",
   AGENT_TLS_NOT_VERIFIED:
     "Managed deployment is unavailable on this node because secure agent transport has not been configured.",
   NO_TLS_ENDPOINT: "Node has no verified HTTPS endpoint.",

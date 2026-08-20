@@ -6,7 +6,7 @@ import { FindingCategory, FindingSeverity } from "@prisma/client";
  * Compose security / policy analyzer (Stage A of managed-deployment validation).
  *
  * Runs entirely in the control plane, WITHOUT `docker compose` and WITHOUT any
- * real secret values. It parses the HostPanel-authored Compose source (YAML)
+ * real secret values. It parses the Noderaft-authored Compose source (YAML)
  * and produces findings classified by category + severity:
  *
  *   category SECURITY     -> severity INFO | WARNING | HIGH_RISK | BLOCKED
@@ -210,7 +210,7 @@ function analyzeVolumeMount(
         service: serviceName,
         resourcePath,
         settingValue: source,
-        message: `Relative bind source "${source}" is not supported by HostPanel managed deployments yet. Use an absolute host path or a named Docker volume.`
+        message: `Relative bind source "${source}" is not supported by Noderaft managed deployments yet. Use an absolute host path or a named Docker volume.`
       });
       return;
     }
@@ -377,7 +377,7 @@ function analyzeService(
       service: serviceName,
       resourcePath: `${base}.env_file`,
       settingValue: JSON.stringify(s.env_file),
-      message: `Service "${serviceName}" uses env_file, which is not supported by HostPanel managed deployments yet.`
+      message: `Service "${serviceName}" uses env_file, which is not supported by Noderaft managed deployments yet.`
     });
   }
 
@@ -389,7 +389,7 @@ function analyzeService(
       service: serviceName,
       resourcePath: `${base}.build`,
       settingValue: null,
-      message: `Service "${serviceName}" uses build, which is not supported by HostPanel managed deployments yet (HostPanel pulls images only).`
+      message: `Service "${serviceName}" uses build, which is not supported by Noderaft managed deployments yet (Noderaft pulls images only).`
     });
   }
 
@@ -472,7 +472,7 @@ export const CLIENT_BLOCKED_RULES = new Set<string>([
 export type DeploymentSecurityPolicy = "ADMIN" | "CLIENT";
 
 /**
- * Analyze the HostPanel-authored Compose source. Returns findings (possibly
+ * Analyze the Noderaft-authored Compose source. Returns findings (possibly
  * empty). Never touches the network, Docker, or secret values.
  *
  * Under CLIENT policy, the sandbox rules above are escalated to BLOCKED.
@@ -519,7 +519,7 @@ export function analyzeComposeDefinition(input: {
       severity: "BLOCKED",
       category: "UNSUPPORTED",
       resourcePath: "include",
-      message: "Compose `include` fragments are not supported by HostPanel managed deployments yet."
+      message: "Compose `include` fragments are not supported by Noderaft managed deployments yet."
     });
   }
   if (obj.secrets !== undefined && obj.secrets !== null) {
@@ -528,7 +528,7 @@ export function analyzeComposeDefinition(input: {
       severity: "BLOCKED",
       category: "UNSUPPORTED",
       resourcePath: "secrets",
-      message: "Top-level Compose `secrets` (file-backed) are not supported. Use HostPanel managed secrets instead."
+      message: "Top-level Compose `secrets` (file-backed) are not supported. Use Noderaft managed secrets instead."
     });
   }
   if (obj.configs !== undefined && obj.configs !== null) {
@@ -537,7 +537,7 @@ export function analyzeComposeDefinition(input: {
       severity: "BLOCKED",
       category: "UNSUPPORTED",
       resourcePath: "configs",
-      message: "Top-level Compose `configs` (file-backed) are not supported by HostPanel managed deployments yet."
+      message: "Top-level Compose `configs` (file-backed) are not supported by Noderaft managed deployments yet."
     });
   }
 
@@ -557,7 +557,7 @@ export function analyzeComposeDefinition(input: {
         service: typeof ref.path[1] === "string" ? ref.path[1] : null,
         resourcePath: ref.path.join("."),
         settingValue: ref.varName,
-        message: `Secret "${ref.varName}" is referenced outside a service environment value (at ${ref.path.join(".")}). HostPanel managed secrets may only supply service environment values in v1.`
+        message: `Secret "${ref.varName}" is referenced outside a service environment value (at ${ref.path.join(".")}). Noderaft managed secrets may only supply service environment values in v1.`
       });
     }
   }

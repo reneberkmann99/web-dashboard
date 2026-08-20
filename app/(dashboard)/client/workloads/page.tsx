@@ -7,6 +7,7 @@ import { AttentionBadge } from "@/components/ui/attention-badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import type { WorkloadSummary } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 
@@ -46,15 +47,14 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">Workloads</h1>
-          <p className="text-muted">The services assigned to you.</p>
-        </div>
-        <Button size="sm" onClick={() => router.push("/client/workloads/new")}>
+      <PageHeader
+        eyebrow="Services"
+        title="Workloads"
+        description="The services assigned to you."
+        actions={<Button size="sm" onClick={() => router.push("/client/workloads/new")}>
           New workload
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <DataTable
         columns={columns}

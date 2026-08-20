@@ -13,6 +13,7 @@ import { DeploymentsTab } from "@/components/workloads/deployment/deployments-ta
 import { SecretsTab } from "@/components/workloads/deployment/secrets-tab";
 import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type ContainersPayload = { containers: ContainerView[] };
@@ -77,23 +78,20 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <button type="button" onClick={() => router.push("/client/workloads")} className="mb-1 text-sm text-accent hover:underline">
-          ← Workloads
-        </button>
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-semibold">{workload.name}</h1>
+      <PageHeader
+        eyebrow="Workload"
+        title={workload.name}
+        back={<button type="button" onClick={() => router.push("/client/workloads")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Workloads</button>}
+        description={<span>{workload.nodeName} · <span className="font-mono">{workload.runningContainers}/{workload.totalContainers}</span> running</span>}
+        actions={<>
           <Badge variant={workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : "danger"}>{workload.health}</Badge>
           {deployment?.managed && (
             <Badge variant={deployment.runtimeState === "CONVERGED" ? "success" : deployment.runtimeState === "DEGRADED" ? "warning" : "default"}>
               {deployment.runtimeState ?? "UNMANAGED"}
             </Badge>
           )}
-        </div>
-        <p className="text-muted">
-          {workload.nodeName} · {workload.runningContainers}/{workload.totalContainers} running
-        </p>
-      </div>
+        </>}
+      />
 
       {/* Tab bar — above the panels so its position never shifts with content height */}
       <TabBar

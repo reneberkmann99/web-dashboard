@@ -13,7 +13,7 @@ export function Badge({
       className={cn(
         "inline-flex items-center rounded-md border border-transparent px-2 py-0.5 text-xs font-medium leading-5",
         variant === "default" && "bg-surface-raised text-text-muted",
-        variant === "success" && "border-success/20 bg-success/15 text-success-foreground",
+        variant === "success" && "border-border bg-surface-raised/70 text-text-muted before:mr-1.5 before:h-1.5 before:w-1.5 before:rounded-full before:bg-success",
         variant === "warning" && "border-warning/20 bg-warning/15 text-warning-foreground",
         variant === "danger" && "border-critical/20 bg-critical/15 text-critical-foreground",
         variant === "info" && "border-info/20 bg-info/15 text-info-foreground",

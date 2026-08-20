@@ -5,7 +5,7 @@ import { fromError, fail, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
 
 /**
- * Create a NEW HostPanel-managed deployment definition (authoring only).
+ * Create a NEW Noderaft-managed deployment definition (authoring only).
  * Creates a COMPOSE Project + Deployment + immutable Revision #1 + findings +
  * acknowledgements. NO Docker workload is created or mutated in any way.
  */

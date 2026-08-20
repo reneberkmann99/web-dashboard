@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Compass, Boxes, Layers, HardDrive, AlertTriangle, Check, ArrowLeft, ArrowRight, X } from "lucide-react";
+import { Boxes, Layers, HardDrive, AlertTriangle, Check, ArrowLeft, ArrowRight, X } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { timeAgo } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 
 type DiscoveredProject = {
   nodeId: string;
@@ -212,19 +213,12 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <button type="button" onClick={() => router.push("/admin/workloads")} className="mb-1 text-sm text-accent hover:underline">
-          ← Workloads
-        </button>
-        <div className="flex items-center gap-2">
-          <Compass className="h-6 w-6 text-accent" />
-          <h1 className="text-3xl font-semibold">Compose discovery</h1>
-        </div>
-        <p className="text-muted">
-          Docker Compose projects detected on your nodes. Adopt one as a Noderaft workload — nothing is modified on
-          the Docker side by discovery or adoption.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Workload intake"
+        title="Compose discovery"
+        back={<button type="button" onClick={() => router.push("/admin/workloads")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Workloads</button>}
+        description={<span>Docker Compose projects detected on your nodes. Adopt one as a Noderaft workload — nothing is modified on the Docker side by discovery or adoption.</span>}
+      />
 
       <DataTable
         columns={columns}

@@ -8,7 +8,7 @@ import {
   BellRing,
   Boxes,
   LayoutDashboard,
-  LogOut,
+  ChevronDown,
   Search,
   Server,
   Settings,
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { isClientRole } from "@/types/domain";
 import { CommandPalette } from "@/components/search/command-palette";
 import { NoderaftLogo } from "@/components/brand/noderaft-logo";
+import { Menu } from "@/components/ui/menu";
 
 type ShellSession = {
   displayName: string;
@@ -92,10 +93,10 @@ export function DashboardShell({
           <NoderaftLogo priority />
         </Link>
 
-        <div className="mt-5 rounded-panel border border-border bg-surface-raised/70 p-4">
-          <p className="mt-3 font-medium">{session.displayName}</p>
+        <div className="mt-5 border-y border-border py-3">
+          <p className="font-medium">{session.displayName}</p>
           <p className="truncate font-mono text-[11px] text-text-muted">{session.email}</p>
-          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-brand">
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-text-subtle">
             {isAdmin ? "Administrator" : session.clientAccountName}
           </p>
         </div>
@@ -161,18 +162,23 @@ export function DashboardShell({
               <span>Search</span>
               <kbd className="rounded-sm border border-border px-1.5 text-[10px]">⌘K</kbd>
             </button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={async () => {
-                await fetch("/api/auth/logout", { method: "POST" });
-                router.push("/login");
-                router.refresh();
-              }}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
+            <Menu
+              label="Open account menu"
+              trigger={<><span className="max-w-36 truncate">{session.displayName}</span><ChevronDown className="ml-1 h-3.5 w-3.5" /></>}
+              items={[
+                {
+                  label: "Sign out",
+                  tone: "danger",
+                  onSelect: () => {
+                    void (async () => {
+                      await fetch("/api/auth/logout", { method: "POST" });
+                      router.push("/login");
+                      router.refresh();
+                    })();
+                  }
+                }
+              ]}
+            />
           </div>
         </header>
 

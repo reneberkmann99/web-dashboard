@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogViewer } from "@/components/logs/log-viewer";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type DetailResponse = {
   container: ContainerView;
@@ -103,10 +104,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Container details</h1>
-        <p className="text-muted">Live state, safe metadata, and recent logs.</p>
-      </div>
+      <PageHeader eyebrow="Container" title={container?.name ?? "Container details"} description="Live state, safe metadata, and recent logs." />
 
       {detail.isLoading || !container ? (
         detail.isError ? (

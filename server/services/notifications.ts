@@ -54,7 +54,7 @@ function conditionHref(state: NotificationConditionState, workloadId: string | n
   return null;
 }
 
-function absoluteHostPanelUrl(relative: string | null): string | null {
+function absoluteNoderaftUrl(relative: string | null): string | null {
   if (!relative) return null;
   return new URL(relative, publicBaseUrl()).toString();
 }
@@ -115,7 +115,7 @@ export async function createConditionNotificationEvent(input: {
     firstObservedAt: input.state.firstObservedAt.toISOString(),
     lastObservedAt: input.state.lastObservedAt.toISOString(),
     resolvedAt: input.state.resolvedAt?.toISOString() ?? null,
-    url: absoluteHostPanelUrl(relativeUrl)
+    url: absoluteNoderaftUrl(relativeUrl)
   };
 
   let eventId: string = id;
@@ -511,7 +511,7 @@ export async function sendTestNotification(input: {
     eventId: id,
     event: "TEST_NOTIFICATION",
     severity: "INFO",
-    summary: "HostPanel test notification",
+    summary: "Noderaft test notification",
     detail: "This test does not represent an operational condition.",
     url: publicBaseUrl().toString()
   };
@@ -521,7 +521,7 @@ export async function sendTestNotification(input: {
       dedupeKey: `test:${id}`,
       type: "TEST_NOTIFICATION",
       severity: "INFO",
-      summary: "HostPanel test notification",
+      summary: "Noderaft test notification",
       payload
     }
   });
@@ -730,9 +730,9 @@ let workerTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startNotificationWorker(intervalMs = 5_000): void {
   if (workerTimer) return;
-  void sweepNotificationSystem().catch((error) => console.error("[HostPanel] notification worker sweep failed", error));
+  void sweepNotificationSystem().catch((error) => console.error("[Noderaft] notification worker sweep failed", error));
   workerTimer = setInterval(() => {
-    void sweepNotificationSystem().catch((error) => console.error("[HostPanel] notification worker sweep failed", error));
+    void sweepNotificationSystem().catch((error) => console.error("[Noderaft] notification worker sweep failed", error));
   }, intervalMs);
   workerTimer.unref?.();
 }

@@ -1,4 +1,4 @@
-# HostPanel Node Agent
+# Noderaft Agent
 
 The node agent runs on each host and exposes a secure internal API for container monitoring and control.
 

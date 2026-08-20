@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-echo "[HostPanel] Running database migrations..."
+echo "[Noderaft] Running database migrations..."
 node ./node_modules/prisma/build/index.js migrate deploy
 
-echo "[HostPanel] Starting server..."
+echo "[Noderaft] Starting server..."
 exec node server.js

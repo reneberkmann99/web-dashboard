@@ -53,7 +53,7 @@ export function readTlsMaterial(): { key: string; cert: string; ca: string } | n
 
 /**
  * Generate a fresh keypair + CSR locally. The CSR subject is a placeholder —
- * the control plane ignores it and assigns the HostPanel-controlled identity.
+ * the control plane ignores it and assigns the Noderaft-controlled identity.
  * The private key is written as a CANDIDATE and only promoted after the
  * control plane verifies the issued certificate works.
  */

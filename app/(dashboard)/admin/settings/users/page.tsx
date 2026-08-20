@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import type { UserRecord, UserRole, NameRef } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type UsersPayload = {
   users: UserRecord[];
@@ -79,10 +80,7 @@ export default function AdminUsersPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">User management</h1>
-        <p className="text-muted">Invite users; they set their own password via a one-time link.</p>
-      </div>
+      <PageHeader eyebrow="Access" title="User management" description="Invite users; they set their own password via a one-time Noderaft activation link." />
 
       <Card className="panel">
         <CardHeader>

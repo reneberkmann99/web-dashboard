@@ -3,12 +3,12 @@ import crypto from "node:crypto";
 import forge from "node-forge";
 
 /**
- * HostPanel Agent PKI (Phase 6B.1).
+ * Noderaft Agent PKI (Phase 6B.1).
  *
- * A small internal CA that issues SERVER certificates for HostPanel node
+ * A small internal CA that issues SERVER certificates for Noderaft node
  * agents. The agent generates its own private key locally and sends only a
  * CSR; the control plane signs a certificate whose identity is chosen by
- * HostPanel (never taken from the CSR).
+ * Noderaft (never taken from the CSR).
  *
  * Trust model: server-authenticated TLS (agent proves it is the expected node)
  * PLUS the existing per-node HMAC (proves the request came from the control
@@ -55,7 +55,7 @@ function readCaKeyPem(): string {
 }
 
 /**
- * Logical, HostPanel-controlled node identity. Deliberately NOT the node's IP
+ * Logical, Noderaft-controlled node identity. Deliberately NOT the node's IP
  * or management hostname, so changing a node's address never invalidates its
  * certificate. Used as the TLS servername (SNI) + verified SAN.
  */
@@ -101,8 +101,8 @@ export function bootstrapCa(options?: { years?: number }): { certPath: string; k
   cert.validity.notBefore = new Date(Date.now() - 5 * 60 * 1000);
   cert.validity.notAfter = new Date(Date.now() + years * 365 * 24 * 60 * 60 * 1000);
   const attrs = [
-    { name: "commonName", value: "HostPanel Agent CA" },
-    { name: "organizationName", value: "HostPanel" }
+    { name: "commonName", value: "Noderaft Agent CA" },
+    { name: "organizationName", value: "Noderaft" }
   ];
   cert.setSubject(attrs);
   cert.setIssuer(attrs);
@@ -127,7 +127,7 @@ export function bootstrapCa(options?: { years?: number }): { certPath: string; k
 
 /**
  * Sign a node agent CSR. The CSR supplies ONLY the public key; the subject and
- * every SAN are chosen by HostPanel from the Node record. Any SAN/subject the
+ * every SAN are chosen by Noderaft from the Node record. Any SAN/subject the
  * CSR requested is ignored.
  */
 export function signNodeCsr(input: {
@@ -167,10 +167,10 @@ export function signNodeCsr(input: {
   cert.validity.notBefore = new Date(Date.now() - 5 * 60 * 1000);
   cert.validity.notAfter = new Date(Date.now() + lifetimeDays * 24 * 60 * 60 * 1000);
 
-  // Subject/SAN are HostPanel-controlled — CSR-requested values are discarded.
+  // Subject/SAN are Noderaft-controlled — CSR-requested values are discarded.
   cert.setSubject([
     { name: "commonName", value: identity },
-    { name: "organizationName", value: "HostPanel Agent" }
+    { name: "organizationName", value: "Noderaft Agent" }
   ]);
   cert.setIssuer(caCert.subject.attributes);
   cert.setExtensions([

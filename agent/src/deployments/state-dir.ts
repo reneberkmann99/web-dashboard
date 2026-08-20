@@ -4,7 +4,7 @@ import path from "node:path";
 /**
  * Agent deployment state directory (Phase 6B.3).
  *
- * HostPanel-owned files live ONLY under <state-dir>/deployments/<deploymentId>/.
+ * Noderaft-owned files live ONLY under <state-dir>/deployments/<deploymentId>/.
  * Externally managed Compose directories are never touched. IDs are strictly
  * sanitized (alphanumeric + _/-, no '/', '.', '..'), which structurally
  * prevents traversal; a resolve-prefix containment check is added as

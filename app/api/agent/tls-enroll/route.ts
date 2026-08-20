@@ -6,7 +6,7 @@ import { fail, ok, fromError } from "@/server/http";
 /**
  * Agent TLS enrollment. Called BY THE AGENT (no browser session), authenticated
  * by a short-lived one-time enrollment token. The agent sends only a CSR — its
- * private key never leaves the node. HostPanel ignores CSR-requested subject/
+ * private key never leaves the node. Noderaft ignores CSR-requested subject/
  * SANs and assigns its own logical node identity.
  */
 const tlsEnrollSchema = z.object({

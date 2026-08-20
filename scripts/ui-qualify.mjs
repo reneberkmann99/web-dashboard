@@ -163,11 +163,11 @@ async function main() {
   check((await bodyText(page)).includes(`ui_marker: ${MARKER_REV}`), "diff shows the added line");
 
   await page.getByRole("button", { name: /Generate deployment plan/i }).click();
-  await waitForText(page, "HostPanel will NOT");
+  await waitForText(page, "Noderaft will NOT");
   await shot(page, "plan-view");
   text = await bodyText(page);
   check(text.includes("keep"), "plan shows persistent resources as KEEP");
-  check(text.includes("hostpanel will not"), "plan states non-destructive guarantees");
+  check(text.includes("noderaft will not"), "plan states non-destructive guarantees");
   check(text.includes("docker compose down"), "plan mentions no down");
 
   await page.getByRole("button", { name: /Deploy revision/i }).click();
@@ -222,7 +222,7 @@ async function main() {
   await page.getByRole("button", { name: /Save as new revision/i }).click();
   await waitForText(page, "Changes vs revision");
   await page.getByRole("button", { name: /Generate deployment plan/i }).click();
-  await waitForText(page, "HostPanel will NOT");
+  await waitForText(page, "Noderaft will NOT");
 
   // Another admin rotates the secret (supported API, in-page origin) — makes
   // the on-screen plan stale.
@@ -246,7 +246,7 @@ async function main() {
   check((await bodyText(page)).includes("generate new plan"), "stale-plan banner offers plan regeneration");
 
   await page.getByRole("button", { name: /Generate new plan/i }).click();
-  await waitForText(page, "HostPanel will NOT", 30000);
+  await waitForText(page, "Noderaft will NOT", 30000);
   await shot(page, "stale-plan-regenerated");
   await page.getByRole("button", { name: /Deploy revision/i }).click();
   await waitForText(page, "Deployment completed successfully", 120000);
@@ -272,7 +272,7 @@ async function main() {
   await page.getByRole("button", { name: /Save as new revision/i }).click();
   await waitForText(page, "Changes vs revision");
   await page.getByRole("button", { name: /Generate deployment plan/i }).click();
-  await waitForText(page, "HostPanel will NOT");
+  await waitForText(page, "Noderaft will NOT");
   await page.getByRole("button", { name: /Deploy revision/i }).click();
   await waitForText(page, "health verification failed", 180000);
   await shot(page, "degraded-result");
@@ -301,7 +301,7 @@ async function main() {
   check(text.includes("current versions"), "rollback explains current secret versions are used");
   check(text.includes("not restored"), "rollback explains historical secret values are not restored");
   await page.getByRole("button", { name: /Generate rollback plan/i }).click();
-  await waitForText(page, "HostPanel will NOT", 30000);
+  await waitForText(page, "Noderaft will NOT", 30000);
   await shot(page, "rollback-plan");
   await page.getByRole("button", { name: /Confirm rollback/i }).click();
   await waitForText(page, "Deployment completed successfully", 120000);

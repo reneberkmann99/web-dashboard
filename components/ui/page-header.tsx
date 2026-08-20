@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { DocumentTitle } from "@/components/brand/document-title";
 
 export function PageHeader({
   title,
@@ -17,14 +18,17 @@ export function PageHeader({
   className?: string;
 }): React.JSX.Element {
   return (
-    <header className={cn("flex flex-wrap items-end justify-between gap-4", className)}>
-      <div className="min-w-0">
-        {back}
-        {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
-        <h1 className="page-title break-words">{title}</h1>
-        {description && <div className="mt-1 text-text-muted">{description}</div>}
-      </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-    </header>
+    <>
+      {typeof title === "string" && <DocumentTitle title={title} />}
+      <header className={cn("flex flex-wrap items-end justify-between gap-4", className)}>
+        <div className="min-w-0">
+          {back}
+          {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
+          <h1 className="page-title break-words">{title}</h1>
+          {description && <div className="mt-1 text-text-muted">{description}</div>}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      </header>
+    </>
   );
 }

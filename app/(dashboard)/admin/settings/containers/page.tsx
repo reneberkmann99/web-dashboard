@@ -9,6 +9,7 @@ import { AttentionBadge } from "@/components/ui/attention-badge";
 import { ServerDataTable } from "@/components/ui/server-data-table";
 import type { Column } from "@/components/ui/data-table";
 import type { ContainerView } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type ContainersPayload = {
   containers: ContainerView[];
@@ -116,10 +117,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">All containers</h1>
-        <p className="text-muted">Every container across all nodes, including unassigned ones.</p>
-      </div>
+      <PageHeader eyebrow="Runtime inventory" title="All containers" description="Every container across all nodes, including unassigned ones." />
 
       <div className="flex flex-wrap gap-2">
         <input

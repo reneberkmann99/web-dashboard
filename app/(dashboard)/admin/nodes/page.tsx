@@ -12,6 +12,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
 import { timeAgo } from "@/lib/format";
 import type { NodeRecord } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type NodesPayload = { nodes: NodeRecord[] };
 type EnrollmentResponse = { token: string; expiresAt: string; ttlMinutes: number; nodeId: string | null };
@@ -162,13 +163,7 @@ export default function AdminNodesPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">Nodes</h1>
-          <p className="text-muted">Where your workloads run, and whether those hosts are healthy.</p>
-        </div>
-        <Button onClick={() => setEnrollOpen(true)}>Add node</Button>
-      </div>
+      <PageHeader eyebrow="Fleet" title="Nodes" description="Where your workloads run, and whether those hosts need attention." actions={<Button onClick={() => setEnrollOpen(true)}>Add node</Button>} />
 
       <DataTable
         columns={columns}

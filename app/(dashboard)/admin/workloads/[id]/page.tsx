@@ -21,6 +21,7 @@ import type { WorkloadDeploymentStatus } from "@/components/workloads/deployment
 import { timeAgo } from "@/lib/format";
 import { humanizeAction } from "@/lib/format";
 import type { AttentionItem } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type WorkloadDetailPayload = {
   workload: {
@@ -176,27 +177,18 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin/workloads")}
-            className="mb-1 text-sm text-accent hover:underline"
-          >
-            ← Workloads
-          </button>
-          <h1 className="text-3xl font-semibold">{workload.name}</h1>
-          <p className="text-muted">
+      <PageHeader
+        eyebrow="Workload"
+        title={workload.name}
+        back={<button type="button" onClick={() => router.push("/admin/workloads")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Workloads</button>}
+        description={<div className="flex flex-wrap items-center gap-2">
+          <span>
             {workload.description ?? workload.slug} · {workload.node.name}
-            {workload.source === "COMPOSE" && (
-              <span className="ml-2 text-xs">
-                <Badge variant="default">Compose{workload.composeProject ? `: ${workload.composeProject}` : ""}</Badge>
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+          </span>
+          {workload.source === "COMPOSE" && <Badge variant="default">Compose{workload.composeProject ? `: ${workload.composeProject}` : ""}</Badge>}
           <Badge variant={healthVariant}>{workload.health}</Badge>
+        </div>}
+        actions={<>
           <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/activity?projectId=${workload.id}`)}>
             View activity
           </Button>
@@ -218,24 +210,8 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
               Restart workload
             </Button>
           )}
-        </div>
-      </div>
-
-      {activeOperations.length > 0 && (
-        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">
-          <p className="font-medium">{activeOperations.length} operation{activeOperations.length === 1 ? "" : "s"} in progress</p>
-          <p className="mt-1 text-muted">
-            {activeOperations.map((op) => `${op.type.replace("CONTAINER_", "").toLowerCase()} ${op.dockerContainerId.slice(0, 12)}`).join(" · ")}
-          </p>
-        </div>
-      )}
-
-      {failedOrRestarting.length > 0 && (
-        <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
-          {failedOrRestarting.length} container{failedOrRestarting.length > 1 ? "s" : ""} recently failed or is restarting:{" "}
-          {failedOrRestarting.map((c) => c.dockerName).join(", ")}
-        </div>
-      )}
+        </>}
+      />
 
       {/* Tab bar — above the panels so its position never shifts with content height */}
       <TabBar
@@ -244,6 +220,22 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         onChange={setTab}
         idPrefix="workload"
       />
+
+      {activeOperations.length > 0 && (
+        <div className="rounded-panel border border-info/30 bg-info/5 p-3 text-sm">
+          <p className="font-medium">{activeOperations.length} operation{activeOperations.length === 1 ? "" : "s"} in progress</p>
+          <p className="mt-1 font-mono text-xs text-text-muted">
+            {activeOperations.map((op) => `${op.type.replace("CONTAINER_", "").toLowerCase()} ${op.dockerContainerId.slice(0, 12)}`).join(" · ")}
+          </p>
+        </div>
+      )}
+
+      {failedOrRestarting.length > 0 && (
+        <div className="rounded-panel border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
+          {failedOrRestarting.length} container{failedOrRestarting.length > 1 ? "s" : ""} recently failed or is restarting:{" "}
+          {failedOrRestarting.map((c) => c.dockerName).join(", ")}
+        </div>
+      )}
 
       {/* Overview */}
       {tab === "Overview" && (

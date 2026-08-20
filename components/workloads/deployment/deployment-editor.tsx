@@ -12,6 +12,7 @@ import { OperationProgress } from "./operation-progress";
 import { OperationResultView } from "./operation-result-view";
 import { deploymentErrorMessage } from "./labels";
 import { diffLines } from "./diff";
+import { PageHeader } from "@/components/ui/page-header";
 import type {
   DeploymentOperationPayload,
   DeploymentPlanPayload,
@@ -221,22 +222,18 @@ export function DeploymentEditor({
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <button type="button" onClick={() => router.push(backHref)} className="mb-1 text-sm text-accent hover:underline">
-            ← {workloadName}
-          </button>
-          <h1 className="text-2xl font-semibold">{title}</h1>
-          <p className="text-sm text-muted">
+      <PageHeader
+        eyebrow="Managed deployment"
+        title={title}
+        back={<button type="button" onClick={() => router.push(backHref)} className="mb-2 text-sm text-brand hover:text-brand-hover">← {workloadName}</button>}
+        description={<span>
             {savedRevision
               ? `Working on revision ${savedRevision.revisionNumber}`
               : currentRelease
                 ? `Current runtime revision: ${currentRelease.revisionNumber}`
                 : "No deployment yet"}
-          </p>
-        </div>
-        {step !== "progress" && (
-          <div className="flex gap-2">
+          </span>}
+        actions={step !== "progress" ? <>
             {step === "review" && (
               <Button size="sm" variant="secondary" onClick={() => setStep("edit")}>
                 Back to editor
@@ -247,9 +244,8 @@ export function DeploymentEditor({
                 Back
               </Button>
             )}
-          </div>
-        )}
-      </div>
+          </> : undefined}
+      />
 
       {activeOperation && step !== "progress" && (
         <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">

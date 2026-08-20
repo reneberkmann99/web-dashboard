@@ -10,6 +10,7 @@ import type { Column } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 
 type AuditEntry = {
   id: string;
@@ -109,10 +110,7 @@ export default function AdminActivityPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Activity</h1>
-        <p className="text-muted">What happened across the platform.</p>
-      </div>
+      <PageHeader eyebrow="Audit trail" title="Activity" description="What happened across the platform." />
 
       {hasDeepLink && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-panelAlt px-3 py-2 text-sm">

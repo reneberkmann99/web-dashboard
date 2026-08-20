@@ -40,7 +40,7 @@ trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
 umask 077
 openssl req -x509 -newkey rsa:3072 -sha256 -nodes \
   -days "$valid_days" \
-  -subj "/CN=HostPanel Private VPN/O=HostPanel" \
+  -subj "/CN=Noderaft Private VPN/O=Noderaft" \
   -addext "subjectAltName=$subject_alt_name" \
   -addext "basicConstraints=critical,CA:FALSE" \
   -addext "keyUsage=critical,digitalSignature,keyEncipherment" \

@@ -13,6 +13,7 @@ import { LogViewer } from "@/components/logs/log-viewer";
 import { shortId, timeAgo } from "@/lib/format";
 import type { AttentionItem, ContainerView, OperationView, OperationState } from "@/types/domain";
 import { AttentionBadge } from "@/components/ui/attention-badge";
+import { PageHeader } from "@/components/ui/page-header";
 
 type DetailResponse = {
   container: ContainerView;
@@ -115,7 +116,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
     );
   }
 
-  // §31: a direct action on a container that belongs to a HostPanel-managed
+  // §31: a direct action on a container that belongs to a Noderaft-managed
   // workload must never look like it created a deployment release — the
   // confirm dialog says so explicitly rather than pretending it's the same
   // operation as the deployment workflow.
@@ -141,16 +142,12 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <button type="button" onClick={() => router.back()} className="text-sm text-accent hover:underline">
-        ← Back
-      </button>
-
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">{container.name}</h1>
-          <p className="text-muted">{container.image}</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        eyebrow="Container"
+        title={container.name}
+        back={<button type="button" onClick={() => router.back()} className="mb-2 text-sm text-brand hover:text-brand-hover">← Back</button>}
+        description={<span className="font-mono text-sm">{container.image}</span>}
+        actions={<>
           <Badge
             variant={
               container.status === "running" ? "success" : container.status === "stopped" ? "danger" : "warning"
@@ -159,8 +156,8 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
             {container.status}
           </Badge>
           {!nodeOnline && <Badge variant="danger">Node unreachable</Badge>}
-        </div>
-      </div>
+        </>}
+      />
 
       {detail.data?.maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">MAINTENANCE until {new Date(detail.data.maintenance[0].endsAt).toLocaleString()}{detail.data.maintenance[0].reason ? ` — ${detail.data.maintenance[0].reason}` : ""}. Container state remains {container.status}.</div>}
 

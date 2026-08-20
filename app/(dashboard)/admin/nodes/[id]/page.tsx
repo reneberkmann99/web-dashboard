@@ -111,29 +111,28 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <PageHeader
+      <PageHeader
           eyebrow="Node"
           title={node.name}
           back={<button type="button" onClick={() => router.push("/admin/nodes")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Nodes</button>}
           description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span><Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale heartbeat" : "online"}</Badge>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
           actions={<Button variant="outline" size="sm" onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}>View activity →</Button>}
-        />
-        {offline && (
+      />
+
+      {/* Tab bar — directly after the page header; status content follows it. */}
+      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="node" />
+
+      {offline && (
           <p className="mt-2 rounded-lg border border-critical/30 bg-critical/5 p-3 text-sm text-critical-foreground">
             This node is not responding. Last heartbeat: {timeAgo(node.lastHeartbeatAt)}. Check the Noderaft Agent container or
             host connectivity.
           </p>
-        )}
-        {maintenance[0] && (
+      )}
+      {maintenance[0] && (
           <p className="mt-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
             MAINTENANCE until {formatDateTime(maintenance[0].endsAt)}{maintenance[0].reason ? ` — ${maintenance[0].reason}` : ""}. Underlying node state remains {node.status.toLowerCase()}.
           </p>
-        )}
-      </div>
-
-      {/* Tab bar — above the panels so its position never shifts with content height */}
-      <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="node" />
+      )}
 
       {tab === "Overview" && (
         <div className="space-y-6">

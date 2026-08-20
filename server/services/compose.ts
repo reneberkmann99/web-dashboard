@@ -6,7 +6,7 @@ import { nodeAgentClient } from "@/server/services/node-agent/client";
  * Compose workload discovery, adoption, conversion & reconciliation.
  *
  * A Docker Compose project (identified by the `com.docker.compose.project`
- * label) can become a HostPanel workload. Two sources coexist:
+ * label) can become a Noderaft workload. Two sources coexist:
  *   - MANUAL    — intentionally curated workloads (e.g. "Home Lab").
  *   - COMPOSE   — discovered from Docker Compose labels; membership is kept in
  *                 sync automatically as containers are recreated/add/removed.
@@ -217,7 +217,7 @@ export type DiscoveredComposeProject = {
   serviceNames: string[];
   networkCount: number;
   volumeCount: number;
-  /** True if any of this project's containers already belong to a different HostPanel workload. */
+  /** True if any of this project's containers already belong to a different Noderaft workload. */
   hasConflict: boolean;
   lastObservedAt: string | null;
   adopted: boolean;

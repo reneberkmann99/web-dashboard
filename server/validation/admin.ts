@@ -18,7 +18,7 @@ export const updateClientSchema = createClientSchema.partial();
 
 /**
  * User creation no longer accepts a password. The admin creates a pending
- * user; HostPanel generates a one-time activation token; the user sets their
+ * user; Noderaft generates a one-time activation token; the user sets their
  * own password. No default or example passwords anywhere.
  */
 export const createUserSchema = z.object({

@@ -12,6 +12,7 @@ import type { Column } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 
 type ClientListRecord = {
   id: string;
@@ -132,13 +133,7 @@ export default function AdminClientsPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">Clients</h1>
-          <p className="text-muted">Organizations and who can access what.</p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)}>Create client</Button>
-      </div>
+      <PageHeader eyebrow="Tenancy" title="Clients" description="Organizations and who can access what." actions={<Button onClick={() => setCreateOpen(true)}>Create client</Button>} />
 
       <div className="mb-4">
         <input

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { timeAgo } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 
 type Actor = { displayName: string; email: string } | null;
 type Acknowledgement = {
@@ -219,12 +220,11 @@ export default function AttentionPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">Attention</h1>
-          <p className="text-muted">Operational truth, acknowledgement, silence and maintenance — kept as separate states.</p>
-        </div>
-        <Button onClick={() => {
+      <PageHeader
+        eyebrow="Operations"
+        title="Attention"
+        description="Operational truth, acknowledgement, silence and maintenance — kept as separate states."
+        actions={<Button onClick={() => {
           const now = new Date();
           const end = new Date(now.getTime() + 60 * 60_000);
           setMaintenanceStart(datetimeLocalValue(now));
@@ -233,8 +233,8 @@ export default function AttentionPage(): React.JSX.Element {
           setMaintenanceOpen(true);
         }}>
           <CalendarClock className="mr-2 h-4 w-4" /> Schedule maintenance
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <div className="flex flex-wrap gap-2 border-b border-border pb-3">
         {tabs.map(([key, label]) => (

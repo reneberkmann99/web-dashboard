@@ -68,8 +68,7 @@
   --shadow-panel: 0 12px 40px rgb(0 0 0 / 0.26);
   --shadow-overlay: 0 24px 72px rgb(0 0 0 / 0.5);
   --background-atmosphere:
-    radial-gradient(circle at top left, rgb(var(--brand-accent) / 0.065), transparent 55%),
-    radial-gradient(circle at 20% 20%, rgb(var(--state-success) / 0.045), transparent 40%);
+    radial-gradient(circle at top left, rgb(var(--brand-accent) / 0.055), transparent 55%);
 }
 
 * {

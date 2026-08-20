@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PageHeader } from "@/components/ui/page-header";
 
 type ListResponse = {
   containers: ContainerView[];
@@ -61,18 +62,17 @@ export default function ClientContainersPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold">Containers</h1>
-          <p className="text-muted">Status, resource metrics, and controls for your assigned services.</p>
-        </div>
-        <Input
+      <PageHeader
+        eyebrow="Runtime inventory"
+        title="Containers"
+        description="Status, resource metrics, and controls for your assigned services."
+        actions={<Input
           className="w-full max-w-xs"
           placeholder="Search containers"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-        />
-      </div>
+        />}
+      />
 
       <Card className="panel">
         <CardHeader>

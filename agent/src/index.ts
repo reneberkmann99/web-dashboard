@@ -835,7 +835,7 @@ function startHttpsListener(): void {
   try {
     httpsServer = https.createServer({ key: material.key, cert: material.cert }, app);
     httpsServer.listen(tlsPort, () => {
-      console.log(`[HostPanel Agent] HTTPS listening on :${tlsPort}`);
+      console.log(`[Noderaft Agent] HTTPS listening on :${tlsPort}`);
     });
     httpsServer.on("error", (err) => {
       console.error("[agent] HTTPS listener error:", err.message);
@@ -861,31 +861,31 @@ app.post("/tls/enroll", async (req: Request, res: Response) => {
 });
 
 app.listen(port, async () => {
-  console.log(`[HostPanel Agent] listening on :${port} (mode=${adapterMode}, version=${AGENT_VERSION})`);
-  console.log(`[HostPanel Agent] state dir: ${resolveStateDir()} (pki: ${pkiDir()})`);
+  console.log(`[Noderaft Agent] listening on :${port} (mode=${adapterMode}, version=${AGENT_VERSION})`);
+  console.log(`[Noderaft Agent] state dir: ${resolveStateDir()} (pki: ${pkiDir()})`);
   if (adapterMode === "rootless") {
-    console.log(`[HostPanel Agent] DOCKER_HOST=${process.env.DOCKER_HOST ?? "(unset)"}`);
-    console.log(`[HostPanel Agent] XDG_RUNTIME_DIR=${process.env.XDG_RUNTIME_DIR ?? "(unset)"}`);
+    console.log(`[Noderaft Agent] DOCKER_HOST=${process.env.DOCKER_HOST ?? "(unset)"}`);
+    console.log(`[Noderaft Agent] XDG_RUNTIME_DIR=${process.env.XDG_RUNTIME_DIR ?? "(unset)"}`);
   }
   if (hasActiveTlsMaterial()) {
     startHttpsListener();
   } else {
-    console.log("[HostPanel Agent] no agent certificate yet — enroll secure transport to enable managed deployment");
+    console.log("[Noderaft Agent] no agent certificate yet — enroll secure transport to enable managed deployment");
   }
   void detectCompose().then(() => {
     if (composeVersion) {
-      console.log(`[HostPanel Agent] docker compose ${composeVersion} available (read-only validation)`);
+      console.log(`[Noderaft Agent] docker compose ${composeVersion} available (read-only validation)`);
     } else {
-      console.log("[HostPanel Agent] docker compose plugin not available — managed definition validation will report composeSupported=false");
+      console.log("[Noderaft Agent] docker compose plugin not available — managed definition validation will report composeSupported=false");
     }
   });
   if (ENROLL_TOKEN && CONTROL_PLANE_URL && !agentKey) {
-    console.log("[HostPanel Agent] enrollment token present — registering with control plane…");
+    console.log("[Noderaft Agent] enrollment token present — registering with control plane…");
     const ok = await enroll();
     if (!ok) {
-      console.error("[HostPanel Agent] enrollment failed; will retry on restart");
+      console.error("[Noderaft Agent] enrollment failed; will retry on restart");
     }
   } else if (!agentKey) {
-    console.error("[HostPanel Agent] no API key configured (set AGENT_API_KEY or AGENT_ENROLL_TOKEN + CONTROL_PLANE_URL)");
+    console.error("[Noderaft Agent] no API key configured (set AGENT_API_KEY or AGENT_ENROLL_TOKEN + CONTROL_PLANE_URL)");
   }
 });

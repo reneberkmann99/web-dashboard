@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { isApiError } from "@/lib/fetcher";
 import { NoderaftLogo } from "@/components/brand/noderaft-logo";
+import { DocumentTitle } from "@/components/brand/document-title";
 
 type ActivateResponse = {
   user: { id: string; email: string; role: "ADMIN" | "CLIENT" };
@@ -133,6 +134,7 @@ function ActivateForm(): React.JSX.Element {
 export default function ActivatePage(): React.JSX.Element {
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-16">
+      <DocumentTitle title="Activate account" />
       <div className="grid w-full gap-8 lg:grid-cols-[1.2fr_1fr]">
         <section className="panel hidden p-12 lg:block">
           <NoderaftLogo className="h-10" priority />

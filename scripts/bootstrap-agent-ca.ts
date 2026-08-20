@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * HostPanel Agent CA bootstrap (deliberate admin action — NEVER automatic).
+ * Noderaft Agent CA bootstrap (deliberate admin action — NEVER automatic).
  *
  * Creates the internal CA used to issue node agent server certificates.
  * Refuses to overwrite an existing CA.
@@ -22,7 +22,7 @@
  *   - Back it up encrypted, off-box, with restrictive permissions (0600).
  *   - Losing it means you cannot issue or rotate ANY node certificate; every
  *     node must be re-enrolled after bootstrapping a replacement CA.
- *   - Leaking it lets an attacker impersonate any HostPanel agent — treat it
+ *   - Leaking it lets an attacker impersonate any Noderaft agent — treat it
  *     like a root credential.
  *   - It must never be committed, baked into an image, or stored in Postgres.
  */
@@ -60,7 +60,7 @@ function main(): void {
     process.exit(1);
   }
 
-  console.log("Generating HostPanel Agent CA (RSA-4096, 10 years)…");
+  console.log("Generating Noderaft Agent CA (RSA-4096, 10 years)…");
   const keys = forge.pki.rsa.generateKeyPair(4096);
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
@@ -68,8 +68,8 @@ function main(): void {
   cert.validity.notBefore = new Date(Date.now() - 5 * 60 * 1000);
   cert.validity.notAfter = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000);
   cert.setSubject([
-    { name: "commonName", value: "HostPanel Agent CA" },
-    { name: "organizationName", value: "HostPanel" }
+    { name: "commonName", value: "Noderaft Agent CA" },
+    { name: "organizationName", value: "Noderaft" }
   ]);
   cert.setIssuer(cert.subject.attributes);
   cert.setExtensions([

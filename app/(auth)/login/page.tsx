@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NoderaftLogo } from "@/components/brand/noderaft-logo";
+import { DocumentTitle } from "@/components/brand/document-title";
 
 type LoginResponse = {
   user: {
@@ -22,6 +23,15 @@ export default function LoginPage(): React.JSX.Element {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    const expired = window.sessionStorage.getItem("noderaft:session-expired") === "1";
+    if (expired) {
+      window.sessionStorage.removeItem("noderaft:session-expired");
+      setSessionExpired(true);
+    }
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -56,6 +66,7 @@ export default function LoginPage(): React.JSX.Element {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-16">
+      <DocumentTitle title="Sign in" />
       <div className="grid w-full gap-8 lg:grid-cols-[1.2fr_1fr]">
         <section className="panel hidden p-12 lg:block">
           <NoderaftLogo className="h-10" priority />
@@ -76,6 +87,11 @@ export default function LoginPage(): React.JSX.Element {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {sessionExpired && (
+              <div className="mb-4 rounded-control border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground" role="status">
+                Your session expired. Sign in again to continue.
+              </div>
+            )}
             <form className="space-y-4" onSubmit={onSubmit}>
               <div className="space-y-2">
                 <label className="text-sm text-muted" htmlFor="email">

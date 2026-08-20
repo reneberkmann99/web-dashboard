@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enroll/rotate a node's secure agent transport via the real HostPanel ADMIN API.
+# Enroll/rotate a node's secure agent transport via the real Noderaft ADMIN API.
 # Usage: scripts/enroll-node-tls.sh <nodeId> <tlsApiBaseUrl>
 set -euo pipefail
 cd "$(dirname "$0")/.."

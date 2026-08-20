@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 
 type ClientDetailPayload = {
   client: {
@@ -203,18 +204,12 @@ export default function AdminClientDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <button type="button" onClick={() => router.push("/admin/clients")} className="mb-1 text-sm text-accent hover:underline">
-            ← Clients
-          </button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-semibold">{client.name}</h1>
-            <Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge>
-          </div>
-          <p className="text-muted">{client.slug} · {client.counts.users} users · {client.counts.projects} workloads</p>
-        </div>
-        <div className="flex gap-2">
+      <PageHeader
+        eyebrow="Client"
+        title={client.name}
+        back={<button type="button" onClick={() => router.push("/admin/clients")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Clients</button>}
+        description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{client.slug}</span><span>· {client.counts.users} users · {client.counts.projects} workloads</span><Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge></div>}
+        actions={<>
           <Button variant="secondary" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>
             View activity
           </Button>
@@ -223,8 +218,8 @@ export default function AdminClientDetailPage(): React.JSX.Element {
               Deactivate client
             </Button>
           )}
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Tab bar — above the panels so its position never shifts with content height */}
       <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="client" />

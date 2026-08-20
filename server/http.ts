@@ -61,6 +61,6 @@ export function fromError(error: unknown): NextResponse {
 
   // Security: never expose internal error details to the client.
   // Log the actual error for server-side diagnosis only.
-  console.error("[HostPanel] unhandled route error:", error);
+  console.error("[Noderaft] unhandled route error:", error);
   return fail("INTERNAL_ERROR", "Unexpected server error", 500);
 }

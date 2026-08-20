@@ -8,7 +8,7 @@ import { prisma } from "@/server/db";
  * Generates a human + machine readable, NON-MUTATING plan for deploying a
  * candidate revision. Never pulls images, never mutates Docker, never changes
  * the database. Compose remains the authority for recreation decisions — where
- * HostPanel cannot prove a recreation with `docker compose` dry-run, the plan
+ * Noderaft cannot prove a recreation with `docker compose` dry-run, the plan
  * marks the service PREDICTED.
  */
 

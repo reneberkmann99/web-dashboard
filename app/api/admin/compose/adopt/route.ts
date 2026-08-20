@@ -20,7 +20,7 @@ const adoptComposeSchema = z.object({
   moveConflictingContainers: z.boolean().optional()
 });
 
-/** Adopt a detected Docker Compose project as a HostPanel workload. */
+/** Adopt a detected Docker Compose project as a Noderaft workload. */
 export async function POST(request: Request): Promise<Response> {
   try {
     const session = await requireApiRole("ADMIN");

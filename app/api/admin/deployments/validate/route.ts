@@ -4,7 +4,7 @@ import { validateDeploymentSchema } from "@/server/validation/deployment";
 import { fromError, ok } from "@/server/http";
 
 /**
- * Read-only managed-deployment validation (Phase 6A). Runs Stage A (HostPanel
+ * Read-only managed-deployment validation (Phase 6A). Runs Stage A (Noderaft
  * policy/security analysis) + Stage B (`docker compose config` via the agent,
  * using secret sentinels). Never persists anything, never mutates Docker, and
  * never sends real secret values to the agent.

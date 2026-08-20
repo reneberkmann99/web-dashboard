@@ -55,6 +55,10 @@ export async function apiFetch<T>(input: RequestInfo | URL, init?: RequestInit):
 
   const payload = (await response.json()) as ApiResponse<T>;
   if (!payload.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.sessionStorage.setItem("noderaft:session-expired", "1");
+      window.location.assign("/login");
+    }
     throw new ApiError(payload.error);
   }
   return payload.data;

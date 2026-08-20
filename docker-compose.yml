@@ -29,7 +29,7 @@ services:
       HOSTPANEL_AGENT_CA_CERT_PATH: "${HOSTPANEL_AGENT_CA_CERT_PATH:-/data/pki/hostpanel-agent-ca.pem}"
       HOSTPANEL_AGENT_CA_KEY_PATH: "${HOSTPANEL_AGENT_CA_KEY_PATH:-/data/pki/hostpanel-agent-ca-key.pem}"
       NODE_AGENT_TIMEOUT_MS: "${NODE_AGENT_TIMEOUT_MS:-15000}"
-      NEXT_PUBLIC_APP_NAME: "${NEXT_PUBLIC_APP_NAME:-HostPanel}"
+      NEXT_PUBLIC_APP_NAME: "${NEXT_PUBLIC_APP_NAME:-Noderaft}"
       # Next standalone otherwise inherits Docker's container hostname and
       # binds only that transient IP, making localhost health probes fail.
       HOSTNAME: "0.0.0.0"

@@ -188,14 +188,14 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="overflow-hidden rounded-panel border border-border bg-surface-deck">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised/55 px-3 py-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setPaused((p) => !p)}
             aria-label={paused ? "Resume live logs" : "Pause live logs"}
-            className="inline-flex items-center gap-1 rounded border border-border bg-panelAlt px-2 py-1 text-xs hover:text-text focus:outline-none focus:ring-2 focus:ring-accent"
+            className="inline-flex items-center gap-1 rounded-control border border-border bg-surface-hull/40 px-2 py-1 font-mono text-xs text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
           >
             {paused ? <Play size={12} /> : <Pause size={12} />}
             {paused ? "Resume" : "Pause"}
@@ -203,7 +203,7 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
           <span className="inline-flex items-center gap-1 text-xs text-muted">
             {connected ? (
               <>
-                <span className="h-2 w-2 rounded-full bg-success" /> Live
+                <span className="h-1.5 w-1.5 rounded-full bg-info" /> Live
               </>
             ) : (
               <>
@@ -248,7 +248,7 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
       <pre
         ref={preRef}
         onScroll={handleScroll}
-        className="log-scroll h-[560px] max-h-[560px] overflow-auto rounded-panel border border-border bg-surface-hull/80 p-3 font-mono text-[11px] leading-relaxed text-text"
+        className="log-scroll h-[420px] max-h-[420px] overflow-auto bg-surface-hull/80 p-3 font-mono text-[11px] leading-relaxed text-text"
       >
         {filtered.length === 0 ? (
           <span className="text-muted">{filter ? "No log lines match." : "Waiting for logs…"}</span>
@@ -263,7 +263,7 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
             setAutoScroll(true);
             if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
           }}
-          className="text-xs text-accent hover:underline"
+          className="border-t border-border px-3 py-2 font-mono text-xs text-brand hover:text-brand-hover"
         >
           Jump to latest
         </button>

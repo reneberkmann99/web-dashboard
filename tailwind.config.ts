@@ -81,8 +81,7 @@ const config: Config = {
         overlay: "var(--shadow-overlay)"
       },
       backgroundImage: {
-        "brand-atmosphere": "var(--background-atmosphere)",
-        "hostpanel-grid": "var(--background-atmosphere)"
+        "brand-atmosphere": "var(--background-atmosphere)"
       }
     }
   },

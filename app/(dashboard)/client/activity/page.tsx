@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { formatDateTime } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 
 type AuditEvent = {
   id: string;
@@ -66,10 +67,7 @@ export default function ClientActivityPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Activity</h1>
-        <p className="text-muted">Recent actions on the services assigned to you.</p>
-      </div>
+      <PageHeader eyebrow="Audit trail" title="Activity" description="Recent actions on the services assigned to you." />
 
       <DataTable
         columns={columns}

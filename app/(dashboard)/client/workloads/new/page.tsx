@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ValidateResultPayload } from "@/components/workloads/deployment/types";
+import { PageHeader } from "@/components/ui/page-header";
 
 type AllowedNode = { nodeId: string; name: string; hostname: string; status: string; composeSupported: boolean | null; isActive: boolean };
 
@@ -90,16 +91,12 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <button type="button" onClick={() => router.push("/client/workloads")} className="mb-1 text-sm text-accent hover:underline">
-          ← Workloads
-        </button>
-        <h1 className="text-2xl font-semibold">New workload</h1>
-        <p className="text-sm text-muted">
-          Create a managed service. Configurations run under strict policy — no privileged containers, host binds,
-          host networking, Docker socket access, extra capabilities, or external network/volume attachment.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Managed deployment"
+        title="New workload"
+        back={<button type="button" onClick={() => router.push("/client/workloads")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Workloads</button>}
+        description={<span>Create a managed service. Configurations run under strict policy — no privileged containers, host binds, host networking, Docker socket access, extra capabilities, or external network/volume attachment.</span>}
+      />
 
       {nodesQuery.isLoading && <div className="h-20 animate-pulse rounded-lg bg-panelAlt" />}
       {nodesQuery.data && allowedNodes.length === 0 && (

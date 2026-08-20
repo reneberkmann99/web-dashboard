@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * HostPanel managed-compose FULL-LIFECYCLE qualification (live E2E).
+ * Noderaft managed-compose FULL-LIFECYCLE qualification (live E2E).
  *
- * Every ACTION goes through the public HostPanel ADMIN API — login → CSRF →
+ * Every ACTION goes through the public Noderaft ADMIN API — login → CSRF →
  * authoring → secret → plan → deploy → rotate → degrade → rollback → poll —
  * exactly the surface a future 6C UI will use. No internal service is imported.
  *

@@ -13,11 +13,11 @@ import { decryptSecret } from "@/server/security/crypto";
  * through `secureFetch`, which:
  *   1. refuses any non-https destination (fails BEFORE network I/O, so a secret
  *      body is never written to a plaintext socket),
- *   2. validates the chain against the HostPanel Agent CA only (never the
+ *   2. validates the chain against the Noderaft Agent CA only (never the
  *      system trust store, and verification is never disabled),
  *   3. verifies the peer certificate's SAN equals this node's logical identity
  *      (`node-<id>.agents.hostpanel.internal`) — so another node's valid
- *      HostPanel certificate cannot impersonate this one,
+ *      Noderaft certificate cannot impersonate this one,
  *   4. pins the peer certificate to the node's currently ACTIVE
  *      NodeAgentCertificate fingerprint (superseded/revoked certs are rejected
  *      even though they still chain to the CA).
@@ -126,7 +126,7 @@ export type SecureFetchResult = {
  */
 export async function secureFetch(node: Node, options: SecureFetchOptions): Promise<SecureFetchResult> {
   if (!caExists()) {
-    throw new SecureTransportError("AGENT_CA_NOT_CONFIGURED", "HostPanel Agent CA is not configured");
+    throw new SecureTransportError("AGENT_CA_NOT_CONFIGURED", "Noderaft Agent CA is not configured");
   }
 
   const baseUrl = options.baseUrlOverride ?? node.tlsApiBaseUrl;
@@ -176,7 +176,7 @@ export async function secureFetch(node: Node, options: SecureFetchOptions): Prom
           ...(options.body !== undefined ? { "Content-Length": Buffer.byteLength(options.body).toString() } : {})
         },
         agent,
-        // Verify the cert against the HostPanel CA using the LOGICAL identity,
+        // Verify the cert against the Noderaft CA using the LOGICAL identity,
         // not the connection host — so a node's IP/hostname can change freely.
         servername: identity,
         rejectUnauthorized: true,

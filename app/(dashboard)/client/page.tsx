@@ -10,6 +10,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { timeAgo } from "@/lib/format";
 import type { AttentionItem, ContainerView, OverviewStats, WorkloadSummary } from "@/types/domain";
+import { PageHeader } from "@/components/ui/page-header";
 
 type ClientOverviewResponse = {
   overview: OverviewStats;
@@ -41,10 +42,7 @@ export default function ClientDashboardPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <section>
-        <h1 className="text-3xl font-semibold">Overview</h1>
-        <p className="text-muted">Health of the services assigned to you.</p>
-      </section>
+      <PageHeader eyebrow="Your services" title="Overview" description="Operational state of the workloads assigned to you." />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Total containers" value={stats?.totalContainers ?? "-"} />

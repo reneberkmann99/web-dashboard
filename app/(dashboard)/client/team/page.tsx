@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 
 type TeamUser = {
   id: string;
@@ -152,15 +153,14 @@ export default function ClientTeamPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">Team</h1>
-          <p className="text-muted">Manage who can access your organization&apos;s workloads.</p>
-        </div>
-        <Button onClick={() => { setInviteOpen(true); setActivationUrl(null); setInviteEmail(""); setInviteName(""); }}>
+      <PageHeader
+        eyebrow="Access"
+        title="Team"
+        description="Manage who can access your organization's workloads."
+        actions={<Button onClick={() => { setInviteOpen(true); setActivationUrl(null); setInviteEmail(""); setInviteName(""); }}>
           Invite user
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <DataTable
         columns={columns}
