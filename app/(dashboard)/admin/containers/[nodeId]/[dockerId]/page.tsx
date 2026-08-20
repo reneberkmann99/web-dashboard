@@ -14,6 +14,7 @@ import { shortId, timeAgo } from "@/lib/format";
 import type { AttentionItem, ContainerView, OperationView, OperationState } from "@/types/domain";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { PageHeader } from "@/components/ui/page-header";
+import { ContextBackLink } from "@/components/navigation/context-back-link";
 
 type DetailResponse = {
   container: ContainerView;
@@ -109,9 +110,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
         <p className="mt-1 text-xs text-muted">
           {detail.error instanceof Error ? detail.error.message : "The container may no longer exist on this node."}
         </p>
-        <Button className="mt-4" variant="secondary" onClick={() => router.back()}>
-          Go back
-        </Button>
+        <div className="mt-4"><ContextBackLink fallback="/admin/settings/containers" label="Containers" allowedReturnPrefixes={["/admin/settings/containers", "/admin/nodes", "/admin/workloads"]} /></div>
       </div>
     );
   }
@@ -145,7 +144,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Container"
         title={container.name}
-        back={<button type="button" onClick={() => router.back()} className="mb-2 text-sm text-brand hover:text-brand-hover">← Back</button>}
+        back={<ContextBackLink fallback="/admin/settings/containers" label="Back" allowedReturnPrefixes={["/admin/settings/containers", "/admin/nodes", "/admin/workloads"]} />}
         description={<span className="font-mono text-sm">{container.image}</span>}
         actions={<>
           <Badge

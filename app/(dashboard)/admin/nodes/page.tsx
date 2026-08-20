@@ -13,6 +13,9 @@ import { Modal } from "@/components/ui/modal";
 import { timeAgo } from "@/lib/format";
 import type { NodeRecord } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { Menu } from "@/components/ui/menu";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { rememberResourceNavigation } from "@/components/navigation/view-state";
 
 type NodesPayload = { nodes: NodeRecord[] };
 type EnrollmentResponse = { token: string; expiresAt: string; ttlMinutes: number; nodeId: string | null };
@@ -22,6 +25,7 @@ export default function AdminNodesPage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollment, setEnrollment] = useState<EnrollmentResponse | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState<NodeRecord | null>(null);
 
   const query = useQuery({
     queryKey: ["admin-nodes"],
@@ -118,7 +122,7 @@ export default function AdminNodesPage(): React.JSX.Element {
         const mem = typeof sys.memPercent === "number" ? `${sys.memPercent.toFixed(0)}% RAM` : null;
         const disk = typeof sys.diskPercent === "number" ? `${sys.diskPercent.toFixed(0)}% disk` : null;
         const parts = [cpu, mem, disk].filter(Boolean);
-        return <span className="text-xs text-muted">{parts.length > 0 ? parts.join(" · ") : "—"}</span>;
+        return <span className="font-mono text-xs text-muted">{parts.length > 0 ? parts.join(" · ") : "—"}</span>;
       }
     },
     {
@@ -126,7 +130,7 @@ export default function AdminNodesPage(): React.JSX.Element {
       header: "Versions",
       hideBelow: "lg",
       render: (n) => (
-        <span className="text-xs text-muted">
+        <span className="font-mono text-xs text-muted">
           agent {n.agentVersion ?? "?"}
           <span className="block">docker {n.dockerVersion ?? "?"}</span>
         </span>
@@ -137,7 +141,7 @@ export default function AdminNodesPage(): React.JSX.Element {
       header: "Containers",
       sortValue: (n) => n.liveContainerCount,
       render: (n) => (
-        <span className="text-sm">
+        <span className="font-mono text-sm">
           {n.liveContainerCount}
           <span className="ml-1 text-xs text-muted">{n.liveWorkloadCount ?? 0} workloads</span>
         </span>
@@ -147,15 +151,15 @@ export default function AdminNodesPage(): React.JSX.Element {
       key: "actions",
       header: "",
       render: (n) => (
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/nodes/${n.id}`)}>
-            Open
-          </Button>
-          {n.isActive && (
-            <Button size="sm" variant="danger" onClick={() => patchMutation.mutate({ id: n.id, isActive: false })}>
-              Disable
-            </Button>
-          )}
+        <div className="flex justify-end">
+          <Menu
+            label={`Actions for ${n.name}`}
+            items={n.isActive ? [
+              { label: "Disable node", tone: "danger", onSelect: () => setConfirmDisable(n) }
+            ] : [
+              { label: "Enable node", onSelect: () => patchMutation.mutate({ id: n.id, isActive: true }) }
+            ]}
+          />
         </div>
       )
     }
@@ -176,8 +180,15 @@ export default function AdminNodesPage(): React.JSX.Element {
         emptyBody="Install Noderaft Agent on your first Docker server to begin managing workloads."
         emptyAction={<Button onClick={() => setEnrollOpen(true)}>Add node</Button>}
         rowKey={(n) => n.id}
+        stateKey="admin-nodes"
+        ariaLabel="Nodes"
         initialSort="attention"
         initialSortDir="asc"
+        onRowClick={(node) => {
+          const href = `/admin/nodes/${node.id}`;
+          rememberResourceNavigation(href);
+          router.push(href);
+        }}
       />
 
       <Modal
@@ -233,6 +244,19 @@ export default function AdminNodesPage(): React.JSX.Element {
           </p>
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDisable !== null}
+        onClose={() => setConfirmDisable(null)}
+        onConfirm={() => {
+          if (confirmDisable) patchMutation.mutate({ id: confirmDisable.id, isActive: false });
+          setConfirmDisable(null);
+        }}
+        title={`Disable ${confirmDisable?.name ?? "node"}?`}
+        impact="Noderaft will stop polling and operating this node until it is enabled again. Running containers are not stopped."
+        confirmLabel="Disable node"
+        danger
+      />
     </div>
   );
 }

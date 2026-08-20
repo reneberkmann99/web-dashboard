@@ -16,6 +16,9 @@ import { CodePanel } from "@/components/ui/code-panel";
 import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { AttentionItem, AttentionSeverity } from "@/types/domain";
+import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 type NodeDetailPayload = {
   node: {
@@ -55,7 +58,7 @@ const TABS = ["Overview", "Workloads", "Containers", "Configuration", "Activity"
 export default function AdminNodeDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
+  const [tab, setTab] = useDetailTab(TABS, "Overview");
 
   const detail = useQuery({
     queryKey: ["node", params.id],
@@ -114,7 +117,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
       <PageHeader
           eyebrow="Node"
           title={node.name}
-          back={<button type="button" onClick={() => router.push("/admin/nodes")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Nodes</button>}
+          back={<ContextBackLink fallback="/admin/nodes" label="Nodes" allowedReturnPrefixes={["/admin/nodes"]} />}
           description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span><Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale heartbeat" : "online"}</Badge>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
           actions={<Button variant="outline" size="sm" onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}>View activity →</Button>}
       />
@@ -257,25 +260,26 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
       )}
 
       {tab === "Workloads" && (
-        <div className="rounded-lg border border-border bg-panel p-4">
-          {node.projects.length === 0 ? (
-            <p className="text-sm text-muted">No workloads assigned to this node.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {node.projects.map((p) => (
-                <li key={p.id} className="flex items-center justify-between py-2.5">
-                  <div>
-                    <p className="font-medium">{p.name}</p>
-                    <p className="text-xs text-muted">{p.clientAccount?.name ?? "No client"}</p>
-                  </div>
-                  <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/workloads/${p.id}`)}>
-                    Open
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <DataTable
+          columns={[
+            { key: "name", header: "Workload", sortValue: (p: (typeof node.projects)[number]) => p.name, render: (p) => <p className="font-medium">{p.name}</p> },
+            { key: "client", header: "Client", render: (p: (typeof node.projects)[number]) => <span>{p.clientAccount?.name ?? "No client"}</span> },
+            { key: "containers", header: "Containers", sortValue: (p: (typeof node.projects)[number]) => p._count.containers, render: (p) => <span className="font-mono">{p._count.containers}</span> }
+          ]}
+          rows={node.projects}
+          searchableText={(p) => `${p.name} ${p.clientAccount?.name ?? ""}`}
+          searchPlaceholder="Search workloads…"
+          stateKey={`node:${node.id}:workloads`}
+          ariaLabel="Node workloads"
+          emptyTitle="No workloads assigned"
+          emptyBody="Workloads assigned to this node will appear here."
+          rowKey={(p) => p.id}
+          onRowClick={(p) => {
+            const href = `/admin/workloads/${p.id}`;
+            rememberResourceNavigation(href);
+            router.push(href);
+          }}
+        />
       )}
 
       {tab === "Containers" && (
@@ -286,7 +290,13 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           searchPlaceholder="Search containers…"
           loading={containersQuery.isLoading}
           emptyTitle="No containers on this node"
-          onRowClick={(c) => router.push(`/admin/containers/${node.id}/${c.id}`)}
+          stateKey={`node:${node.id}:containers`}
+          ariaLabel="Node containers"
+          onRowClick={(c) => {
+            const href = `/admin/containers/${node.id}/${c.id}`;
+            rememberResourceNavigation(href);
+            router.push(href);
+          }}
           rowKey={(c) => c.id}
         />
       )}
@@ -337,21 +347,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
 
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
-          {activity.length === 0 ? (
-            <p className="p-4 text-sm text-muted">No activity recorded for this node.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {activity.map((a) => (
-                <li key={a.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                  <span>
-                    {a.action.toLowerCase().replace(/_/g, " ")}
-                    <span className="ml-2 text-xs text-muted">{a.actorEmail ?? "system"}</span>
-                  </span>
-                  <span className="shrink-0 text-xs text-muted">{timeAgo(a.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ActivityTimeline events={activity} resourceName={node.name} emptyText="No activity recorded for this node." />
         </div>
       )}
     </div>

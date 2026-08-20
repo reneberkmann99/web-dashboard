@@ -22,6 +22,7 @@ import { isClientRole } from "@/types/domain";
 import { CommandPalette } from "@/components/search/command-palette";
 import { NoderaftLogo } from "@/components/brand/noderaft-logo";
 import { Menu } from "@/components/ui/menu";
+import { ViewStateRestoration } from "@/components/navigation/view-state";
 
 type ShellSession = {
   displayName: string;
@@ -61,6 +62,28 @@ function isActiveNavPath(pathname: string, href: string): boolean {
   // this guard they would also match every descendant route.
   if (href === "/admin" || href === "/client") return false;
   return pathname.startsWith(`${href}/`);
+}
+
+export function contentWidthClass(pathname: string): string {
+  if (pathname.includes("/deployment/edit") || pathname.startsWith("/admin/containers/") || pathname.startsWith("/client/containers/")) {
+    return "max-w-[1680px]";
+  }
+  const wideRoutes = new Set([
+    "/admin/workloads",
+    "/admin/nodes",
+    "/admin/clients",
+    "/admin/attention",
+    "/admin/activity",
+    "/admin/compose",
+    "/admin/settings/containers",
+    "/admin/settings/users",
+    "/admin/settings/notifications",
+    "/client/workloads",
+    "/client/containers",
+    "/client/activity",
+    "/client/team"
+  ]);
+  return wideRoutes.has(pathname) ? "max-w-[1536px]" : "max-w-7xl";
 }
 
 export function DashboardShell({
@@ -182,7 +205,10 @@ export function DashboardShell({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl p-gutter">{children}</main>
+        <main className={cn("mx-auto w-full p-gutter", contentWidthClass(pathname))}>
+          <ViewStateRestoration />
+          {children}
+        </main>
       </div>
       <CommandPalette />
     </div>

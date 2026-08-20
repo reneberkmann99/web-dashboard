@@ -5,12 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
-import { ServerDataTable } from "@/components/ui/server-data-table";
-import type { Column } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, humanizeAction } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { ActivityTimeline, type TimelineEvent } from "@/components/activity/activity-timeline";
 
 type AuditEntry = {
   id: string;
@@ -87,25 +86,6 @@ export default function AdminActivityPage(): React.JSX.Element {
     queryFn: () => apiFetch<RefPayload>("/api/admin/clients-refs")
   });
 
-  const columns: Column<AuditEntry>[] = [
-    {
-      key: "action",
-      header: "Event",
-      sortValue: (a) => a.action,
-      render: (a) => (
-        <div>
-          <p className="font-medium">{a.humanized}</p>
-          <p className="text-xs text-muted">{a.action}</p>
-        </div>
-      )
-    },
-    { key: "actor", header: "Actor", render: (a) => <span className="text-sm">{a.actorEmail ?? "system"}</span>, hideBelow: "sm" },
-    { key: "result", header: "Result", sortValue: (a) => a.result, render: (a) => <Badge variant={a.result === "SUCCESS" ? "success" : "danger"}>{a.result.toLowerCase()}</Badge> },
-    { key: "target", header: "Resource", render: (a) => <span className="text-xs text-muted">{a.targetType}</span>, hideBelow: "md" },
-    { key: "time", header: "When", sortValue: (a) => a.createdAt, render: (a) => <span className="text-xs text-muted">{formatDateTime(a.createdAt)}</span> },
-    { key: "details", header: "", render: (a) => <Button size="sm" variant="secondary" onClick={() => setSelected(a)}>Details</Button> }
-  ];
-
   const hasDeepLink = Boolean(containerId || projectId);
 
   return (
@@ -166,21 +146,25 @@ export default function AdminActivityPage(): React.JSX.Element {
         </select>
       </div>
 
-      <ServerDataTable
-        columns={columns}
-        rows={query.data?.logs ?? []}
-        total={query.data?.total ?? 0}
-        page={query.data?.page ?? page}
-        pageSize={PAGE_SIZE}
-        onPageChange={(p) => syncUrl({ page: String(p) })}
-        sortKey={undefined}
-        onSortChange={undefined}
+      <ActivityTimeline
+        events={query.data?.logs ?? []}
+        onSelect={(event: TimelineEvent) => setSelected(event as AuditEntry)}
         loading={query.isLoading}
         error={query.isError ? "Failed to load activity" : null}
         emptyTitle="No activity"
         emptyBody="Actions performed on the platform will appear here."
-        rowKey={(a) => a.id}
       />
+
+      {(query.data?.pageCount ?? 0) > 1 && (
+        <div className="flex items-center justify-between gap-3 text-sm text-text-muted">
+          <span>{query.data?.total ?? 0} events</span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => syncUrl({ page: String(page - 1) })}>Previous</Button>
+            <span className="font-mono">{page} / {query.data?.pageCount ?? 1}</span>
+            <Button size="sm" variant="secondary" disabled={page >= (query.data?.pageCount ?? 1)} onClick={() => syncUrl({ page: String(page + 1) })}>Next</Button>
+          </div>
+        </div>
+      )}
 
       <Modal
         open={selected !== null}
@@ -192,7 +176,7 @@ export default function AdminActivityPage(): React.JSX.Element {
         {selected && (
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <Detail label="Action" value={selected.action} />
-            <Detail label="Humanized" value={selected.humanized} />
+            <Detail label="Event" value={humanizeAction(selected.action)} />
             <Detail label="Actor" value={selected.actorEmail ?? "system"} />
             <Detail label="Role" value={selected.actorRole ?? "—"} />
             <Detail label="Result" value={selected.result} />

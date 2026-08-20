@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { Menu } from "@/components/ui/menu";
 
 type TeamUser = {
   id: string;
@@ -136,16 +137,11 @@ export default function ClientTeamPage(): React.JSX.Element {
               Reissue invite
             </Button>
           )}
-          {u.isActive && !u.pending && (
-            <Button size="sm" variant="danger" onClick={() => setConfirm({ id: u.id, name: u.displayName, isActive: false })}>
-              Deactivate
-            </Button>
-          )}
-          {!u.isActive && !u.pending && (
-            <Button size="sm" variant="secondary" onClick={() => setConfirm({ id: u.id, name: u.displayName, isActive: true })}>
-              Activate
-            </Button>
-          )}
+          {!u.pending && <Menu label={`Actions for ${u.displayName}`} items={[{
+            label: u.isActive ? "Deactivate user" : "Activate user",
+            tone: u.isActive ? "danger" : "default",
+            onSelect: () => setConfirm({ id: u.id, name: u.displayName, isActive: !u.isActive })
+          }]} />}
         </div>
       )
     }
@@ -172,6 +168,8 @@ export default function ClientTeamPage(): React.JSX.Element {
         emptyTitle="No team members yet"
         emptyBody="Invite operators and viewers to give them access to your workloads."
         rowKey={(u) => u.id}
+        stateKey="client-team"
+        ariaLabel="Team members"
       />
 
       <Modal

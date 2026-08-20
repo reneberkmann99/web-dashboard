@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { rememberResourceNavigation } from "@/components/navigation/view-state";
 
 type ClientListRecord = {
   id: string;
@@ -51,10 +52,6 @@ export default function AdminClientsPage(): React.JSX.Element {
     },
     [router, searchParams]
   );
-
-  useEffect(() => {
-    syncUrl({ search });
-  }, [search, syncUrl]);
 
   const query = useQuery({
     queryKey: ["admin-clients", { search, page }],
@@ -139,7 +136,10 @@ export default function AdminClientsPage(): React.JSX.Element {
         <input
           type="search"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            syncUrl({ search: e.target.value, page: "1" });
+          }}
           placeholder="Search clients…"
           aria-label="Search clients"
           className="w-64 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
@@ -157,7 +157,11 @@ export default function AdminClientsPage(): React.JSX.Element {
         error={query.isError ? "Failed to load clients" : null}
         emptyTitle="No clients yet"
         emptyBody="Create a client to represent an organization, then invite users and grant workloads."
-        onRowClick={(c) => router.push(`/admin/clients/${c.id}`)}
+        onRowClick={(c) => {
+          const href = `/admin/clients/${c.id}`;
+          rememberResourceNavigation(href);
+          router.push(href);
+        }}
         rowKey={(c) => c.id}
       />
 

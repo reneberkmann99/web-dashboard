@@ -10,6 +10,7 @@ import { ServerDataTable } from "@/components/ui/server-data-table";
 import type { Column } from "@/components/ui/data-table";
 import type { ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { rememberResourceNavigation } from "@/components/navigation/view-state";
 
 type ContainersPayload = {
   containers: ContainerView[];
@@ -212,7 +213,11 @@ export default function SettingsContainersPage(): React.JSX.Element {
         error={query.isError ? "Failed to load containers" : null}
         emptyTitle="No containers"
         emptyBody="Containers appear here once an agent reports them."
-        onRowClick={(c) => router.push(`/admin/containers/${c.nodeId}/${c.containerId}`)}
+        onRowClick={(c) => {
+          const destination = `/admin/containers/${c.nodeId}/${c.containerId}`;
+          rememberResourceNavigation(destination);
+          router.push(destination);
+        }}
         rowKey={(c) => `${c.nodeId}:${c.containerId}`}
       />
     </div>

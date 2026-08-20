@@ -41,6 +41,7 @@ export function maskSecrets(text: string): string {
 }
 
 export function humanizeAction(action: string): string {
+  const normalized = action.trim().toUpperCase();
   const map: Record<string, string> = {
     CONTAINER_RESTART: "Restarted container",
     CONTAINER_START: "Started container",
@@ -55,8 +56,9 @@ export function humanizeAction(action: string): string {
     USER_ACTIVATE: "Activated user",
     USER_DEACTIVATE: "Deactivated user",
     USER_REINVITE: "Reissued invitation",
-    PROJECT_CONVERT_TO_COMPOSE: "Converted to Compose-managed workload",
+    PROJECT_CONVERT_TO_COMPOSE: "Converted to Compose",
     PROJECT_DETACH_COMPOSE: "Detached from Compose tracking",
+    COMPOSE_ADOPT: "Adopted Compose project",
     CLIENT_CREATE: "Created client",
     CLIENT_UPDATE: "Updated client",
     CLIENT_DEACTIVATE: "Deactivated client",
@@ -81,7 +83,9 @@ export function humanizeAction(action: string): string {
     ACCOUNT_ACTIVATE_FAILED: "Account activation failed",
     LOGIN_RATE_LIMITED: "Sign-in rate limited",
     DEPLOYMENT_CREATED: "Created managed deployment",
+    DEPLOYMENT_DEFINITION_CREATED: "Created managed deployment",
     REVISION_CREATED: "Saved configuration revision",
+    DEPLOYMENT_REVISION_CREATED: "Saved configuration revision",
     DEPLOYMENT_PLAN_CREATED: "Generated deployment plan",
     DEPLOY_REQUESTED: "Deployment requested",
     DEPLOY_SUCCEEDED: "Deployment succeeded",
@@ -94,13 +98,53 @@ export function humanizeAction(action: string): string {
     SECRET_CREATED: "Created secret",
     SECRET_ROTATED: "Rotated secret",
     SECRET_SET_ACTIVE: "Changed secret status",
-    SECURITY_ACKNOWLEDGED: "Acknowledged security finding"
+    SECURITY_ACKNOWLEDGED: "Acknowledged security finding",
+    DEPLOYMENT_SECURITY_ACKNOWLEDGED: "Acknowledged security finding",
+    MAINTENANCE_SCHEDULED: "Maintenance scheduled",
+    MAINTENANCE_STARTED: "Maintenance started",
+    MAINTENANCE_ENDED: "Maintenance ended",
+    MAINTENANCE_CANCELLED: "Maintenance cancelled",
+    ATTENTION_NOTIFICATIONS_SILENCED: "Silenced issue notifications",
+    ATTENTION_SILENCE_CANCELLED: "Cancelled notification silence",
+    ATTENTION_SILENCE_EXPIRED: "Notification silence expired",
+    CLIENT_NODE_ACCESS_UPDATED: "Updated deployment node access",
+    NODE_CERTIFICATE_ISSUED: "Issued node certificate",
+    NODE_CERTIFICATE_REVOKED: "Revoked node certificate",
+    NODE_CERTIFICATE_VERIFIED: "Verified node certificate",
+    NODE_TLS_ENROLLMENT_TOKEN_CREATED: "Created TLS enrollment token",
+    NODE_TLS_VERIFICATION_FAILED: "Node TLS verification failed",
+    NOTIFICATION_DESTINATION_CREATED: "Created notification destination",
+    NOTIFICATION_DELIVERY_RETRIED: "Retried notification delivery",
+    NOTIFICATION_TEST_SENT: "Sent test notification"
   };
-  if (map[action]) return map[action];
-  const cleaned = action
+  if (map[normalized]) return map[normalized];
+
+  const attentionMatch = normalized.match(/^ATTENTION_(OPENED|RESOLVED)_(.+)$/);
+  if (attentionMatch) {
+    const [, lifecycle, condition] = attentionMatch;
+    const conditions: Record<string, [string, string]> = {
+      CONTAINER_UNHEALTHY: ["Container became unhealthy", "Container recovered"],
+      CONTAINER_CRASH_LOOP: ["Container entered a crash loop", "Container left the crash loop"],
+      CONTAINER_STOPPED_INTENTIONAL: ["Container stopped", "Container started"],
+      WORKLOAD_DEGRADED: ["Workload became degraded", "Workload returned healthy"],
+      WORKLOAD_DRIFTED: ["Workload drift detected", "Workload returned to expected state"],
+      NODE_OFFLINE: ["Node went offline", "Node recovered"],
+      NODE_HEARTBEAT_STALE: ["Node heartbeat became stale", "Node heartbeat recovered"],
+      NODE_CPU_PRESSURE: ["Node CPU pressure detected", "Node CPU pressure cleared"],
+      DEPLOYMENT_FAILED: ["Deployment failed", "Deployment failure cleared"]
+    };
+    const labels = conditions[condition];
+    if (labels) return lifecycle === "OPENED" ? labels[0] : labels[1];
+  }
+
+  if (normalized.startsWith("ATTENTION_ACKNOWLEDGED_")) return "Acknowledged attention item";
+  if (normalized.startsWith("ATTENTION_UNACKNOWLEDGED_")) return "Removed attention acknowledgement";
+
+  const cleaned = normalized
     .replace(/^CONTAINER_/, "")
     .replace(/_REQUESTED$/, " requested")
     .replace(/_SUCCEEDED$/, " succeeded")
-    .replace(/_FAILED$/, " failed");
+    .replace(/_FAILED$/, " failed")
+    .replaceAll("_", " ");
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
 }

@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import type { UserRecord, UserRole, NameRef } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { Menu } from "@/components/ui/menu";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type UsersPayload = {
   users: UserRecord[];
@@ -36,6 +38,7 @@ export default function AdminUsersPage(): React.JSX.Element {
   const [role, setRole] = useState<UserRole>("CLIENT_OPERATOR");
   const [clientAccountId, setClientAccountId] = useState("");
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState<UserRecord | null>(null);
 
   const query = useQuery({
     queryKey: ["admin-users"],
@@ -200,14 +203,16 @@ export default function AdminUsersPage(): React.JSX.Element {
                       )}
                     </td>
                     <td className="py-3">
-                      <Button
-                        disabled={updateMutation.isPending}
-                        size="sm"
-                        variant={user.isActive ? "danger" : "secondary"}
-                        onClick={() => updateMutation.mutate({ id: user.id, role: user.role, isActive: !user.isActive, clientAccountId: user.clientAccountId })}
-                      >
-                        {user.isActive ? "Disable" : "Enable"}
-                      </Button>
+                      <Menu
+                        label={`Actions for ${user.displayName}`}
+                        items={[{
+                          label: user.isActive ? "Disable user" : "Enable user",
+                          tone: user.isActive ? "danger" : "default",
+                          onSelect: () => user.isActive
+                            ? setConfirmDisable(user)
+                            : updateMutation.mutate({ id: user.id, role: user.role, isActive: true, clientAccountId: user.clientAccountId })
+                        }]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -216,6 +221,19 @@ export default function AdminUsersPage(): React.JSX.Element {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmDisable !== null}
+        onClose={() => setConfirmDisable(null)}
+        onConfirm={() => {
+          if (confirmDisable) updateMutation.mutate({ id: confirmDisable.id, role: confirmDisable.role, isActive: false, clientAccountId: confirmDisable.clientAccountId });
+          setConfirmDisable(null);
+        }}
+        title={`Disable ${confirmDisable?.displayName ?? "this user"}?`}
+        impact="They will lose access on their next request."
+        confirmLabel="Disable user"
+        danger
+      />
     </div>
   );
 }

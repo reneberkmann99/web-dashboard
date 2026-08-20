@@ -14,6 +14,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { Menu } from "@/components/ui/menu";
+import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 type ClientDetailPayload = {
   client: {
@@ -65,7 +69,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
+  const [tab, setTab] = useDetailTab(TABS, "Overview");
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -164,12 +168,8 @@ export default function AdminClientDetailPage(): React.JSX.Element {
       key: "actions",
       header: "",
       render: (u) => (
-        <div className="flex gap-2">
-          {u.isActive && (
-            <Button size="sm" variant="danger" onClick={() => setDeactivateUser({ id: u.id, name: u.displayName })}>
-              Deactivate
-            </Button>
-          )}
+        <div className="flex justify-end">
+          {u.isActive && <Menu label={`Actions for ${u.displayName}`} items={[{ label: "Deactivate user", tone: "danger", onSelect: () => setDeactivateUser({ id: u.id, name: u.displayName }) }]} />}
         </div>
       )
     }
@@ -195,9 +195,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
       key: "revoke",
       header: "",
       render: (g) => (
-        <Button size="sm" variant="danger" onClick={() => revokeGrantMutation.mutate(g.id)}>
-          Revoke
-        </Button>
+        <div className="flex justify-end"><Menu label="Permission actions" items={[{ label: "Revoke permission", tone: "danger", onSelect: () => revokeGrantMutation.mutate(g.id) }]} /></div>
       )
     }
   ];
@@ -207,17 +205,13 @@ export default function AdminClientDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Client"
         title={client.name}
-        back={<button type="button" onClick={() => router.push("/admin/clients")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Clients</button>}
+        back={<ContextBackLink fallback="/admin/clients" label="Clients" allowedReturnPrefixes={["/admin/clients"]} />}
         description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{client.slug}</span><span>· {client.counts.users} users · {client.counts.projects} workloads</span><Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge></div>}
         actions={<>
-          <Button variant="secondary" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>
+          <Button variant="ghost" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>
             View activity
           </Button>
-          {client.isActive && (
-            <Button variant="danger" onClick={() => setDeactivateClient(true)}>
-              Deactivate client
-            </Button>
-          )}
+          {client.isActive && <Menu label={`Actions for ${client.name}`} items={[{ label: "Deactivate client", tone: "danger", onSelect: () => setDeactivateClient(true) }]} />}
         </>}
       />
 
@@ -245,6 +239,8 @@ export default function AdminClientDetailPage(): React.JSX.Element {
             emptyTitle="No users yet"
             emptyBody="Invite a user to give them access to this client's workloads."
             rowKey={(u) => u.id}
+            stateKey={`client:${client.id}:users`}
+            ariaLabel="Client users"
           />
         </div>
       )}
@@ -255,7 +251,6 @@ export default function AdminClientDetailPage(): React.JSX.Element {
             { key: "name", header: "Workload", sortValue: (p: (typeof client.projects)[number]) => p.name, render: (p) => <p className="font-medium">{p.name}</p> },
             { key: "node", header: "Node", render: (p: (typeof client.projects)[number]) => <span className="text-sm">{p.node.name}</span>, hideBelow: "sm" },
             { key: "containers", header: "Containers", sortValue: (p: (typeof client.projects)[number]) => p._count.containers, render: (p: (typeof client.projects)[number]) => <span className="text-sm">{p._count.containers}</span> },
-            { key: "open", header: "", render: (p: (typeof client.projects)[number]) => <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/workloads/${p.id}`)}>Open</Button> }
           ]}
           rows={client.projects}
           searchableText={(p) => p.name}
@@ -263,6 +258,13 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           emptyTitle="No workloads"
           emptyBody="Grant this client access to a workload to get started."
           rowKey={(p) => p.id}
+          stateKey={`client:${client.id}:workloads`}
+          ariaLabel="Client workloads"
+          onRowClick={(p) => {
+            const href = `/admin/workloads/${p.id}`;
+            rememberResourceNavigation(href);
+            router.push(href);
+          }}
         />
       )}
 
@@ -273,6 +275,8 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           emptyTitle="No permissions granted"
           emptyBody="Grant access from a workload's detail page, or grant a single container as an exception."
           rowKey={(g) => g.id}
+          stateKey={`client:${client.id}:permissions`}
+          ariaLabel="Client permissions"
         />
       )}
 
@@ -280,21 +284,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
 
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
-          {activity.length === 0 ? (
-            <p className="p-4 text-sm text-muted">No activity recorded for this client.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {activity.map((a) => (
-                <li key={a.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                  <span>
-                    {a.humanized}
-                    <span className="ml-2 text-xs text-muted">{a.actorEmail ?? "system"}</span>
-                  </span>
-                  <span className="shrink-0 text-xs text-muted">{timeAgo(a.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ActivityTimeline events={activity} resourceName={client.name} emptyText="No activity recorded for this client." />
         </div>
       )}
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatePanel } from "@/components/ui/state-panel";
+import { useStoredViewState } from "@/components/navigation/view-state";
 
 export type Column<T> = {
   key: string;
@@ -15,6 +16,10 @@ export type Column<T> = {
   className?: string;
   hideBelow?: "sm" | "md" | "lg"; // progressive disclosure on small screens
 };
+
+export function isInteractiveTableTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest("a, button, input, select, textarea, [role='menuitem'], [data-row-action]"));
+}
 
 export function DataTable<T>({
   columns,
@@ -30,7 +35,10 @@ export function DataTable<T>({
   error,
   pageSize = 25,
   onRowClick,
-  rowKey
+  rowKey,
+  stateKey,
+  toolbar,
+  ariaLabel = "Resources"
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -46,11 +54,17 @@ export function DataTable<T>({
   pageSize?: number;
   onRowClick?: (row: T) => void;
   rowKey?: (row: T) => string;
+  stateKey?: string;
+  toolbar?: React.ReactNode;
+  ariaLabel?: string;
 }): React.JSX.Element {
-  const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState<string | undefined>(initialSort);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">(initialSortDir);
-  const [page, setPage] = useState(0);
+  const [view, setView] = useStoredViewState(stateKey ? `table:${stateKey}` : null, {
+    query: "",
+    sortKey: initialSort,
+    sortDir: initialSortDir,
+    page: 0
+  });
+  const { query, sortKey, sortDir, page } = view;
 
   const filtered = useMemo(() => {
     let out = rows;
@@ -78,12 +92,18 @@ export function DataTable<T>({
 
   function toggleSort(key: string): void {
     if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setView((current) => ({ ...current, sortDir: current.sortDir === "asc" ? "desc" : "asc", page: 0 }));
     } else {
-      setSortKey(key);
-      setSortDir("asc");
+      setView((current) => ({ ...current, sortKey: key, sortDir: "asc", page: 0 }));
     }
   }
+
+  const openRow = (row: T, event: React.MouseEvent | React.KeyboardEvent): void => {
+    if (!onRowClick || isInteractiveTableTarget(event.target)) return;
+    if ("key" in event && event.key !== "Enter" && event.key !== " ") return;
+    if ("key" in event) event.preventDefault();
+    onRowClick(row);
+  };
 
   if (loading) {
     return (
@@ -109,29 +129,37 @@ export function DataTable<T>({
 
   return (
     <div className="space-y-3">
-      {searchableText && (
-        <div className="relative max-w-sm">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <Input
-            type="search"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setPage(0);
-            }}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            className="pl-9"
-          />
+      {(searchableText || toolbar) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {searchableText && (
+            <div className="relative min-w-56 flex-1 sm:max-w-sm">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <Input
+                type="search"
+                value={query}
+                onChange={(event) => setView((current) => ({ ...current, query: event.target.value, page: 0 }))}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                className="pl-9"
+              />
+            </div>
+          )}
+          {toolbar}
         </div>
       )}
 
       <div className="overflow-x-auto rounded-panel border border-border bg-surface-deck">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" aria-label={ariaLabel}>
           <thead className="sticky top-0 bg-surface-raised/85 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted backdrop-blur">
             <tr>
               {columns.map((col) => (
-                <th key={col.key} className={cn("px-3 py-2.5 font-medium", col.className)}>
+                <th key={col.key} className={cn(
+                  "px-3 py-2.5 font-medium",
+                  col.className,
+                  col.hideBelow === "sm" && "max-md:hidden",
+                  col.hideBelow === "md" && "max-lg:hidden",
+                  col.hideBelow === "lg" && "max-xl:hidden"
+                )}>
                   {col.sortValue ? (
                     <button
                       type="button"
@@ -154,10 +182,14 @@ export function DataTable<T>({
             {pageRows.map((row, rowIndex) => (
               <tr
                 key={rowKey ? rowKey(row) : `row-${rowIndex}`}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onClick={onRowClick ? (event) => openRow(row, event) : undefined}
+                onKeyDown={onRowClick ? (event) => openRow(row, event) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? "link" : undefined}
+                data-row-key={rowKey ? rowKey(row) : undefined}
                 className={cn(
-                  "border-t border-border transition-colors",
-                  onRowClick && "cursor-pointer hover:bg-surface-raised/60",
+                  "h-12 border-t border-border transition-colors",
+                  onRowClick && "cursor-pointer hover:bg-surface-raised/60 focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus",
                   "max-md:hidden" // fallback handled below
                 )}
               >
@@ -179,7 +211,15 @@ export function DataTable<T>({
             ))}
             {/* Mobile fallback: card rows for small screens */}
             {pageRows.map((row, rowIndex) => (
-              <tr key={`${rowKey ? rowKey(row) : rowIndex}-card`} className="border-t border-border md:hidden">
+              <tr
+                key={`${rowKey ? rowKey(row) : rowIndex}-card`}
+                className={cn("border-t border-border md:hidden", onRowClick && "cursor-pointer hover:bg-surface-raised/60")}
+                onClick={onRowClick ? (event) => openRow(row, event) : undefined}
+                onKeyDown={onRowClick ? (event) => openRow(row, event) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? "link" : undefined}
+                data-row-key={rowKey ? rowKey(row) : undefined}
+              >
                 <td className="px-3 py-3">
                   {columns
                     .filter((c) => c.hideBelow === undefined)
@@ -205,7 +245,7 @@ export function DataTable<T>({
           <div className="flex gap-2">
             <Button
               disabled={safePage === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => setView((current) => ({ ...current, page: Math.max(0, current.page - 1) }))}
               variant="outline"
               size="sm"
             >
@@ -213,7 +253,7 @@ export function DataTable<T>({
             </Button>
             <Button
               disabled={safePage >= pageCount - 1}
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              onClick={() => setView((current) => ({ ...current, page: Math.min(pageCount - 1, current.page + 1) }))}
               variant="outline"
               size="sm"
             >

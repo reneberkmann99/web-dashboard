@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Column } from "@/components/ui/data-table";
+import { isInteractiveTableTarget, type Column } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { StatePanel } from "@/components/ui/state-panel";
 
@@ -50,6 +50,12 @@ export function ServerDataTable<T>({
   const safePage = Math.min(Math.max(page, 1), pageCount);
   const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
   const end = Math.min(safePage * pageSize, total);
+  const openRow = (row: T, event: React.MouseEvent | React.KeyboardEvent): void => {
+    if (!onRowClick || isInteractiveTableTarget(event.target)) return;
+    if ("key" in event && event.key !== "Enter" && event.key !== " ") return;
+    if ("key" in event) event.preventDefault();
+    onRowClick(row);
+  };
 
   if (loading) {
     return (
@@ -76,7 +82,7 @@ export function ServerDataTable<T>({
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-panel border border-border bg-surface-deck">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" aria-label="Resources">
           <thead className="sticky top-0 bg-surface-raised/85 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted backdrop-blur">
             <tr>
               {columns.map((col) => (
@@ -103,10 +109,14 @@ export function ServerDataTable<T>({
             {rows.map((row, rowIndex) => (
               <tr
                 key={rowKey ? rowKey(row) : `row-${rowIndex}`}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onClick={onRowClick ? (event) => openRow(row, event) : undefined}
+                onKeyDown={onRowClick ? (event) => openRow(row, event) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? "link" : undefined}
+                data-row-key={rowKey ? rowKey(row) : undefined}
                 className={cn(
-                  "border-t border-border transition-colors",
-                  onRowClick && "cursor-pointer hover:bg-surface-raised/60"
+                  "h-12 border-t border-border transition-colors",
+                  onRowClick && "cursor-pointer hover:bg-surface-raised/60 focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
                 )}
               >
                 {columns.map((col) => (

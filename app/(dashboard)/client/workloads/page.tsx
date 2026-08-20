@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import type { WorkloadSummary } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { rememberResourceNavigation } from "@/components/navigation/view-state";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 
@@ -65,7 +66,13 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
         error={query.isError ? "Failed to load workloads" : null}
         emptyTitle="No workloads assigned"
         emptyBody="Your administrator hasn't granted you access to any workloads yet."
-        onRowClick={(w) => router.push(`/client/workloads/${w.id}`)}
+        stateKey="client-workloads"
+        ariaLabel="Workloads"
+        onRowClick={(w) => {
+          const destination = `/client/workloads/${w.id}`;
+          rememberResourceNavigation(destination);
+          router.push(destination);
+        }}
         rowKey={(w) => w.id}
       />
     </div>

@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogViewer } from "@/components/logs/log-viewer";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { ContextBackLink } from "@/components/navigation/context-back-link";
 
 type DetailResponse = {
   container: ContainerView;
@@ -104,7 +105,12 @@ export default function ContainerDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Container" title={container?.name ?? "Container details"} description="Live state, safe metadata, and recent logs." />
+      <PageHeader
+        eyebrow="Container"
+        title={container?.name ?? "Container details"}
+        description="Live state, safe metadata, and recent logs."
+        back={<ContextBackLink fallback="/client/containers" label="Containers" allowedReturnPrefixes={["/client/containers", "/client/workloads"]} />}
+      />
 
       {detail.isLoading || !container ? (
         detail.isError ? (

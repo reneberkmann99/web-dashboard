@@ -20,6 +20,7 @@
     "test:browser": "playwright test tests/phase6d-regressions.spec.ts",
     "test:browser:operational": "playwright test tests/phase6d-operational.spec.ts",
     "test:browser:phase6e": "playwright test phase6e-browser.spec.ts",
+    "test:browser:polish": "playwright test tests/ui-navigation-polish.spec.ts",
     "test:landing": "node scripts/qualify-landing.mjs",
     "test:public-cutover": "node scripts/qualify-public-cutover.mjs"
   },

@@ -18,10 +18,12 @@ import { DeploymentsTab } from "@/components/workloads/deployment/deployments-ta
 import { SecretsTab } from "@/components/workloads/deployment/secrets-tab";
 import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
 import type { WorkloadDeploymentStatus } from "@/components/workloads/deployment/types";
-import { timeAgo } from "@/lib/format";
-import { humanizeAction } from "@/lib/format";
 import type { AttentionItem } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { Menu } from "@/components/ui/menu";
+import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 type WorkloadDetailPayload = {
   workload: {
@@ -76,7 +78,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
+  const [tab, setTab] = useDetailTab(TABS, "Overview");
   const [grantModal, setGrantModal] = useState<GrantModalState>({ open: false, clientId: "", level: "start" });
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [confirmDetach, setConfirmDetach] = useState(false);
@@ -89,7 +91,10 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
   useEffect(() => {
     if (searchParams.get("rollback") === "1") {
       setRollbackOpen(true);
-      router.replace(`/admin/workloads/${params.id}`, { scroll: false });
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("rollback");
+      const query = next.toString();
+      router.replace(query ? `/admin/workloads/${params.id}?${query}` : `/admin/workloads/${params.id}`, { scroll: false });
     }
   }, [searchParams, params.id, router]);
 
@@ -180,7 +185,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Workload"
         title={workload.name}
-        back={<button type="button" onClick={() => router.push("/admin/workloads")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Workloads</button>}
+        back={<ContextBackLink fallback="/admin/workloads" label="Workloads" allowedReturnPrefixes={["/admin/workloads"]} />}
         description={<div className="flex flex-wrap items-center gap-2">
           <span>
             {workload.description ?? workload.slug} · {workload.node.name}
@@ -189,27 +194,26 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           <Badge variant={healthVariant}>{workload.health}</Badge>
         </div>}
         actions={<>
-          <Button size="sm" variant="secondary" onClick={() => router.push(`/admin/activity?projectId=${workload.id}`)}>
+          <Button size="sm" variant="ghost" onClick={() => router.push(`/admin/activity?projectId=${workload.id}`)}>
             View activity
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setGrantModal({ open: true, clientId: "", level: "start" })}>
             Grant access
           </Button>
-          {workload.source === "MANUAL" && convertPreview.data?.preview.eligible && (
-            <Button size="sm" variant="secondary" onClick={() => setConfirmConvert(true)}>
-              Convert to Compose-managed
-            </Button>
-          )}
-          {workload.source === "COMPOSE" && (
-            <Button size="sm" variant="secondary" onClick={() => setConfirmDetach(true)}>
-              Detach from Compose
-            </Button>
-          )}
-          {workload.totalContainers > 0 && (
-            <Button size="sm" variant="danger" onClick={() => setConfirmRestart(true)} disabled={restartMutation.isPending || activeOperations.length > 0}>
-              Restart workload
-            </Button>
-          )}
+          <Menu
+            label={`Actions for ${workload.name}`}
+            items={[
+              ...(workload.source === "MANUAL" && convertPreview.data?.preview.eligible
+                ? [{ label: "Convert to Compose", onSelect: () => setConfirmConvert(true) }]
+                : []),
+              ...(workload.source === "COMPOSE"
+                ? [{ label: "Detach from Compose", onSelect: () => setConfirmDetach(true) }]
+                : []),
+              ...(workload.totalContainers > 0
+                ? [{ label: "Restart workload", tone: "danger" as const, disabled: restartMutation.isPending || activeOperations.length > 0, onSelect: () => setConfirmRestart(true) }]
+                : [])
+            ]}
+          />
         </>}
       />
 
@@ -323,7 +327,14 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           searchPlaceholder="Search containers…"
           emptyTitle="No containers in this workload"
           emptyBody="Attach containers to this stack from the container detail page or the grants workflow."
-          onRowClick={(c) => router.push(`/admin/containers/${workload.node.id}/${c.containerId}`)}
+          stateKey={`workload:${workload.id}:containers`}
+          ariaLabel="Workload containers"
+          rowKey={(c) => c.containerId}
+          onRowClick={(c) => {
+            const href = `/admin/containers/${workload.node.id}/${c.containerId}`;
+            rememberResourceNavigation(href);
+            router.push(href);
+          }}
         />
       )}
 
@@ -353,30 +364,14 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       {/* Activity */}
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
-          {activity.length === 0 ? (
-            <p className="p-4 text-sm text-muted">No activity recorded for this workload.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {activity.map((a) => (
-                <li key={a.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                  <span>
-                    {humanizeAction(a.action)}
-                    <span className="ml-2 text-xs text-muted">{a.actorEmail ?? "system"}</span>
-                    {isDeploymentActivity(a.action) && (
-                      <button
-                        type="button"
-                        onClick={() => setTab("Deployments")}
-                        className="ml-2 text-xs text-accent hover:underline"
-                      >
-                        View deployment
-                      </button>
-                    )}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted">{timeAgo(a.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ActivityTimeline
+            events={activity}
+            resourceName={workload.name}
+            emptyText="No activity recorded for this workload."
+            renderAction={(event) => isDeploymentActivity(event.action) && deployment?.managed ? (
+              <button type="button" onClick={() => setTab("Deployments")} className="text-xs text-accent hover:underline">View deployment</button>
+            ) : null}
+          />
         </div>
       )}
 

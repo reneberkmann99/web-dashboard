@@ -14,6 +14,8 @@ import { SecretsTab } from "@/components/workloads/deployment/secrets-tab";
 import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type ContainersPayload = { containers: ContainerView[] };
@@ -32,13 +34,15 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Containers");
+  const [tab, setTab] = useDetailTab(TABS, "Containers");
   const [rollbackOpen, setRollbackOpen] = useState(false);
 
   useEffect(() => {
     if (searchParams.get("rollback") === "1") {
       setRollbackOpen(true);
-      router.replace(`/client/workloads/${params.id}`, { scroll: false });
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("rollback");
+      router.replace(`/client/workloads/${params.id}${next.size ? `?${next}` : ""}`, { scroll: false });
     }
   }, [searchParams, params.id, router]);
 
@@ -81,7 +85,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Workload"
         title={workload.name}
-        back={<button type="button" onClick={() => router.push("/client/workloads")} className="mb-2 text-sm text-brand hover:text-brand-hover">← Workloads</button>}
+        back={<ContextBackLink fallback="/client/workloads" label="Workloads" allowedReturnPrefixes={["/client/workloads"]} />}
         description={<span>{workload.nodeName} · <span className="font-mono">{workload.runningContainers}/{workload.totalContainers}</span> running</span>}
         actions={<>
           <Badge variant={workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : "danger"}>{workload.health}</Badge>
@@ -110,7 +114,13 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
           loading={containers.isLoading}
           emptyTitle="No containers in this workload"
           emptyBody="This workload has no containers visible to you."
-          onRowClick={(c) => router.push(`/client/containers/${c.assignmentId}`)}
+          stateKey={`client-workload:${workload.id}:containers`}
+          ariaLabel={`${workload.name} containers`}
+          onRowClick={(c) => {
+            const destination = `/client/containers/${c.assignmentId}`;
+            rememberResourceNavigation(destination);
+            router.push(destination);
+          }}
           rowKey={(c) => c.containerId}
         />
       )}

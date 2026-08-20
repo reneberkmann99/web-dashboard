@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Compass } from "lucide-react";
@@ -10,8 +10,9 @@ import { AttentionBadge } from "@/components/ui/attention-badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
-import { timeAgo } from "@/lib/format";
+import { humanizeAction, timeAgo } from "@/lib/format";
 import type { WorkloadSummary } from "@/types/domain";
+import { rememberResourceNavigation, useStoredViewState } from "@/components/navigation/view-state";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type RefPayload = { nodes: Array<{ id: string; name: string }>; clients: Array<{ id: string; name: string }> };
@@ -28,11 +29,14 @@ function healthAttention(w: WorkloadSummary): "critical" | "warning" | "info" | 
 
 export default function AdminWorkloadsPage(): React.JSX.Element {
   const router = useRouter();
-  const [nodeFilter, setNodeFilter] = useState("");
-  const [clientFilter, setClientFilter] = useState("");
-  const [stateFilter, setStateFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
-  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
+  const [filters, setFilters] = useStoredViewState("filters:admin-workloads", {
+    nodeFilter: "",
+    clientFilter: "",
+    stateFilter: "",
+    sourceFilter: "",
+    needsAttentionOnly: false
+  });
+  const { nodeFilter, clientFilter, stateFilter, sourceFilter, needsAttentionOnly } = filters;
 
   const workloadsQuery = useQuery({
     queryKey: ["admin-workloads"],
@@ -76,7 +80,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       key: "node",
       header: "Node",
       sortValue: (w) => w.nodeName,
-      render: (w) => <span className="font-mono text-sm">{w.nodeName}</span>,
+      render: (w) => <span className="text-sm">{w.nodeName}</span>,
       hideBelow: "sm"
     },
     {
@@ -90,7 +94,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       key: "source",
       header: "Type",
       sortValue: (w) => w.source,
-      render: (w) => <span className="text-xs text-muted">{w.source}</span>,
+      render: (w) => <span className="text-sm text-muted">{{ MANUAL: "Manual", COMPOSE: "External Compose", MANAGED: "Managed" }[w.source] ?? w.source}</span>,
       hideBelow: "md"
     },
     {
@@ -139,7 +143,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         w.lastEvent ? (
           <span className="text-xs text-muted">
             {timeAgo(w.lastEvent.createdAt)}
-            <span className="block">{w.lastEvent.action.toLowerCase()}</span>
+            <span className="block">{humanizeAction(w.lastEvent.action)}</span>
           </span>
         ) : (
           <span className="text-xs text-muted">—</span>
@@ -159,10 +163,17 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         </Button>}
       />
 
-      <div className="flex flex-wrap gap-2">
+      <DataTable
+        columns={columns}
+        rows={rows}
+        searchableText={(w) => `${w.name} ${w.nodeName} ${w.clientName ?? ""} ${w.description ?? ""} ${w.source}`}
+        searchPlaceholder="Search workloads…"
+        stateKey="admin-workloads"
+        ariaLabel="Workloads"
+        toolbar={<>
         <Select
           value={nodeFilter}
-          onChange={(e) => setNodeFilter(e.target.value)}
+          onChange={(e) => setFilters((current) => ({ ...current, nodeFilter: e.target.value }))}
           aria-label="Filter by node"
           className="w-auto min-w-40"
         >
@@ -175,7 +186,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         </Select>
         <Select
           value={clientFilter}
-          onChange={(e) => setClientFilter(e.target.value)}
+          onChange={(e) => setFilters((current) => ({ ...current, clientFilter: e.target.value }))}
           aria-label="Filter by client"
           className="w-auto min-w-40"
         >
@@ -188,7 +199,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         </Select>
         <Select
           value={stateFilter}
-          onChange={(e) => setStateFilter(e.target.value)}
+          onChange={(e) => setFilters((current) => ({ ...current, stateFilter: e.target.value }))}
           aria-label="Filter by state"
           className="w-auto min-w-36"
         >
@@ -200,7 +211,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         </Select>
         <Select
           value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value)}
+          onChange={(e) => setFilters((current) => ({ ...current, sourceFilter: e.target.value }))}
           aria-label="Filter by source type"
           className="w-auto min-w-40"
         >
@@ -213,23 +224,22 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
           <input
             type="checkbox"
             checked={needsAttentionOnly}
-            onChange={(e) => setNeedsAttentionOnly(e.target.checked)}
+            onChange={(e) => setFilters((current) => ({ ...current, needsAttentionOnly: e.target.checked }))}
             className="accent-accent"
           />
-          Needs attention only
+          Needs attention
         </label>
-      </div>
-
-      <DataTable
-        columns={columns}
-        rows={rows}
-        searchableText={(w) => `${w.name} ${w.nodeName} ${w.clientName ?? ""} ${w.description ?? ""} ${w.source}`}
-        searchPlaceholder="Search workloads…"
+        </>}
         loading={workloadsQuery.isLoading}
         error={workloadsQuery.isError ? "Failed to load workloads" : null}
         emptyTitle="No workloads yet"
         emptyBody="Create a stack and attach containers to group them into a logical workload."
-        onRowClick={(w) => router.push(`/admin/workloads/${w.id}`)}
+        onRowClick={(w) => {
+          const href = `/admin/workloads/${w.id}`;
+          rememberResourceNavigation(href);
+          router.push(href);
+        }}
+        rowKey={(w) => w.id}
       />
     </div>
   );
