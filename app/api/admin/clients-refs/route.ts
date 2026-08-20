@@ -6,11 +6,12 @@ import { fromError, ok } from "@/server/http";
 export async function GET(): Promise<Response> {
   try {
     await requireApiRole("ADMIN");
-    const [nodes, clients] = await Promise.all([
+    const [nodes, clients, workloads] = await Promise.all([
       prisma.node.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-      prisma.clientAccount.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      prisma.clientAccount.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      prisma.project.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })
     ]);
-    return ok({ nodes, clients });
+    return ok({ nodes, clients, workloads });
   } catch (error) {
     return fromError(error);
   }

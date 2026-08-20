@@ -1,22 +1,23 @@
 import { prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { reconcileComposeIfDue } from "@/server/services/compose";
+import { recordNodePoll, type HeartbeatState } from "@/server/services/node-heartbeat";
+import { syncAttentionIfDue, getAttentionFeedForAdmin, getAttentionMap } from "@/server/services/attention";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
-import type { AttentionItem, WorkloadSummary } from "@/types/domain";
+import type { WorkloadSummary } from "@/types/domain";
 import { humanizeAction } from "@/lib/format";
 
 export { humanizeAction };
+export type { HeartbeatState };
 
 /**
  * Overview + Workloads data assembly for the operations dashboards.
  *
- * All data derives from a single snapshot pass: each node's agent is queried
- * exactly once, then utilization, attention items, and workload summaries are
- * computed from that snapshot. This avoids hammering the Docker CLI on rapid
- * dashboard refreshes.
+ * All data derives from one bounded snapshot pass per node, then utilization,
+ * attention items, and workload summaries are computed from that snapshot.
+ * Node polls run concurrently so one unreachable host cannot serialize the
+ * timeout across an otherwise healthy 20-node fleet.
  */
-
-const STALE_HEARTBEAT_MS = 5 * 60 * 1000;
 
 export type NodeOperationalView = {
   id: string;
@@ -25,10 +26,14 @@ export type NodeOperationalView = {
   status: string;
   isActive: boolean;
   lastHeartbeatAt: Date | null;
+  heartbeatState: HeartbeatState;
   agentVersion: string | null;
   dockerVersion: string | null;
+  systemInfo: Record<string, unknown> | null;
   containerCount: number;
   runningCount: number;
+  /** True when this specific poll reached the agent (used for compose reconcile gating, not status). */
+  polledOnline: boolean;
   offline: boolean;
   staleHeartbeat: boolean;
 };
@@ -39,62 +44,64 @@ export type OverviewSnapshot = {
 };
 
 export async function collectOverviewSnapshot(): Promise<OverviewSnapshot> {
-  const nodes = await prisma.node.findMany({ orderBy: { name: "asc" } });
-  const views: NodeOperationalView[] = [];
+  const [nodes, activeContainerCounts] = await Promise.all([
+    prisma.node.findMany({ orderBy: { name: "asc" } }),
+    // One fleet-wide aggregate is both clearer and more reliable than
+    // deriving offline impact from the empty result of a failed live poll.
+    // It remains O(nodes), never one query per node/container.
+    prisma.container.groupBy({
+      by: ["nodeId"],
+      where: { isActive: true },
+      _count: { _all: true }
+    })
+  ]);
+  const activeCountByNode = new Map(activeContainerCounts.map((row) => [row.nodeId, row._count._all]));
   const containersByNode = new Map<string, RuntimeContainer[]>();
 
-  for (const node of nodes) {
+  const views = await Promise.all(nodes.map(async (node): Promise<NodeOperationalView> => {
     let containers: RuntimeContainer[] = [];
-    let online = false;
+    let polledOnline = false;
     try {
       const payload = await nodeAgentClient.listContainers(node);
       containers = payload.containers;
-      online = payload.nodeOnline;
+      polledOnline = payload.nodeOnline;
     } catch {
-      online = false;
+      polledOnline = false;
     }
     containersByNode.set(node.id, containers);
 
-    let status: string = node.status;
-    let lastHeartbeatAt: Date | null = node.lastHeartbeatAt;
-    if (online) {
-      await prisma.node
-        .update({ where: { id: node.id }, data: { status: "ONLINE", lastHeartbeatAt: new Date() } })
-        .catch(() => undefined);
-      status = "ONLINE";
-      lastHeartbeatAt = new Date();
-    } else if (node.status !== "INACTIVE") {
-      await prisma.node
-        .update({ where: { id: node.id }, data: { status: "OFFLINE" } })
-        .catch(() => undefined);
-      status = "OFFLINE";
-    }
+    const poll = await recordNodePoll(node, polledOnline);
 
-    // Compose discovery + reconciliation, throttled per node.
-    if (online) {
+    // Compose discovery + reconciliation, throttled per node. Only when this
+    // poll actually reached the agent (an offline/timed-out agent never
+    // triggers a reconcile).
+    if (polledOnline) {
       await reconcileComposeIfDue(node.id, containers);
     }
 
     const running = containers.filter((c) => c.status === "running").length;
-    const offline = status === "OFFLINE" || status === "UNKNOWN";
-    const staleHeartbeat =
-      !!lastHeartbeatAt && Date.now() - lastHeartbeatAt.getTime() > STALE_HEARTBEAT_MS;
 
-    views.push({
+    return {
       id: node.id,
       name: node.name,
       hostname: node.hostname,
-      status,
+      status: poll.status,
       isActive: node.isActive,
-      lastHeartbeatAt,
-      agentVersion: node.agentVersion,
-      dockerVersion: node.dockerVersion,
-      containerCount: containers.length,
+      lastHeartbeatAt: poll.lastHeartbeatAt,
+      heartbeatState: poll.heartbeatState,
+      agentVersion: poll.agentVersion,
+      dockerVersion: poll.dockerVersion,
+      systemInfo: poll.systemInfo,
+      // Preserve impact context while offline: a failed live poll returns no
+      // containers, but the last discovered inventory still tells the
+      // operator how many resources are affected.
+      containerCount: polledOnline ? containers.length : (activeCountByNode.get(node.id) ?? 0),
       runningCount: running,
-      offline,
-      staleHeartbeat
-    });
-  }
+      polledOnline,
+      offline: poll.heartbeatState === "OFFLINE",
+      staleHeartbeat: poll.heartbeatState === "STALE"
+    };
+  }));
 
   return { nodes: views, containersByNode };
 }
@@ -130,7 +137,7 @@ export function computeUtilization(containersByNode: Map<string, RuntimeContaine
     for (const c of containers) {
       if (c.status === "running") totals.runningContainers += 1;
       if (c.status === "stopped") totals.stoppedContainers += 1;
-      if (c.status === "unhealthy") totals.unhealthyContainers += 1;
+      if (c.health === "unhealthy" || c.status === "unhealthy") totals.unhealthyContainers += 1;
       if (c.status === "restarting") totals.restartingContainers += 1;
       if (typeof c.cpuPercent === "number") {
         cpuSum += c.cpuPercent;
@@ -150,110 +157,46 @@ export function computeUtilization(containersByNode: Map<string, RuntimeContaine
   return totals;
 }
 
-export async function collectAttentionItems(
-  snapshot: OverviewSnapshot,
-  utilization: UtilizationTotals
-): Promise<AttentionItem[]> {
-  const items: AttentionItem[] = [];
-  const { nodes, containersByNode } = snapshot;
-  const now = Date.now();
-
-  for (const node of nodes) {
-    if (!node.isActive) continue;
-    if (node.offline) {
-      items.push({
-        severity: "critical",
-        category: "node",
-        title: `${node.name} is offline`,
-        detail: node.lastHeartbeatAt
-          ? `Last heartbeat ${timeAgo(node.lastHeartbeatAt)}.`
-          : "No heartbeat recorded yet.",
-        resourceType: "node",
-        resourceId: node.id,
-        nodeId: node.id
-      });
-    } else if (node.staleHeartbeat) {
-      items.push({
-        severity: "warning",
-        category: "node",
-        title: `${node.name} heartbeat is stale`,
-        detail: `Last heartbeat ${timeAgo(node.lastHeartbeatAt!)}.`,
-        resourceType: "node",
-        resourceId: node.id,
-        nodeId: node.id
-      });
-    }
-  }
-
-  const failedOps = await prisma.operation.findMany({
-    where: { state: "FAILED", finishedAt: { gte: new Date(now - 24 * 3600_000) } },
-    orderBy: { finishedAt: "desc" },
-    take: 10,
-    include: { node: { select: { id: true, name: true } } }
-  });
-  for (const op of failedOps) {
-    items.push({
-      severity: "warning",
-      category: "operation",
-      title: `${humanizeAction(op.type)} failed`,
-      detail: op.error ?? "Unknown error",
-      resourceType: "operation",
-      resourceId: op.id,
-      nodeId: op.nodeId
-    });
-  }
-
-  for (const node of nodes) {
-    if (node.offline) continue;
-    const containers = containersByNode.get(node.id) ?? [];
-    for (const c of containers) {
-      if (c.status === "unhealthy") {
-        items.push({
-          severity: "critical",
-          category: "container",
-          title: `${c.name} is unhealthy`,
-          detail: `On ${node.name}. Health check failing.`,
-          resourceType: "container",
-          resourceId: c.id,
-          nodeId: node.id
-        });
-      } else if (c.status === "restarting" || (c.restartCount ?? 0) >= 3) {
-        items.push({
-          severity: "warning",
-          category: "container",
-          title: `${c.name} is crash-looping`,
-          detail: `On ${node.name}. Restart count: ${c.restartCount ?? "?"}.`,
-          resourceType: "container",
-          resourceId: c.id,
-          nodeId: node.id
-        });
-      } else if (c.status === "stopped") {
-        items.push({
-          severity: "info",
-          category: "container",
-          title: `${c.name} is stopped`,
-          detail: `On ${node.name}.`,
-          resourceType: "container",
-          resourceId: c.id,
-          nodeId: node.id
-        });
-      }
-    }
-  }
-
-  return items.slice(0, 25);
+/**
+ * Attention feed for the Overview "Needs attention" section (§3). This runs
+ * the throttled attention-sync pass (persists AttentionState transitions,
+ * logs Activity for new/resolved conditions) and returns the deduplicated
+ * admin-scoped feed. All derivation logic itself lives in
+ * server/services/attention.ts — this is deliberately a thin wrapper so the
+ * Overview route doesn't need to know about the sync/read split.
+ */
+export async function collectAttentionItems(snapshot: OverviewSnapshot): Promise<import("@/types/domain").AttentionItem[]> {
+  await syncAttentionIfDue(snapshot);
+  return getAttentionFeedForAdmin();
 }
 
 export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<WorkloadSummary[]> {
+  await syncAttentionIfDue(snapshot);
   const projects = await prisma.project.findMany({
     where: { isActive: true },
     include: {
       node: { select: { id: true, name: true } },
       clientAccount: { select: { id: true, name: true } },
       containers: { where: { isActive: true }, select: { dockerContainerId: true, dockerName: true } },
+      deployment: { select: { runtimeState: true } },
       _count: { select: { containers: true, grants: true } }
     }
   });
+
+  const [attentionMap, projectEvents] = await Promise.all([
+    getAttentionMap(),
+    prisma.auditLog.findMany({
+      where: { targetType: "PROJECT", targetId: { in: projects.map((p) => p.id) } },
+      orderBy: { createdAt: "desc" },
+      select: { targetId: true, action: true, createdAt: true, result: true }
+    })
+  ]);
+  const lastEventByProject = new Map<string, (typeof projectEvents)[number]>();
+  for (const event of projectEvents) {
+    if (event.targetId && !lastEventByProject.has(event.targetId)) {
+      lastEventByProject.set(event.targetId, event);
+    }
+  }
 
   const summaries: WorkloadSummary[] = [];
   for (const project of projects) {
@@ -271,7 +214,7 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
     for (const c of inProject) {
       if (c.status === "running") running += 1;
       if (c.status === "stopped") stopped += 1;
-      if (c.status === "unhealthy") unhealthy += 1;
+      if (c.health === "unhealthy" || c.status === "unhealthy") unhealthy += 1;
       if (typeof c.cpuPercent === "number") {
         cpuSum += c.cpuPercent;
         cpuCount += 1;
@@ -284,8 +227,19 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
     }
 
     const total = project.containers.length;
-    const nodeOnline = node ? !node.offline : false;
-    const health: WorkloadSummary["health"] = !nodeOnline
+    // Live service health is knowable only when this request reached the
+    // agent. During heartbeat grace, connectivity may still be ONLINE/STALE,
+    // but an empty failed poll must not be presented as a down workload.
+    const telemetryCurrent = node?.polledOnline === true;
+    const managed = Boolean(project.deployment);
+    const runtimeState = project.deployment?.runtimeState ?? null;
+
+    // Container-derived health first, then layered with managed-deployment
+    // runtime state — a managed workload with all containers "running" but
+    // DEGRADED/DRIFTED runtime must never be reported as healthy (§6/§19:
+    // "Do not call DEGRADED healthy just because containers are technically
+    // running.").
+    let health: WorkloadSummary["health"] = !telemetryCurrent || total === 0
       ? "unknown"
       : unhealthy > 0
         ? "degraded"
@@ -294,18 +248,21 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
           : running === 0
             ? "down"
             : "degraded";
+    if (managed && telemetryCurrent) {
+      if (runtimeState === "DRIFTED") health = "down";
+      else if (runtimeState === "DEGRADED" && health === "healthy") health = "degraded";
+    }
 
-    const lastEvent = await prisma.auditLog.findFirst({
-      where: { targetType: "PROJECT", targetId: project.id },
-      orderBy: { createdAt: "desc" },
-      select: { action: true, createdAt: true, result: true }
-    });
+    const lastEvent = lastEventByProject.get(project.id) ?? null;
+
+    const attention = attentionMap.get(`WORKLOAD:${project.id}`) ?? (health === "healthy" ? "healthy" : health === "unknown" ? "unknown" : undefined);
 
     summaries.push({
       id: project.id,
       name: project.name,
       slug: project.slug,
       description: project.description,
+      source: managed ? "MANAGED" : project.source,
       nodeId: project.nodeId,
       nodeName: project.node.name,
       clientId: project.clientAccount?.id ?? null,
@@ -319,17 +276,12 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
       memoryUsage: memSum > 0 ? `${memSum.toFixed(0)} MiB` : null,
       lastEvent: lastEvent
         ? { action: lastEvent.action, createdAt: lastEvent.createdAt.toISOString(), result: lastEvent.result }
-        : null
+        : null,
+      attention: attention ?? "warning",
+      managed,
+      deploymentRuntimeState: runtimeState
     });
   }
 
   return summaries.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function timeAgo(date: Date): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
 }

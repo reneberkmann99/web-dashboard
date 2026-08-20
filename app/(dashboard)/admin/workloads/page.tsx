@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Compass } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { timeAgo } from "@/lib/format";
 import type { WorkloadSummary } from "@/types/domain";
@@ -14,8 +14,14 @@ import type { WorkloadSummary } from "@/types/domain";
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type RefPayload = { nodes: Array<{ id: string; name: string }>; clients: Array<{ id: string; name: string }> };
 
-function healthVariant(health: WorkloadSummary["health"]): "success" | "warning" | "danger" | "default" {
-  return health === "healthy" ? "success" : health === "degraded" ? "warning" : health === "down" ? "danger" : "default";
+const ATTENTION_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2, unknown: 3, healthy: 4 };
+
+function healthAttention(w: WorkloadSummary): "critical" | "warning" | "info" | "healthy" | "unknown" {
+  if (w.attention === "critical" || w.attention === "warning") return w.attention;
+  if (w.health === "down") return "critical";
+  if (w.health === "degraded") return "warning";
+  if (w.health === "unknown") return "unknown";
+  return "healthy";
 }
 
 export default function AdminWorkloadsPage(): React.JSX.Element {
@@ -23,10 +29,13 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
   const [nodeFilter, setNodeFilter] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [stateFilter, setStateFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
 
   const workloadsQuery = useQuery({
     queryKey: ["admin-workloads"],
-    queryFn: () => apiFetch<WorkloadsPayload>("/api/admin/workloads")
+    queryFn: () => apiFetch<WorkloadsPayload>("/api/admin/workloads"),
+    refetchInterval: 20000
   });
   const refsQuery = useQuery({
     queryKey: ["admin-workloads-refs"],
@@ -38,8 +47,16 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     if (nodeFilter) out = out.filter((w) => w.nodeId === nodeFilter);
     if (clientFilter) out = out.filter((w) => w.clientId === clientFilter);
     if (stateFilter) out = out.filter((w) => w.health === stateFilter);
-    return out;
-  }, [workloadsQuery.data, nodeFilter, clientFilter, stateFilter]);
+    if (sourceFilter) out = out.filter((w) => w.source === sourceFilter);
+    if (needsAttentionOnly) out = out.filter((w) => healthAttention(w) === "critical" || healthAttention(w) === "warning");
+    // Default view surfaces problems first (§5): explicit severity rank, then
+    // alphabetical — never resorts purely on a fluctuating metric like CPU%.
+    return [...out].sort((a, b) => {
+      const diff = ATTENTION_RANK[healthAttention(a)] - ATTENTION_RANK[healthAttention(b)];
+      if (diff !== 0) return diff;
+      return a.name.localeCompare(b.name);
+    });
+  }, [workloadsQuery.data, nodeFilter, clientFilter, stateFilter, sourceFilter, needsAttentionOnly]);
 
   const columns: Column<WorkloadSummary>[] = [
     {
@@ -68,6 +85,13 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       hideBelow: "sm"
     },
     {
+      key: "source",
+      header: "Type",
+      sortValue: (w) => w.source,
+      render: (w) => <span className="text-xs text-muted">{w.source}</span>,
+      hideBelow: "md"
+    },
+    {
       key: "status",
       header: "Containers",
       sortValue: (w) => w.runningContainers,
@@ -81,7 +105,17 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       key: "health",
       header: "Health",
       sortValue: (w) => w.health,
-      render: (w) => <Badge variant={healthVariant(w.health)}>{w.health}</Badge>
+      render: (w) => <AttentionBadge severity={healthAttention(w)} label={w.health} />
+    },
+    {
+      key: "attention",
+      header: "Attention",
+      sortValue: (w) => ATTENTION_RANK[healthAttention(w)],
+      render: (w) => {
+        const a = healthAttention(w);
+        return a === "healthy" ? <span className="text-xs text-muted">—</span> : <AttentionBadge severity={a} />;
+      },
+      hideBelow: "md"
     },
     {
       key: "resources",
@@ -163,12 +197,32 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
           <option value="down">Down</option>
           <option value="unknown">Unknown</option>
         </select>
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          aria-label="Filter by source type"
+          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+        >
+          <option value="">All types</option>
+          <option value="MANUAL">Manual</option>
+          <option value="COMPOSE">External Compose</option>
+          <option value="MANAGED">Managed</option>
+        </select>
+        <label className="flex items-center gap-2 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm">
+          <input
+            type="checkbox"
+            checked={needsAttentionOnly}
+            onChange={(e) => setNeedsAttentionOnly(e.target.checked)}
+            className="accent-accent"
+          />
+          Needs attention only
+        </label>
       </div>
 
       <DataTable
         columns={columns}
         rows={rows}
-        searchableText={(w) => `${w.name} ${w.nodeName} ${w.clientName ?? ""} ${w.description ?? ""}`}
+        searchableText={(w) => `${w.name} ${w.nodeName} ${w.clientName ?? ""} ${w.description ?? ""} ${w.source}`}
         searchPlaceholder="Search workloads…"
         loading={workloadsQuery.isLoading}
         error={workloadsQuery.isError ? "Failed to load workloads" : null}

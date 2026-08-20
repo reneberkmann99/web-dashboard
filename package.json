@@ -16,7 +16,9 @@
     "agent:dev": "tsx --watch agent/src/index.ts",
     "agent:start": "tsx agent/src/index.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:browser": "playwright test tests/phase6d-regressions.spec.ts",
+    "test:browser:operational": "playwright test tests/phase6d-operational.spec.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.6.0",

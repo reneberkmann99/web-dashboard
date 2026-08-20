@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
@@ -23,7 +24,8 @@ export default function AdminNodesPage(): React.JSX.Element {
 
   const query = useQuery({
     queryKey: ["admin-nodes"],
-    queryFn: () => apiFetch<NodesPayload>("/api/admin/nodes")
+    queryFn: () => apiFetch<NodesPayload>("/api/admin/nodes"),
+    refetchInterval: 20000
   });
 
   const enrollMutation = useMutation({
@@ -90,6 +92,12 @@ export default function AdminNodesPage(): React.JSX.Element {
       )
     },
     {
+      key: "attention",
+      header: "Attention",
+      sortValue: (n) => ({ critical: 0, warning: 1, info: 2, unknown: 3, healthy: 4 }[n.attention] ?? 3),
+      render: (n) => (n.attention === "healthy" ? <span className="text-xs text-muted">No issues</span> : <AttentionBadge severity={n.attention} />)
+    },
+    {
       key: "heartbeat",
       header: "Last heartbeat",
       sortValue: (n) => n.lastHeartbeatAt ?? "",
@@ -97,9 +105,25 @@ export default function AdminNodesPage(): React.JSX.Element {
       hideBelow: "sm"
     },
     {
+      key: "resources",
+      header: "Resources",
+      hideBelow: "md",
+      render: (n) => {
+        if (n.offline || n.staleHeartbeat) {
+          return <span className="text-xs text-muted">Telemetry stale · {timeAgo(n.lastHeartbeatAt)}</span>;
+        }
+        const sys = (n.systemInfo ?? {}) as Record<string, unknown>;
+        const cpu = typeof sys.cpuPercent === "number" ? `${sys.cpuPercent.toFixed(0)}% CPU` : null;
+        const mem = typeof sys.memPercent === "number" ? `${sys.memPercent.toFixed(0)}% RAM` : null;
+        const disk = typeof sys.diskPercent === "number" ? `${sys.diskPercent.toFixed(0)}% disk` : null;
+        const parts = [cpu, mem, disk].filter(Boolean);
+        return <span className="text-xs text-muted">{parts.length > 0 ? parts.join(" · ") : "—"}</span>;
+      }
+    },
+    {
       key: "versions",
       header: "Versions",
-      hideBelow: "md",
+      hideBelow: "lg",
       render: (n) => (
         <span className="text-xs text-muted">
           agent {n.agentVersion ?? "?"}
@@ -111,7 +135,12 @@ export default function AdminNodesPage(): React.JSX.Element {
       key: "containers",
       header: "Containers",
       sortValue: (n) => n.liveContainerCount,
-      render: (n) => <span className="text-sm">{n.liveContainerCount}</span>
+      render: (n) => (
+        <span className="text-sm">
+          {n.liveContainerCount}
+          <span className="ml-1 text-xs text-muted">{n.liveWorkloadCount ?? 0} workloads</span>
+        </span>
+      )
     },
     {
       key: "actions",
@@ -152,6 +181,8 @@ export default function AdminNodesPage(): React.JSX.Element {
         emptyBody="Install the HostPanel agent on your first Docker server to begin managing workloads."
         emptyAction={<Button onClick={() => setEnrollOpen(true)}>Add node</Button>}
         rowKey={(n) => n.id}
+        initialSort="attention"
+        initialSortDir="asc"
       />
 
       <Modal

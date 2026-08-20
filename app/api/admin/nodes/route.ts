@@ -6,13 +6,16 @@ import { fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { collectOverviewSnapshot } from "@/server/services/overview";
+import { getAttentionMap, syncAttentionIfDue } from "@/server/services/attention";
 
 export async function GET(): Promise<Response> {
   try {
     await requireApiRole("ADMIN");
 
     const snapshot = await collectOverviewSnapshot();
+    await syncAttentionIfDue(snapshot);
     const live = new Map(snapshot.nodes.map((n) => [n.id, n]));
+    const attentionMap = await getAttentionMap();
 
     const nodes = await prisma.node.findMany({
       orderBy: { createdAt: "desc" },
@@ -28,20 +31,26 @@ export async function GET(): Promise<Response> {
         lastHeartbeatAt: true,
         osInfo: true,
         systemInfo: true,
-        _count: { select: { assignments: true } }
+        _count: { select: { assignments: true, containers: true, projects: true } }
       }
     });
 
     return ok({
       nodes: nodes.map((n) => {
         const op = live.get(n.id);
+        const offline = op?.offline ?? n.status === "OFFLINE";
+        const attention = attentionMap.get(`NODE:${n.id}`) ?? (offline ? "critical" : "healthy");
         return {
           ...n,
           status: op?.status ?? n.status,
           lastHeartbeatAt: op?.lastHeartbeatAt ?? n.lastHeartbeatAt,
+          systemInfo: op?.systemInfo ?? n.systemInfo,
           liveContainerCount: op?.containerCount ?? 0,
           liveRunningCount: op?.runningCount ?? 0,
-          staleHeartbeat: op?.staleHeartbeat ?? false
+          liveWorkloadCount: n._count.projects,
+          staleHeartbeat: op?.staleHeartbeat ?? false,
+          offline,
+          attention
         };
       })
     });

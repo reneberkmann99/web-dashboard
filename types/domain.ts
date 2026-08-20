@@ -41,12 +41,15 @@ export type ContainerView = {
   name: string;
   image: string;
   status: ContainerStatus;
+  /** Docker healthcheck state, separate from runtime state. */
+  health?: "healthy" | "unhealthy" | "starting" | null;
   uptime: string | null;
   ports: string;
   createdAt: string | null;
   cpuPercent: number | null;
   memoryUsage: string | null;
   restartCount: number | null;
+  restartPolicy?: string | null;
   nodeId: string;
   nodeName: string;
   nodeOnline: boolean;
@@ -57,17 +60,34 @@ export type ContainerView = {
   allowedActions: string[];
   lastUpdatedAt: string;
   details?: ContainerDetailsView | null;
+  /** Backend-derived attention severity for this container (Phase 6D). */
+  attention?: "critical" | "warning" | "info" | "healthy" | "unknown";
 };
 
-/** Item in the Needs attention section of the Overview dashboard. */
+export type AttentionSeverity = "critical" | "warning" | "info";
+
+/**
+ * Item in the "Needs attention" section of Overview / node / workload detail
+ * pages. Deduplicated and backend-derived (server/services/attention.ts) —
+ * never recomputed independently per component. `href` lets a card link
+ * straight to the useful investigation page (§15) instead of forcing manual
+ * navigation.
+ */
 export type AttentionItem = {
-  severity: "critical" | "warning" | "info";
+  id: string;
+  severity: AttentionSeverity;
   category: string;
+  conditionType: string;
   title: string;
   detail: string;
-  resourceType: "node" | "container" | "operation" | "client";
+  resourceType: "node" | "container" | "operation" | "client" | "workload" | "deployment";
   resourceId: string | null;
   nodeId: string | null;
+  href: string | null;
+  firstObservedAt: string;
+  lastObservedAt: string;
+  /** Count of lower-level items suppressed/rolled up into this one (§4 dedup). */
+  affectedCount?: number;
 };
 
 /** Workload (Project/Stack) summary for the Workloads page. */
@@ -76,6 +96,7 @@ export type WorkloadSummary = {
   name: string;
   slug: string;
   description: string | null;
+  source: "MANUAL" | "COMPOSE" | "MANAGED";
   nodeId: string;
   nodeName: string;
   clientId: string | null;
@@ -88,6 +109,49 @@ export type WorkloadSummary = {
   cpuPercent: number | null;
   memoryUsage: string | null;
   lastEvent: { action: string; createdAt: string; result: string } | null;
+  /** Backend-derived attention severity, distinct from `health` (§6/§19). */
+  attention: AttentionSeverity | "healthy" | "unknown";
+  managed: boolean;
+  deploymentRuntimeState?: "UNKNOWN" | "CONVERGED" | "DEGRADED" | "DRIFTED" | null;
+};
+
+/** Fleet-wide summary counters for the Overview page (§2). */
+export type FleetSummary = {
+  nodesOnline: number;
+  nodesTotal: number;
+  workloadsHealthy: number;
+  workloadsTotal: number;
+  containersRunning: number;
+  containersTotal: number;
+  unhealthyContainers: number;
+  activeOperations: number;
+  degradedWorkloads: number;
+  attentionIssues: number;
+};
+
+/** Recent failure entry for the Overview "Recent failures" section (§13). */
+export type RecentFailure = {
+  id: string;
+  kind: string;
+  title: string;
+  detail: string | null;
+  resourceType: "node" | "container" | "operation" | "workload" | "deployment";
+  resourceId: string | null;
+  href: string | null;
+  createdAt: string;
+};
+
+/** Active (in-flight) operation summary for the Overview "Active operations" section (§12). */
+export type ActiveOperationSummary = {
+  id: string;
+  kind: "container" | "deployment";
+  type: string;
+  state: string;
+  targetName: string;
+  targetHref: string | null;
+  actorEmail: string | null;
+  startedAt: string | null;
+  requestedAt: string;
 };
 
 export type OperationView = {
@@ -157,7 +221,10 @@ export type NodeRecord = {
   systemInfo: Record<string, unknown> | null;
   liveContainerCount: number;
   liveRunningCount: number;
+  liveWorkloadCount?: number;
   staleHeartbeat: boolean;
+  offline: boolean;
+  attention: AttentionSeverity | "healthy" | "unknown";
   _count: { assignments: number; containers?: number };
 };
 

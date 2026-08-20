@@ -3,6 +3,7 @@ import { nodeAgentClient } from "@/server/services/node-agent/client";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import { humanizeAction } from "@/server/services/overview";
 import { requestOperation, OperationConflictError } from "@/server/services/operations";
+import { recordNodePoll } from "@/server/services/node-heartbeat";
 import type { AuthSession } from "@/server/auth/session";
 
 /**
@@ -10,13 +11,26 @@ import type { AuthSession } from "@/server/auth/session";
  */
 
 export async function listContainersForNode(nodeId: string): Promise<RuntimeContainer[]> {
+  return (await pollContainersForNode(nodeId)).containers;
+}
+
+export async function pollContainersForNode(nodeId: string): Promise<{
+  containers: RuntimeContainer[];
+  polledOnline: boolean;
+  heartbeatState: import("@/server/services/node-heartbeat").HeartbeatState;
+}> {
   const node = await prisma.node.findUnique({ where: { id: nodeId } });
-  if (!node) return [];
+  if (!node) return { containers: [], polledOnline: false, heartbeatState: "OFFLINE" };
   try {
     const payload = await nodeAgentClient.listContainers(node);
-    return payload.containers;
+    // Keep heartbeat/systemInfo fresh on every viewing of this node's
+    // containers (node detail, workload detail) — same centralized policy
+    // used by Overview/Nodes (§21: don't reimplement this per caller).
+    const poll = await recordNodePoll(node, payload.nodeOnline);
+    return { containers: payload.containers, polledOnline: payload.nodeOnline, heartbeatState: poll.heartbeatState };
   } catch {
-    return [];
+    const poll = await recordNodePoll(node, false);
+    return { containers: [], polledOnline: false, heartbeatState: poll.heartbeatState };
   }
 }
 
@@ -85,7 +99,7 @@ export function toWorkloadDetail(
       restartCount: c.restartCount,
       ports: c.ports,
       uptime: c.uptime,
-      health: c.details?.health ?? null,
+      health: c.health ?? c.details?.health ?? null,
       inProject: projectIds.has(c.id)
     }))
     .filter((c) => c.inProject);
@@ -93,7 +107,7 @@ export function toWorkloadDetail(
   const inProject = containerSummaries.filter((c) => c.inProject);
   const running = inProject.filter((c) => c.status === "running").length;
   const stopped = inProject.filter((c) => c.status === "stopped").length;
-  const unhealthy = inProject.filter((c) => c.status === "unhealthy").length;
+  const unhealthy = inProject.filter((c) => c.health === "unhealthy" || c.status === "unhealthy").length;
   const restarting = inProject.filter((c) => c.status === "restarting").length;
   const total = inProject.length;
 
@@ -101,7 +115,7 @@ export function toWorkloadDetail(
     project.node.status === "ONLINE"
       ? unhealthy > 0
         ? "degraded"
-        : running === total
+        : total > 0 && running === total
           ? "healthy"
           : running === 0
             ? "down"

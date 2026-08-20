@@ -5,6 +5,7 @@ import { getAdminWorkloadDeploymentStatus } from "@/server/services/deployments"
 import { containerActionSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
+import { prisma } from "@/server/db";
 
 const ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/;
 
@@ -32,7 +33,12 @@ export async function GET(
     const managedDeployment = container.projectId
       ? await getAdminWorkloadDeploymentStatus(container.projectId)
       : null;
-    return ok({ container, nodeOnline, managedDeployment });
+    const activeOperation = await prisma.operation.findFirst({
+      where: { nodeId, dockerContainerId: dockerId, state: { in: ["REQUESTED", "QUEUED", "RUNNING"] } },
+      orderBy: { requestedAt: "desc" },
+      select: { id: true, type: true, state: true, requestedAt: true }
+    });
+    return ok({ container, nodeOnline, managedDeployment, activeOperation });
   } catch (error) {
     return fromError(error);
   }

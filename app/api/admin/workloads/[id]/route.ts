@@ -4,6 +4,7 @@ import { cuidParamSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 import { listContainersForNode, toWorkloadDetail } from "@/server/services/workloads";
 import { getAdminWorkloadDeploymentStatus } from "@/server/services/deployments";
+import { getAttentionFeedForAdmin } from "@/server/services/attention";
 
 export async function GET(
   _: Request,
@@ -41,9 +42,27 @@ export async function GET(
       select: { id: true, action: true, actorEmail: true, result: true, createdAt: true, metadata: true }
     });
 
-    const deployment = await getAdminWorkloadDeploymentStatus(project.id);
+    const [deployment, attentionFeed, activeOperations] = await Promise.all([
+      getAdminWorkloadDeploymentStatus(project.id),
+      getAttentionFeedForAdmin(),
+      prisma.operation.findMany({
+        where: {
+          nodeId: project.node.id,
+          dockerContainerId: { in: project.containers.map((c) => c.dockerContainerId) },
+          state: { in: ["REQUESTED", "QUEUED", "RUNNING"] }
+        },
+        orderBy: { requestedAt: "desc" },
+        select: { id: true, type: true, state: true, dockerContainerId: true, requestedAt: true }
+      })
+    ]);
+    const memberContainerIds = new Set(project.containers.map((c) => `${project.node.id}:${c.dockerContainerId}`));
+    const attentionItems = attentionFeed.filter(
+      (item) =>
+        (item.resourceType === "workload" && item.resourceId === project.id) ||
+        (item.resourceType === "container" && item.resourceId && memberContainerIds.has(item.resourceId))
+    );
 
-    return ok({ workload: detail, activity, deployment });
+    return ok({ workload: detail, activity, deployment, attentionItems, activeOperations });
   } catch (error) {
     return fromError(error);
   }

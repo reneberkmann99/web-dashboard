@@ -3,6 +3,8 @@ export type RuntimeContainer = {
   name: string;
   image: string;
   status: "running" | "stopped" | "restarting" | "unhealthy" | "unknown";
+  /** Docker healthcheck state, deliberately separate from runtime state. */
+  health?: "healthy" | "unhealthy" | "starting" | null;
   uptime: string | null;
   ports: string;
   createdAt: string | null;
@@ -21,6 +23,15 @@ export type RuntimeContainer = {
    */
   networkNames?: string[];
   mountRefs?: Array<{ type: string; source: string; destination: string; mode: string; volumeName: string | null }>;
+  /**
+   * Docker restart policy name (e.g. "always", "unless-stopped", "no"),
+   * captured during the EXISTING per-container inspect in `listContainers()`
+   * — zero extra Docker calls. Used by the attention model to distinguish a
+   * container that is "supposed to be running" (policy always/unless-stopped)
+   * but is unexpectedly stopped, from an intentionally one-shot/manual
+   * container (policy no/on-failure) that stopping is normal for.
+   */
+  restartPolicy?: string | null;
   /** Detailed docker inspect-derived metadata (networks, mounts, labels, …). */
   details?: ContainerDetails | null;
 };

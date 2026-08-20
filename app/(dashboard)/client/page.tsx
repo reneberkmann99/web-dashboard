@@ -4,21 +4,28 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { timeAgo } from "@/lib/format";
-import type { ContainerView, OverviewStats, WorkloadSummary } from "@/types/domain";
+import type { AttentionItem, ContainerView, OverviewStats, WorkloadSummary } from "@/types/domain";
 
 type ClientOverviewResponse = {
   overview: OverviewStats;
   workloads: WorkloadSummary[];
+  attention: AttentionItem[];
+  activeOperations: Array<{ id: string; type: string; state: string; targetName: string; href: string | null }>;
   recentActivity: Array<{ id: string; action: string; humanized: string; actorEmail: string | null; result: string; createdAt: string }>;
   recentContainers: ContainerView[];
 };
 
 function healthVariant(health: WorkloadSummary["health"]): "success" | "warning" | "danger" | "default" {
   return health === "healthy" ? "success" : health === "degraded" ? "warning" : health === "down" ? "danger" : "default";
+}
+
+function humanizeOperation(type: string): string {
+  return type.toLowerCase().replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
 }
 
 export default function ClientDashboardPage(): React.JSX.Element {
@@ -30,10 +37,7 @@ export default function ClientDashboardPage(): React.JSX.Element {
   });
 
   const stats = query.data?.overview;
-  const needsAttention = [
-    ...(stats ? [{ label: "Stopped", value: stats.stoppedContainers, warn: stats.stoppedContainers > 0 }] : []),
-    ...(stats ? [{ label: "Unhealthy", value: stats.unhealthyContainers, warn: stats.unhealthyContainers > 0 }] : [])
-  ];
+  const attention = query.data?.attention ?? [];
 
   return (
     <div className="space-y-6">
@@ -48,6 +52,50 @@ export default function ClientDashboardPage(): React.JSX.Element {
         <MetricCard label="Stopped" value={stats?.stoppedContainers ?? "-"} />
         <MetricCard label="Unhealthy" value={stats?.unhealthyContainers ?? "-"} />
       </section>
+
+      {/* Needs attention — workload-scoped only (§18); no node/infra detail is ever exposed to clients */}
+      {attention.length > 0 && (
+        <section aria-label="Needs attention">
+          <h2 className="mb-2 text-lg font-semibold text-amber-300">Needs attention</h2>
+          <div className="space-y-2">
+            {attention.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => item.href && router.push(item.href)}
+                className={`flex w-full items-start justify-between gap-3 rounded-lg border p-3 text-left ${
+                  item.severity === "critical" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"
+                }`}
+              >
+                <div>
+                  <p className="text-sm font-medium">{item.title}</p>
+                  <p className="text-xs text-muted">{item.detail}</p>
+                </div>
+                <AttentionBadge severity={item.severity} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(query.data?.activeOperations.length ?? 0) > 0 && (
+        <section aria-label="Active operations">
+          <h2 className="mb-2 text-lg font-semibold">Active operations</h2>
+          <div className="space-y-2">
+            {query.data!.activeOperations.map((operation) => (
+              <button
+                key={operation.id}
+                type="button"
+                onClick={() => operation.href && router.push(operation.href)}
+                className="flex w-full items-center justify-between rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 text-left text-sm"
+              >
+                <span>{humanizeOperation(operation.type)} — {operation.targetName}</span>
+                <Badge variant="warning">{operation.state.toLowerCase()}</Badge>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="grid gap-6 lg:grid-cols-2">
         <Card className="panel">

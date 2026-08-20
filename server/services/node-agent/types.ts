@@ -32,12 +32,14 @@ export const containerRuntimeSchema = z.object({
   name: z.string(),
   image: z.string(),
   status: z.enum(["running", "stopped", "restarting", "unhealthy", "unknown"]),
+  health: z.enum(["healthy", "unhealthy", "starting"]).nullable().optional(),
   uptime: z.string().nullable(),
   ports: z.string(),
   createdAt: z.string().nullable(),
   cpuPercent: z.number().nullable(),
   memoryUsage: z.string().nullable(),
   restartCount: z.number().nullable(),
+  restartPolicy: z.string().nullable().optional(),
   lastUpdatedAt: z.string(),
   composeProject: z.string().nullable().optional(),
   composeService: z.string().nullable().optional(),
@@ -70,6 +72,11 @@ export const containerDetailResponseSchema = z.object({
 export const containerLogsResponseSchema = z.object({
   nodeOnline: z.boolean(),
   logs: z.array(z.string())
+});
+
+export const containerActionResponseSchema = z.object({
+  nodeOnline: z.boolean(),
+  success: z.boolean()
 });
 
 export const storageSummaryEntrySchema = z.object({

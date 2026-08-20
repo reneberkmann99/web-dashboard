@@ -232,6 +232,8 @@ export class RootlessDockerAdapter implements DockerAdapter {
         Config?: { Labels?: Record<string, string> };
         NetworkSettings?: { Networks?: Record<string, unknown> };
         Mounts?: Array<{ Type?: string; Source?: string; Destination?: string; Mode?: string; Name?: string }>;
+        HostConfig?: { RestartPolicy?: { Name?: string } };
+        State?: { Health?: { Status?: string } };
       };
 
       const stat = statsRows.get(row.ID);
@@ -241,13 +243,22 @@ export class RootlessDockerAdapter implements DockerAdapter {
         id: row.ID,
         name: row.Names,
         image: row.Image,
-        status: parseStatus(row.State || row.Status),
+        // Runtime and health are separate concepts: a container can be
+        // RUNNING while its Docker healthcheck is UNHEALTHY.
+        status: parseStatus(row.State),
+        health:
+          detail.State?.Health?.Status === "healthy" ||
+          detail.State?.Health?.Status === "unhealthy" ||
+          detail.State?.Health?.Status === "starting"
+            ? detail.State.Health.Status
+            : null,
         uptime: row.Status,
         ports: row.Ports || "-",
         createdAt: detail.Created ?? null,
         cpuPercent: parseCpuPercent(stat?.CPUPerc),
         memoryUsage: stat?.MemUsage ?? null,
         restartCount: detail.RestartCount ?? null,
+        restartPolicy: detail.HostConfig?.RestartPolicy?.Name ?? null,
         composeProject: labels["com.docker.compose.project"] ?? null,
         composeService: labels["com.docker.compose.service"] ?? null,
         networkNames: Object.keys(detail.NetworkSettings?.Networks ?? {}),

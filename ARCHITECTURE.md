@@ -740,3 +740,106 @@ on `Project`**. Modes are *derived*: `MANUAL`, `EXTERNAL_COMPOSE` (Mailcow), `MA
 `Deployment` exists). Revisions are immutable; secrets are versioned, encrypted at rest, referenced
 by key only; rollback re-applies a previous revision and never restores data or secret values;
 HostPanel never auto-deletes volumes/networks and never auto-rolls-back.
+
+---
+
+# Phase 6D — fleet operations attention model (2026-08-20)
+
+Phase 6D adds a reusable operational domain concept: an active condition that
+currently requires attention. The backend derives it once; Overview, Nodes,
+Workloads, Containers, resource detail pages, tenant dashboards, Activity, and
+future notification consumers read the same state. React components do not
+reinterpret Docker state independently.
+
+## Health terminology and severity
+
+The UI keeps three axes separate:
+
+- **runtime/connectivity**: `RUNNING`, `STOPPED`, `STARTING`, `STOPPING`,
+  `OFFLINE`;
+- **health/reconciliation**: `HEALTHY`, `UNHEALTHY`, `PENDING`, `DEGRADED`,
+  `DRIFTED`, `UNKNOWN`;
+- **attention**: `CRITICAL`, `WARNING`, `INFO`, or no active condition
+  (`HEALTHY`).
+
+A container can be `RUNNING` + `UNHEALTHY` + `WARNING`; a managed workload can
+be `CONVERGED` + `DEGRADED` + `WARNING`. `UNKNOWN` is never promoted to healthy,
+and `DEGRADED` is never relabelled `DRIFTED`.
+
+## Persisted condition lifecycle
+
+`AttentionState` is unique by resource + condition type and records
+`firstObservedAt`, `lastObservedAt`, and `resolvedAt`. Repeated polls refresh an
+open row; they do not create alert spam. Opening and resolution produce one
+`ATTENTION_OPENED_*` / `ATTENTION_RESOLVED_*` operational Activity transition.
+Audit records remain append-only. A resolved row is reused if the condition
+reopens; this is a lightweight active-condition model, not full incident
+history.
+
+Persisted lightweight observations support `ContainerRestartSample`
+(cumulative changes, retained 24h) and `NodeResourceSample` (at most once/min,
+retained 24h). Per-container CPU/memory uses a bounded in-memory consecutive
+sample map—no timer or database row per container.
+
+## Conditions and thresholds
+
+- heartbeat: `STALE` after 90s, `OFFLINE` after 5m;
+- crash loop: warning at 3 and critical at 8 restarts inside 10m; successful
+  deployment/restart operations suppress expected restarts for 3m;
+- node pressure: at least 3 samples across 5m; CPU 85/97%, RAM 85/95%, disk
+  85/95% (warning/critical);
+- container pressure: 3 consecutive observations; CPU warning 90%; memory
+  warning 90% and critical 98% of the Docker limit;
+- stuck operation: container 5m, managed deployment 15m;
+- recent failures: significant failures in the last 24h.
+
+Every threshold lives in `server/services/attention-config.ts` and is
+environment-overridable; the frontend contains no numeric alert thresholds.
+
+## Deduplication and tenant scope
+
+Overview suppresses children under their useful root cause: an offline node
+suppresses its container/workload issues, and a workload condition groups
+actionable member-container conditions. Container detail still exposes its
+local state. Client feeds contain only workload conditions reachable through
+that tenant's active grants; node infrastructure, other clients, container host
+details, and admin deployment internals never enter the client response.
+
+## Polling, realtime, and performance
+
+Fleet inventory is collected concurrently across nodes. A failed poll enters
+heartbeat grace instead of immediately flipping offline. Conditions on a
+temporarily unreachable-but-not-offline node are preserved because missing
+telemetry is not evidence of recovery. Workload Activity is fetched in one
+batch instead of once per project. Tables default to stable attention/name
+ordering, never changing CPU values unless the operator explicitly sorts CPU.
+
+LogViewer remains explicit-view-only: dashboards create no hidden SSE streams.
+Its stable `streamPath`, reconnect tail replacement, pause buffering, resume
+reconnect, bounded buffer, visible scrollbar, and compact log font remain
+unchanged.
+
+## Known limitations
+
+1. Container pressure state is process-local; after control-plane restart,
+   three fresh observations are required before it alerts again.
+2. Host disk uses `statfs` on the bind-mounted Unix Docker socket path. TCP
+   endpoints or unusual layouts should set `AGENT_HOST_DISK_PATH` to a
+   read-only bind mount on the Docker data filesystem.
+3. Conditions cannot yet be acknowledged/silenced and no notifier is shipped;
+   the stable condition vocabulary is preparation for that future consumer.
+4. Client workload-detail membership still uses project-name matching
+   (pre-existing debt); authorization remains grant-scoped.
+
+## Qualification
+
+- 279 Vitest unit/integration tests pass across 36 files, including attention
+  derivation/lifecycle, tenant isolation, action-response handling, and a
+  simulated 20-node / 100-workload / 500-container inventory.
+- Six permanent Playwright regressions cover node/client/admin-workload/client-
+  workload tab placement and LogViewer polling, pause/resume, interruption,
+  reconnect, and duplicate-line behavior.
+- Six disposable live operational workflows cover healthy telemetry, node
+  offline/recovery with grouped impact, unhealthy/recovery with direct log
+  navigation, crash-loop threshold/recovery, managed `DEGRADED` semantics, and
+  a failed operation appearing in Recent failures.

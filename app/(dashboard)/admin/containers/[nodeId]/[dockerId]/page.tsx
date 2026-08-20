@@ -13,7 +13,12 @@ import { LogViewer } from "@/components/logs/log-viewer";
 import { shortId, timeAgo } from "@/lib/format";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 
-type DetailResponse = { container: ContainerView; nodeOnline: boolean; managedDeployment: import("@/components/workloads/deployment/types").WorkloadDeploymentStatus | null };
+type DetailResponse = {
+  container: ContainerView;
+  nodeOnline: boolean;
+  managedDeployment: import("@/components/workloads/deployment/types").WorkloadDeploymentStatus | null;
+  activeOperation: { id: string; type: string; state: OperationState; requestedAt: string } | null;
+};
 type ActionResponse = { operationId: string };
 
 function OperationStateBadge({ state }: { state: OperationState }): React.JSX.Element {
@@ -51,6 +56,11 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
     refetchInterval: 1500
   });
   const operation = operationQuery.data?.operation ?? null;
+
+  useEffect(() => {
+    const operationId = detail.data?.activeOperation?.id;
+    if (operationId && !activeOperationId) setActiveOperationId(operationId);
+  }, [detail.data?.activeOperation?.id, activeOperationId]);
 
   useEffect(() => {
     if (!operation) return;
@@ -102,19 +112,28 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
     );
   }
 
+  // §31: a direct action on a container that belongs to a HostPanel-managed
+  // workload must never look like it created a deployment release — the
+  // confirm dialog says so explicitly rather than pretending it's the same
+  // operation as the deployment workflow.
+  const isManaged = Boolean(detail.data?.managedDeployment?.managed);
+  const managedSuffix = isManaged
+    ? " This container belongs to a HostPanel-managed workload. A direct action does not create a deployment release and can diverge from the managed configuration."
+    : "";
+
   const actions: Array<{ action: "start" | "stop" | "restart"; label: string; danger?: boolean; impact: string }> =
     container.status === "running"
       ? [
-          { action: "restart", label: "Restart", impact: "This will briefly interrupt the service." },
+          { action: "restart", label: "Restart", impact: `This will briefly interrupt the service.${managedSuffix}` },
           {
             action: "stop",
             label: "Stop",
             danger: true,
-            impact: "This will stop the container until it is started again."
+            impact: `This will stop the container until it is started again.${managedSuffix}`
           }
         ]
       : container.status === "stopped"
-        ? [{ action: "start", label: "Start", impact: "This will start the container." }]
+        ? [{ action: "start", label: "Start", impact: `This will start the container.${managedSuffix}` }]
         : [];
 
   return (

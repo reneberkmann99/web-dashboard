@@ -33,7 +33,7 @@ import {
 } from "./security/tls-material";
 import https from "node:https";
 
-export const AGENT_VERSION = "0.3.0";
+export const AGENT_VERSION = "0.4.0";
 
 const app = express();
 app.use(
@@ -99,6 +99,45 @@ if (KEY_FILE) {
   }
 }
 
+/**
+ * Host disk usage. Prefer the bind-mounted Docker socket path because statfs
+ * follows that mount back to the host filesystem (including rootless sockets
+ * under /home). `AGENT_HOST_DISK_PATH` remains the explicit override for
+ * Docker data roots on dedicated filesystems.
+ */
+function defaultHostDiskPath(): string {
+  const dockerHost = process.env.DOCKER_HOST ?? "unix:///var/run/docker.sock";
+  if (dockerHost.startsWith("unix://")) return dockerHost.slice("unix://".length);
+  return "/";
+}
+const HOST_DISK_PATH = process.env.AGENT_HOST_DISK_PATH ?? defaultHostDiskPath();
+
+function readDiskUsage(): { totalBytes: number; freeBytes: number; usedPercent: number } | null {
+  try {
+    const stats = fs.statfsSync(HOST_DISK_PATH);
+    const totalBytes = stats.blocks * stats.bsize;
+    const freeBytes = stats.bavail * stats.bsize;
+    if (totalBytes <= 0) return null;
+    const usedPercent = Number((((totalBytes - freeBytes) / totalBytes) * 100).toFixed(1));
+    return { totalBytes, freeBytes, usedPercent };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lightweight CPU utilization estimate: 1-minute load average divided by CPU
+ * core count. Not a precise sampled CPU%, but sufficient for "is this host
+ * under sustained pressure" — matches the brief's "do not implement
+ * sophisticated monitoring" guidance. `os.loadavg()` returns zeros on
+ * Windows; this agent only ever targets Linux Docker hosts.
+ */
+function estimateCpuPercent(cpuCount: number): number | null {
+  const [load1] = os.loadavg();
+  if (!Number.isFinite(load1) || cpuCount <= 0) return null;
+  return Number(Math.min(100, (load1 / cpuCount) * 100).toFixed(1));
+}
+
 async function collectHostInfo() {
   let dockerVersion: string | null = null;
   try {
@@ -106,12 +145,23 @@ async function collectHostInfo() {
   } catch {
     dockerVersion = null;
   }
+  const cpuCount = os.cpus().length;
+  const totalMemBytes = os.totalmem();
+  const freeMemBytes = os.freemem();
+  const memPercent = totalMemBytes > 0 ? Number((((totalMemBytes - freeMemBytes) / totalMemBytes) * 100).toFixed(1)) : null;
+  const disk = readDiskUsage();
   return {
     hostname: os.hostname(),
     os: `${os.type()} ${os.release()}`,
     arch: os.arch(),
-    cpuCount: os.cpus().length,
-    totalMemBytes: os.totalmem(),
+    cpuCount,
+    totalMemBytes,
+    freeMemBytes,
+    memPercent,
+    cpuPercent: estimateCpuPercent(cpuCount),
+    diskTotalBytes: disk?.totalBytes ?? null,
+    diskFreeBytes: disk?.freeBytes ?? null,
+    diskPercent: disk?.usedPercent ?? null,
     agentVersion: AGENT_VERSION,
     dockerVersion
   };
@@ -322,6 +372,9 @@ app.get("/health", async (_req: Request, res: Response) => {
     arch: info.arch,
     cpuCount: info.cpuCount,
     totalMemBytes: info.totalMemBytes,
+    cpuPercent: info.cpuPercent,
+    memPercent: info.memPercent,
+    diskPercent: info.diskPercent,
     dockerVersion: info.dockerVersion,
     composeSupported: composeVersion !== null,
     composeVersion,

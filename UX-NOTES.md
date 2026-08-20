@@ -408,3 +408,28 @@ dump was never intended. The summaries array is now filtered to the workload's
 members (DB `Container.projectId`): COMPOSE workloads sync membership from
 compose labels, MANUAL workloads attach explicitly. Node-level views
 (`/admin/nodes/[id]`, node containers route) still list everything.
+
+## Phase 6D — operations-first navigation and visual stability
+
+Admin Overview is now a glanceable fleet home: online/total nodes,
+healthy/total workloads, running/total containers, attention count, active
+operations, severity/recency-sorted issues, recent failures, fleet state, and
+recent activity. The healthy empty state is explicit rather than blank.
+
+Inventory defaults are deliberately stable. Workloads and containers place
+attention first with name as the secondary key; changing CPU does not move a
+row. Filters do not reset on polling. The node/client/workload `TabBar` remains
+a sibling before all tab panels, so content height cannot change its Y
+position. Log links navigate to the one explicit log view; no dashboard card
+mounts a LogViewer.
+
+Attention cards deep-link to the useful investigation surface: node overview,
+workload deployment/overview, or container detail (with logs on the same page).
+Direct actions on managed containers remain available for emergency recovery,
+but confirmation explicitly says they do not create a deployment release and
+may create runtime divergence.
+
+Telemetry freshness is visible. A failed current poll shows “last reported”
+instead of presenting cached percentages as live; `UNKNOWN` is not styled as
+healthy. Relative times carry operational meaning while Activity retains
+localized exact timestamps.

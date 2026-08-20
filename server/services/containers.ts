@@ -14,7 +14,9 @@ import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import { type AuthSession } from "@/server/auth/session";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
-import { reconcileComposeIfDue } from "@/server/services/compose";
+import { recordNodePoll } from "@/server/services/node-heartbeat";
+import { getAttentionMap, syncAttentionIfDue } from "@/server/services/attention";
+import { collectOverviewSnapshot } from "@/server/services/overview";
 import { ContainerView, OverviewStats, DiscoveredContainer } from "@/types/domain";
 
 function mapStatus(value?: string): ContainerView["status"] {
@@ -53,12 +55,14 @@ function toContainerView(
     name: string;
     image: string;
     status: ContainerView["status"];
+    health?: ContainerView["health"];
     uptime: string | null;
     ports: string;
     createdAt: string | null;
     cpuPercent: number | null;
     memoryUsage: string | null;
     restartCount: number | null;
+    restartPolicy?: string | null;
     lastUpdatedAt: string;
     details?: ContainerView["details"];
   } | null,
@@ -70,12 +74,14 @@ function toContainerView(
     name: assignment.friendlyLabel ?? runtime?.name ?? assignment.dockerName,
     image: runtime?.image ?? assignment.image ?? "unknown",
     status: runtime?.status ?? "unknown",
+    health: runtime?.health ?? runtime?.details?.health as ContainerView["health"] ?? null,
     uptime: runtime?.uptime ?? null,
     ports: runtime?.ports ?? "-",
     createdAt: runtime?.createdAt ?? null,
     cpuPercent: runtime?.cpuPercent ?? null,
     memoryUsage: runtime?.memoryUsage ?? null,
     restartCount: runtime?.restartCount ?? null,
+    restartPolicy: runtime?.restartPolicy ?? null,
     nodeId: assignment.nodeId,
     nodeName: assignment.node.name,
     nodeOnline,
@@ -274,22 +280,7 @@ export async function listContainersForSession(session: AuthSession): Promise<Co
     const node = await prisma.node.findUnique({ where: { id: nodeId } });
     if (!node) continue;
     const runtimePayload = await nodeAgentClient.listContainers(node);
-    const nodeInfo = await nodeAgentClient.getNodeInfo(node).catch(() => ({} as Awaited<ReturnType<typeof nodeAgentClient.getNodeInfo>>));
-    await prisma.node
-      .update({
-        where: { id: node.id },
-        data: {
-          status: runtimePayload.nodeOnline ? "ONLINE" : "OFFLINE",
-          lastHeartbeatAt: new Date(),
-          agentVersion: nodeInfo.agentVersion ?? undefined,
-          dockerVersion: nodeInfo.dockerVersion ?? undefined,
-          composeSupported: nodeInfo.composeSupported ?? undefined,
-          composeVersion: nodeInfo.composeVersion ?? undefined,
-          osInfo: (nodeInfo.osInfo as object) ?? undefined,
-          systemInfo: (nodeInfo.systemInfo as object) ?? undefined
-        }
-      })
-      .catch(() => undefined);
+    await recordNodePoll(node, runtimePayload.nodeOnline);
     const runtimeMap = new Map(runtimePayload.containers.map((entry) => [entry.id, entry]));
 
     for (const row of rows) {
@@ -428,12 +419,14 @@ export async function getContainerDirect(
       name: live.name,
       image: live.image,
       status: live.status,
+      health: live.health ?? null,
       uptime: live.uptime,
       ports: live.ports,
       createdAt: live.createdAt,
       cpuPercent: live.cpuPercent,
       memoryUsage: live.memoryUsage,
       restartCount: live.restartCount,
+      restartPolicy: live.restartPolicy ?? null,
       nodeId,
       nodeName: node.name,
       nodeOnline: payload.nodeOnline,
@@ -483,7 +476,7 @@ export function buildOverview(containers: ContainerView[]): OverviewStats {
   const running = containers.filter((item) => item.status === "running").length;
   const stopped = containers.filter((item) => item.status === "stopped").length;
   const restarting = containers.filter((item) => item.status === "restarting").length;
-  const unhealthy = containers.filter((item) => item.status === "unhealthy").length;
+  const unhealthy = containers.filter((item) => item.health === "unhealthy" || item.status === "unhealthy").length;
   const nodeKeys = new Map<string, boolean>();
 
   for (const container of containers) {
@@ -509,10 +502,9 @@ export function buildOverview(containers: ContainerView[]): OverviewStats {
  * metadata (client/project). Unassigned containers are read-only.
  */
 async function collectAllContainersEnriched(): Promise<ContainerView[]> {
-  const nodes = await prisma.node.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" }
-  });
+  const snapshot = await collectOverviewSnapshot();
+  const nodeIds = snapshot.nodes.filter((node) => node.isActive).map((node) => node.id);
+  const nodes = await prisma.node.findMany({ where: { id: { in: nodeIds } }, orderBy: { name: "asc" } });
 
   const assignments = await prisma.containerAssignment.findMany({
     where: { isActive: true },
@@ -528,25 +520,12 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
   }
 
   const results: ContainerView[] = [];
-
   for (const node of nodes) {
-    const runtimePayload = await nodeAgentClient.listContainers(node);
-    const nodeInfo = await nodeAgentClient.getNodeInfo(node).catch(() => ({} as Awaited<ReturnType<typeof nodeAgentClient.getNodeInfo>>));
-    await prisma.node
-      .update({
-        where: { id: node.id },
-        data: {
-          status: runtimePayload.nodeOnline ? "ONLINE" : "OFFLINE",
-          lastHeartbeatAt: new Date(),
-          agentVersion: nodeInfo.agentVersion ?? undefined,
-          dockerVersion: nodeInfo.dockerVersion ?? undefined,
-          composeSupported: nodeInfo.composeSupported ?? undefined,
-          composeVersion: nodeInfo.composeVersion ?? undefined,
-          osInfo: (nodeInfo.osInfo as object) ?? undefined,
-          systemInfo: (nodeInfo.systemInfo as object) ?? undefined
-        }
-      })
-      .catch(() => undefined);
+    const operational = snapshot.nodes.find((item) => item.id === node.id);
+    const runtimePayload = {
+      nodeOnline: operational?.polledOnline === true,
+      containers: snapshot.containersByNode.get(node.id) ?? []
+    };
 
     const seenIds = new Set<string>();
     for (const live of runtimePayload.containers) {
@@ -563,12 +542,14 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
           name: live.name,
           image: live.image,
           status: mapped.status,
+          health: live.health ?? null,
           uptime: live.uptime,
           ports: live.ports,
           createdAt: live.createdAt,
           cpuPercent: live.cpuPercent,
           memoryUsage: live.memoryUsage,
           restartCount: live.restartCount,
+          restartPolicy: live.restartPolicy ?? null,
           nodeId: node.id,
           nodeName: node.name,
           nodeOnline: runtimePayload.nodeOnline,
@@ -596,11 +577,16 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
         .catch(() => undefined);
     }
 
-    // Compose discovery: record labels and keep COMPOSE workloads in sync.
-    // Throttled (safe when offline — empty inventory never runs a sweep).
-    if (runtimePayload.nodeOnline) {
-      await reconcileComposeIfDue(node.id, runtimePayload.containers);
-    }
+    // Compose reconciliation already ran in collectOverviewSnapshot().
+  }
+
+  // Polling can open or resolve attention conditions. Attach the freshly
+  // persisted severity only after all node snapshots have been observed.
+  await syncAttentionIfDue(snapshot);
+  const attentionMap = await getAttentionMap();
+  for (const item of results) {
+    item.attention = attentionMap.get(`CONTAINER:${item.nodeId}:${item.containerId}`)
+      ?? (item.status === "running" && item.health !== "unhealthy" ? "healthy" : "unknown");
   }
 
   return results.sort(
@@ -623,11 +609,17 @@ export type ContainersQuery = {
   status?: string;
   nodeId?: string;
   clientId?: string;
+  projectId?: string;
+  health?: string;
+  /** When true, only containers with an active attention condition (warning/critical). */
+  needsAttention?: boolean;
   sort?: string;
   dir?: "asc" | "desc";
   page?: number;
   limit?: number;
 };
+
+const ATTENTION_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2, unknown: 3, healthy: 4 };
 
 export async function queryAllContainersForAdmin(
   opts: ContainersQuery
@@ -638,6 +630,8 @@ export async function queryAllContainersForAdmin(
   const status = opts.status?.trim().toLowerCase();
   const nodeId = opts.nodeId?.trim();
   const clientId = opts.clientId?.trim();
+  const projectId = opts.projectId?.trim();
+  const health = opts.health?.trim().toLowerCase();
 
   let rows = all;
 
@@ -656,6 +650,15 @@ export async function queryAllContainersForAdmin(
   if (clientId) {
     rows = rows.filter((c) => c.clientId === clientId);
   }
+  if (projectId) {
+    rows = rows.filter((c) => c.projectId === projectId);
+  }
+  if (health) {
+    rows = rows.filter((c) => (c.health ?? "none") === health);
+  }
+  if (opts.needsAttention) {
+    rows = rows.filter((c) => c.attention === "critical" || c.attention === "warning");
+  }
 
   const dir = opts.dir === "desc" ? -1 : 1;
   switch (opts.sort) {
@@ -668,15 +671,30 @@ export async function queryAllContainersForAdmin(
     case "status":
       rows = [...rows].sort((a, b) => dir * a.status.localeCompare(b.status));
       break;
+    case "health":
+      rows = [...rows].sort((a, b) => dir * (a.health ?? "none").localeCompare(b.health ?? "none"));
+      break;
     case "cpu":
       rows = [...rows].sort((a, b) => dir * ((a.cpuPercent ?? -1) - (b.cpuPercent ?? -1)));
       break;
     case "restartCount":
       rows = [...rows].sort((a, b) => dir * ((a.restartCount ?? 0) - (b.restartCount ?? 0)));
       break;
-    default:
-      // name (default)
+    case "name":
       rows = [...rows].sort((a, b) => dir * a.name.localeCompare(b.name));
+      break;
+    case "attention":
+    default:
+      // Default view (§7): problematic containers first (explicit severity
+      // rank, not a continuously-changing metric like CPU%), then healthy
+      // ones, each group alphabetical by name for a stable secondary order.
+      // Never reorders purely because CPU% ticked — attention severity only
+      // changes on a real state transition (see attention.ts sync pass).
+      rows = [...rows].sort((a, b) => {
+        const rankDiff = (ATTENTION_RANK[a.attention ?? "unknown"] ?? 3) - (ATTENTION_RANK[b.attention ?? "unknown"] ?? 3);
+        if (rankDiff !== 0) return dir === -1 ? -rankDiff : rankDiff;
+        return a.name.localeCompare(b.name);
+      });
   }
 
   const total = rows.length;

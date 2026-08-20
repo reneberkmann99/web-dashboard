@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -55,6 +56,8 @@ type WorkloadDetailPayload = {
   };
   activity: Array<{ id: string; action: string; actorEmail: string | null; result: string; createdAt: string }>;
   deployment: WorkloadDeploymentStatus | null;
+  attentionItems: Array<{ id: string; severity: "critical" | "warning" | "info"; title: string; detail: string; href: string | null }>;
+  activeOperations: Array<{ id: string; type: string; state: string; dockerContainerId: string; requestedAt: string }>;
 };
 
 type GrantModalState = { open: boolean; clientId: string; level: "start" | "view" };
@@ -143,11 +146,11 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
     return <p className="text-sm text-red-400">Failed to load workload.</p>;
   }
 
-  const { workload, activity, deployment } = query.data;
+  const { workload, activity, deployment, attentionItems, activeOperations } = query.data;
   const healthVariant =
     workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : workload.health === "down" ? "danger" : "default";
   const failedOrRestarting = workload.containerSummaries.filter(
-    (c) => c.inProject && (c.status === "restarting" || c.status === "unhealthy" || (c.restartCount ?? 0) >= 3)
+    (c) => c.inProject && (c.status === "restarting" || c.health === "unhealthy" || c.status === "unhealthy" || (c.restartCount ?? 0) >= 3)
   );
 
   const containerColumns: Column<(typeof workload.containerSummaries)[number]>[] = [
@@ -162,6 +165,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       )
     },
     { key: "status", header: "Status", render: (c) => <Badge variant={c.status === "running" ? "success" : c.status === "stopped" ? "danger" : "warning"}>{c.status}</Badge> },
+    { key: "health", header: "Health", render: (c) => c.health ? <Badge variant={c.health === "healthy" ? "success" : c.health === "unhealthy" ? "danger" : "warning"}>{c.health}</Badge> : <span className="text-xs text-muted">—</span> },
     { key: "cpu", header: "CPU", render: (c) => <span className="text-sm">{c.cpuPercent !== null ? `${c.cpuPercent}%` : "—"}</span>, hideBelow: "sm" },
     { key: "mem", header: "Memory", render: (c) => <span className="text-sm">{c.memoryUsage ?? "—"}</span>, hideBelow: "sm" },
     { key: "restarts", header: "Restarts", render: (c) => <span className="text-sm">{c.restartCount ?? 0}</span>, hideBelow: "md" },
@@ -208,12 +212,21 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
             </Button>
           )}
           {workload.totalContainers > 0 && (
-            <Button size="sm" variant="danger" onClick={() => setConfirmRestart(true)} disabled={restartMutation.isPending}>
+            <Button size="sm" variant="danger" onClick={() => setConfirmRestart(true)} disabled={restartMutation.isPending || activeOperations.length > 0}>
               Restart workload
             </Button>
           )}
         </div>
       </div>
+
+      {activeOperations.length > 0 && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">
+          <p className="font-medium">{activeOperations.length} operation{activeOperations.length === 1 ? "" : "s"} in progress</p>
+          <p className="mt-1 text-muted">
+            {activeOperations.map((op) => `${op.type.replace("CONTAINER_", "").toLowerCase()} ${op.dockerContainerId.slice(0, 12)}`).join(" · ")}
+          </p>
+        </div>
+      )}
 
       {failedOrRestarting.length > 0 && (
         <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-amber-300">
@@ -233,6 +246,24 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       {/* Overview */}
       {tab === "Overview" && (
         <div className="space-y-6">
+          {attentionItems.length > 0 && (
+            <div className="space-y-2">
+              {attentionItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${
+                    item.severity === "critical" ? "border-danger/30 bg-danger/5" : item.severity === "warning" ? "border-warning/30 bg-warning/5" : "border-border bg-panelAlt/60"
+                  }`}
+                >
+                  <div>
+                    <p className="text-sm font-medium">{item.title}</p>
+                    <p className="text-xs text-muted">{item.detail}</p>
+                  </div>
+                  <AttentionBadge severity={item.severity} />
+                </div>
+              ))}
+            </div>
+          )}
           {deployment?.managed && deployment.deploymentId && (
             <DeploymentCard
               deployment={deployment}

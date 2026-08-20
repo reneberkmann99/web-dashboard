@@ -7,12 +7,14 @@ const mockContainers: RuntimeContainer[] = [
     name: "acme-web",
     image: "ghcr.io/acme/web:latest",
     status: "running",
+    health: "healthy",
     uptime: "3 hours",
     ports: "80/tcp -> 0.0.0.0:8080",
     createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
     cpuPercent: 1.23,
     memoryUsage: "142MiB / 2GiB",
     restartCount: 0,
+    restartPolicy: "unless-stopped",
     lastUpdatedAt: new Date().toISOString()
   },
   {
@@ -20,12 +22,14 @@ const mockContainers: RuntimeContainer[] = [
     name: "acme-worker",
     image: "ghcr.io/acme/worker:latest",
     status: "restarting",
+    health: null,
     uptime: null,
     ports: "-",
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     cpuPercent: 0.2,
     memoryUsage: "81MiB / 2GiB",
     restartCount: 4,
+    restartPolicy: "always",
     lastUpdatedAt: new Date().toISOString()
   },
   {
@@ -33,12 +37,14 @@ const mockContainers: RuntimeContainer[] = [
     name: "northstar-api",
     image: "ghcr.io/northstar/api:stable",
     status: "stopped",
+    health: null,
     uptime: null,
     ports: "443/tcp -> 0.0.0.0:8443",
     createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
     cpuPercent: null,
     memoryUsage: null,
     restartCount: 2,
+    restartPolicy: "no",
     lastUpdatedAt: new Date().toISOString()
   }
 ];

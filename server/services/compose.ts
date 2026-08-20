@@ -313,7 +313,7 @@ export async function listDiscoveredComposeProjects(): Promise<DiscoveredCompose
       const lc = liveById.get(dockerId);
       if (!lc) continue;
       if (lc.status === "running") running += 1;
-      if (lc.status === "unhealthy") unhealthy += 1;
+      if (lc.health === "unhealthy" || lc.status === "unhealthy") unhealthy += 1;
       for (const n of lc.networkNames ?? []) networkNames.add(n);
       for (const m of lc.mountRefs ?? []) {
         if (m.type === "volume" && m.volumeName) volumeNames.add(m.volumeName);
@@ -446,13 +446,14 @@ export async function getDiscoveredComposeProjectDetail(
       dockerName: dc.dockerName,
       composeService: dc.composeService,
       status: lc?.status ?? "unknown",
+      health: lc?.health ?? null,
       image: lc?.image ?? dc.image ?? "unknown"
     };
   });
 
   const total = services.length;
   const running = services.filter((s) => s.status === "running").length;
-  const unhealthy = services.filter((s) => s.status === "unhealthy").length;
+  const unhealthy = services.filter((s) => s.health === "unhealthy" || s.status === "unhealthy").length;
   const healthSummary: DiscoveredComposeProjectDetail["healthSummary"] = !live.nodeOnline
     ? "unknown"
     : unhealthy > 0

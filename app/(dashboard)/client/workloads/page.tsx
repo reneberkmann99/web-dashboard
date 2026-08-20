@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
-import { Badge } from "@/components/ui/badge";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import type { WorkloadSummary } from "@/types/domain";
@@ -40,7 +40,7 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
       key: "health",
       header: "Health",
       sortValue: (w) => w.health,
-      render: (w) => <Badge variant={w.health === "healthy" ? "success" : w.health === "degraded" ? "warning" : w.health === "down" ? "danger" : "default"}>{w.health}</Badge>
+      render: (w) => <AttentionBadge severity={w.health === "down" ? "critical" : w.health === "degraded" ? "warning" : w.health} />
     }
   ];
 

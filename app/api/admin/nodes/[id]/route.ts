@@ -5,8 +5,9 @@ import { encryptSecret } from "@/server/security/crypto";
 import { fromError, fail, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
-import { listContainersForNode } from "@/server/services/workloads";
+import { pollContainersForNode } from "@/server/services/workloads";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
+import { getAttentionMap, getAttentionFeedForAdmin } from "@/server/services/attention";
 
 export async function GET(
   _: Request,
@@ -36,18 +37,32 @@ export async function GET(
       return fail("NOT_FOUND", "Node not found", 404);
     }
 
-    const containers = await listContainersForNode(node.id);
+    // pollContainersForNode polls the agent and refreshes node.status/
+    // systemInfo via the centralized heartbeat policy; re-read afterward so
+    // this response reflects the fresh values, not the pre-poll snapshot.
+    const poll = await pollContainersForNode(node.id);
+    const containers = poll.containers;
+    const freshNode = await prisma.node.findUnique({ where: { id } });
     const running = containers.filter((c) => c.status === "running").length;
-    const unhealthy = containers.filter((c) => c.status === "unhealthy").length;
+    const unhealthy = containers.filter((c) => c.health === "unhealthy" || c.status === "unhealthy").length;
     const stopped = containers.filter((c) => c.status === "stopped").length;
     const storageSummary = await nodeAgentClient.getStorageSummary(node);
 
-    const activity = await prisma.auditLog.findMany({
-      where: { OR: [{ targetType: "NODE", targetId: node.id }, { metadata: { path: ["nodeId"], equals: node.id } }] },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      select: { id: true, action: true, actorEmail: true, result: true, createdAt: true }
-    });
+    const [activity, attentionMap, attentionFeed] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: { OR: [{ targetType: "NODE", targetId: node.id }, { metadata: { path: ["nodeId"], equals: node.id } }] },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        select: { id: true, action: true, actorEmail: true, result: true, createdAt: true }
+      }),
+      getAttentionMap(),
+      getAttentionFeedForAdmin()
+    ]);
+
+    const effectiveNode = freshNode ?? node;
+    const offline = effectiveNode.status === "OFFLINE" || effectiveNode.status === "UNKNOWN";
+    const attention = attentionMap.get(`NODE:${node.id}`) ?? (offline ? "critical" : "healthy");
+    const nodeAttentionItems = attentionFeed.filter((item) => item.nodeId === node.id);
 
     return ok({
       node: {
@@ -56,22 +71,26 @@ export async function GET(
         hostname: node.hostname,
         apiBaseUrl: node.apiBaseUrl,
         dockerContext: node.dockerContext,
-        status: node.status,
+        status: effectiveNode.status,
+        heartbeatState: poll.heartbeatState,
+        telemetryCurrent: poll.polledOnline,
         isActive: node.isActive,
-        lastHeartbeatAt: node.lastHeartbeatAt,
-        agentVersion: node.agentVersion,
-        dockerVersion: node.dockerVersion,
+        lastHeartbeatAt: effectiveNode.lastHeartbeatAt,
+        agentVersion: effectiveNode.agentVersion,
+        dockerVersion: effectiveNode.dockerVersion,
         createdAt: node.createdAt,
-        osInfo: node.osInfo,
-        systemInfo: node.systemInfo,
+        osInfo: effectiveNode.osInfo,
+        systemInfo: effectiveNode.systemInfo,
         containerCount: containers.length,
         runningCount: running,
         unhealthyCount: unhealthy,
         stoppedCount: stopped,
         storageSummary,
+        attention,
         projects: node.projects,
         counts: node._count
       },
+      attentionItems: nodeAttentionItems,
       activity
     });
   } catch (error) {

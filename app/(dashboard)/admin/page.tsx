@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Cpu, HardDrive, MemoryStick } from "lucide-react";
+import { AlertTriangle, ArrowRight, Loader2, PlayCircle } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 import { MetricCard } from "@/components/ui/metric-card";
-import { timeAgo } from "@/lib/format";
-import type { AttentionItem, WorkloadSummary } from "@/types/domain";
+import { timeAgo, humanizeAction } from "@/lib/format";
+import type { AttentionItem, WorkloadSummary, FleetSummary, RecentFailure, ActiveOperationSummary } from "@/types/domain";
 
 type OverviewPayload = {
   utilization: {
@@ -19,6 +21,7 @@ type OverviewPayload = {
     unhealthyContainers: number;
     restartingContainers: number;
   };
+  fleetSummary: FleetSummary;
   nodes: Array<{
     id: string;
     name: string;
@@ -32,9 +35,21 @@ type OverviewPayload = {
   attention: AttentionItem[];
   workloads: WorkloadSummary[];
   recentActivity: Array<{ id: string; action: string; humanized: string; actorEmail: string | null; result: string; createdAt: string }>;
+  recentFailures: RecentFailure[];
+  activeOperations: ActiveOperationSummary[];
 };
 
+/**
+ * Fleet operations home screen (Phase 6D). The goal: within a few seconds an
+ * administrator can answer "are all nodes reachable, are workloads healthy,
+ * is anything degraded/restarting, did something fail recently, is a
+ * deployment happening, which problem should I look at first" — without
+ * manually inspecting every container. Normal healthy state stays quiet
+ * (§29); Needs attention is the most important section and is deduplicated
+ * server-side (server/services/attention.ts), not recomputed here.
+ */
 export default function AdminOverviewPage(): React.JSX.Element {
+  const router = useRouter();
   const query = useQuery({
     queryKey: ["admin-overview"],
     queryFn: () => apiFetch<OverviewPayload>("/api/admin/overview"),
@@ -45,8 +60,8 @@ export default function AdminOverviewPage(): React.JSX.Element {
     return (
       <div className="space-y-6">
         <div className="h-10 w-64 animate-pulse rounded bg-panelAlt" />
-        <div className="grid gap-4 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 md:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="h-24 animate-pulse rounded-lg bg-panelAlt" />
           ))}
         </div>
@@ -63,76 +78,110 @@ export default function AdminOverviewPage(): React.JSX.Element {
     );
   }
 
-  const { utilization, nodes, attention, workloads, recentActivity } = query.data;
-  const offlineNodes = nodes.filter((n) => n.offline || n.staleHeartbeat);
+  const { fleetSummary, nodes, attention, workloads, recentActivity, recentFailures, activeOperations } = query.data;
   const attentionVisible = attention.length > 0;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold">Overview</h1>
-        <p className="text-muted">What requires your attention right now.</p>
+        <p className="text-muted">Operational state of your fleet — and what requires attention.</p>
       </div>
 
-      {/* Summary */}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {/* Fleet summary (§2) — concise counters, never a Grafana clone */}
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
         <MetricCard
-          icon={HardDrive}
+          label="Nodes"
+          value={`${fleetSummary.nodesOnline}/${fleetSummary.nodesTotal}`}
+          sub={fleetSummary.nodesOnline === fleetSummary.nodesTotal ? "all online" : "need attention"}
+        />
+        <MetricCard
+          label="Workloads"
+          value={`${fleetSummary.workloadsHealthy}/${fleetSummary.workloadsTotal}`}
+          sub={fleetSummary.degradedWorkloads > 0 ? `${fleetSummary.degradedWorkloads} degraded` : "all healthy"}
+        />
+        <MetricCard
           label="Containers"
-          value={`${utilization.runningContainers}/${utilization.totalContainers}`}
-          sub={`${utilization.stoppedContainers} stopped · ${utilization.unhealthyContainers} unhealthy`}
-        />
-        <MetricCard
-          icon={Cpu}
-          label="CPU (avg)"
-          value={utilization.cpuPercent !== null ? `${utilization.cpuPercent}%` : "—"}
-          sub="across running containers"
-        />
-        <MetricCard
-          icon={MemoryStick}
-          label="Memory"
-          value={utilization.memoryUsage ?? "—"}
-          sub="used by containers"
+          value={`${fleetSummary.containersRunning}/${fleetSummary.containersTotal}`}
+          sub={fleetSummary.unhealthyContainers > 0 ? `${fleetSummary.unhealthyContainers} unhealthy` : "running"}
         />
         <MetricCard
           icon={AlertTriangle}
-          label="Nodes"
-          value={`${nodes.filter((n) => n.status === "ONLINE").length}/${nodes.length}`}
-          sub={
-            offlineNodes.length > 0
-              ? `${offlineNodes.length} need attention`
-              : "all healthy"
-          }
+          label="Attention"
+          value={String(fleetSummary.attentionIssues)}
+          sub={fleetSummary.attentionIssues === 0 ? "no active issues" : `issue${fleetSummary.attentionIssues === 1 ? "" : "s"}`}
+        />
+        <MetricCard
+          icon={fleetSummary.activeOperations > 0 ? Loader2 : PlayCircle}
+          label="Operations"
+          value={String(fleetSummary.activeOperations)}
+          sub={fleetSummary.activeOperations > 0 ? "active now" : "none active"}
         />
       </div>
 
-      {/* Needs attention — only when something is wrong */}
-      {attentionVisible && (
-        <section aria-label="Needs attention">
-          <h2 className="mb-2 text-lg font-semibold text-amber-300">Needs attention</h2>
+      {/* Needs attention — the most important section, deduplicated server-side (§3/§4) */}
+      <section aria-label="Needs attention">
+        <h2 className="mb-2 text-lg font-semibold text-amber-300">Needs attention</h2>
+        {!attentionVisible ? (
+          <div className="rounded-lg border border-border bg-panelAlt/40 p-4 text-sm text-muted">
+            No active issues. All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and{" "}
+            {fleetSummary.workloadsTotal} workload{fleetSummary.workloadsTotal === 1 ? "" : "s"} are operating normally.
+          </div>
+        ) : (
           <div className="space-y-2">
-            {attention.map((item, index) => (
-              <div
-                key={`${item.category}-${item.title}-${index}`}
-                className="flex items-start justify-between gap-3 rounded-lg border border-border bg-panelAlt/60 p-3"
+            {attention.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => item.href && router.push(item.href)}
+                className={`flex w-full items-start justify-between gap-3 rounded-lg border p-3 text-left transition ${
+                  item.href ? "cursor-pointer hover:border-accent/40" : "cursor-default"
+                } ${
+                  item.severity === "critical"
+                    ? "border-danger/30 bg-danger/5"
+                    : item.severity === "warning"
+                      ? "border-warning/30 bg-warning/5"
+                      : "border-border bg-panelAlt/60"
+                }`}
               >
                 <div>
                   <p className="text-sm font-medium">{item.title}</p>
                   <p className="text-xs text-muted">{item.detail}</p>
                 </div>
-                <Badge
-                  variant={
-                    item.severity === "critical"
-                      ? "danger"
-                      : item.severity === "warning"
-                        ? "warning"
-                        : "default"
-                  }
-                >
-                  {item.category}
-                </Badge>
-              </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <AttentionBadge severity={item.severity} />
+                  {item.href && <ArrowRight size={14} className="text-muted" />}
+                </div>
+              </button>
             ))}
+          </div>
+        )}
+      </section>
+
+      {/* Active operations (§12) */}
+      {activeOperations.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-lg font-semibold">Active operations</h2>
+          <div className="rounded-lg border border-border bg-panel">
+            <ul className="divide-y divide-border">
+              {activeOperations.map((op) => (
+                <li key={op.id}>
+                  <button
+                    type="button"
+                    onClick={() => op.targetHref && router.push(op.targetHref)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-panelAlt/60"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Loader2 size={13} className="animate-spin text-accent" />
+                      {humanizeAction(op.type)} — {op.targetName}
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-muted">
+                      {op.actorEmail ?? "system"} · {op.state.toLowerCase()}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
       )}
@@ -160,19 +209,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
               >
                 <div className="flex items-center justify-between">
                   <p className="font-medium">{w.name}</p>
-                  <Badge
-                    variant={
-                      w.health === "healthy"
-                        ? "success"
-                        : w.health === "degraded"
-                          ? "warning"
-                          : w.health === "down"
-                            ? "danger"
-                            : "default"
-                    }
-                  >
-                    {w.health}
-                  </Badge>
+                  <AttentionBadge severity={w.health === "down" ? "critical" : w.health === "degraded" ? "warning" : w.health} />
                 </div>
                 <p className="mt-0.5 text-xs text-muted">{w.nodeName}</p>
                 <p className="mt-3 text-sm">
@@ -221,6 +258,32 @@ export default function AdminOverviewPage(): React.JSX.Element {
           ))}
         </div>
       </section>
+
+      {/* Recent failures (§13) — operational, distinct from full Activity audit log */}
+      {recentFailures.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-lg font-semibold">Recent failures</h2>
+          <div className="rounded-lg border border-border bg-panel">
+            <ul className="divide-y divide-border">
+              {recentFailures.slice(0, 8).map((f) => (
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    onClick={() => f.href && router.push(f.href)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-panelAlt/60"
+                  >
+                    <span>
+                      {f.title}
+                      {f.detail && <span className="ml-2 text-xs text-muted">{f.detail}</span>}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted">{timeAgo(f.createdAt)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       {/* Recent activity */}
       <section>

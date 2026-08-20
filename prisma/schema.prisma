@@ -117,6 +117,22 @@ enum NodeCertificateStatus {
   EXPIRED
 }
 
+/** Operational attention severity (Phase 6D). Distinct from Docker runtime state. */
+enum AttentionSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+/** What kind of resource an AttentionState/condition targets. */
+enum AttentionResourceType {
+  NODE
+  CONTAINER
+  WORKLOAD
+  OPERATION
+  DEPLOYMENT
+}
+
 model ClientAccount {
   id          String                @id @default(cuid())
   name        String
@@ -715,4 +731,82 @@ model DeploymentReleaseSecret {
 
   @@unique([releaseId, key])
   @@index([releaseId])
+}
+
+/**
+ * Attention model (Phase 6D — fleet operations UX).
+ *
+ * Restart-rate detection: a lightweight append-only sample is written only
+ * when a container's cumulative `RestartCount` (as reported by `docker
+ * inspect`) increases since the last observed value. Rate is derived by
+ * summing samples inside a rolling window (see server/services/attention.ts),
+ * never by a full time-series store — this is intentionally NOT a metrics
+ * platform. Old samples are pruned (>24h) during the throttled sync pass.
+ * Keyed by (nodeId, dockerContainerId) rather than Container.id because not
+ * every discovered container has a Container row (e.g. never adopted).
+ */
+model ContainerRestartSample {
+  id                String   @id @default(cuid())
+  nodeId            String
+  dockerContainerId String
+  restartCount      Int
+  observedAt        DateTime @default(now())
+
+  @@index([nodeId, dockerContainerId, observedAt])
+}
+
+/**
+ * Node resource pressure history (Phase 6D). One row per node roughly every
+ * 60s (throttled in-process, mirroring the existing Compose reconcile
+ * throttle pattern) — enough to require SUSTAINED pressure (not a single
+ * poll spike) before raising a WARNING/CRITICAL attention item. Pruned (>24h)
+ * during the same throttled pass. Deliberately not a general metrics/time-
+ * series platform — see ARCHITECTURE.md Phase 6D notes.
+ */
+model NodeResourceSample {
+  id         String   @id @default(cuid())
+  nodeId     String
+  cpuPercent Float?
+  memPercent Float?
+  diskPercent Float?
+  observedAt DateTime @default(now())
+
+  @@index([nodeId, observedAt])
+}
+
+/**
+ * Lightweight active-condition model (Phase 6D). One mutable row per
+ * (resourceType, resourceId, conditionType) — NOT a full incidents/history
+ * table (see ARCHITECTURE.md "Known limitations" for the documented
+ * trade-off). Exists so:
+ *   1. Activity logging records only STATE TRANSITIONS ("X became offline",
+ *      "X recovered"), never one entry per poll.
+ *   2. The "needs attention" list can be deduplicated/backend-derived
+ *      instead of purely recomputed frontend state.
+ *   3. A future notifier can subscribe to the same backend-derived condition
+ *      set (NODE_OFFLINE, WORKLOAD_DEGRADED, CONTAINER_CRASH_LOOP, …)
+ *      without scraping UI state (see brief §25).
+ * `resolvedAt` is cleared (set back to null) and `firstObservedAt` reset when
+ * a previously-resolved condition re-opens — no separate history rows are
+ * kept per re-occurrence; that is the documented limitation of this phase.
+ */
+model AttentionState {
+  id              String                @id @default(cuid())
+  resourceType    AttentionResourceType
+  resourceId      String
+  conditionType   String
+  severity        AttentionSeverity
+  title           String
+  detail          String
+  href            String?
+  metadata        Json?
+  firstObservedAt DateTime              @default(now())
+  lastObservedAt  DateTime              @default(now())
+  resolvedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([resourceType, resourceId, conditionType])
+  @@index([resolvedAt])
+  @@index([severity, resolvedAt])
 }

@@ -10,6 +10,7 @@ function makeContainer(id: string, status: RuntimeContainer["status"], name: str
     name,
     image: `${name}:latest`,
     status,
+    health: Number(id.slice(1)) % 7 === 0 ? "unhealthy" : "healthy",
     uptime: null,
     ports: "-",
     createdAt: null,
@@ -69,6 +70,12 @@ describe("admin containers server-side query", () => {
     for (const c of stopped.containers) {
       expect(c.status).toBe("stopped");
     }
+  });
+
+  it("filters Docker health separately from runtime state", async () => {
+    const unhealthy = await queryAllContainersForAdmin({ health: "unhealthy" });
+    expect(unhealthy.total).toBe(6); // svc-0 + svc-7 + svc-14 on each of two nodes
+    expect(unhealthy.containers.every((container) => container.status !== "unhealthy" && container.health === "unhealthy")).toBe(true);
   });
 
   it("filters by search across name/image", async () => {

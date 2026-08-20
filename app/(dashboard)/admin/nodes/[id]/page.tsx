@@ -7,10 +7,12 @@ import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AttentionBadge } from "@/components/ui/attention-badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { TabBar } from "@/components/ui/tab-bar";
 import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
+import type { AttentionSeverity } from "@/types/domain";
 
 type NodeDetailPayload = {
   node: {
@@ -20,6 +22,8 @@ type NodeDetailPayload = {
     apiBaseUrl: string;
     dockerContext: string | null;
     status: string;
+    heartbeatState: "ONLINE" | "STALE" | "OFFLINE";
+    telemetryCurrent: boolean;
     isActive: boolean;
     lastHeartbeatAt: string | null;
     agentVersion: string | null;
@@ -32,8 +36,10 @@ type NodeDetailPayload = {
     unhealthyCount: number;
     stoppedCount: number;
     storageSummary: Array<{ type: string; totalCount: number; active: number; size: string; reclaimable: string }>;
+    attention: AttentionSeverity | "healthy" | "unknown";
     projects: Array<{ id: string; name: string; slug: string; clientAccount: { name: string } | null; _count: { containers: number } }>;
   };
+  attentionItems: Array<{ id: string; severity: AttentionSeverity; title: string; detail: string; href: string | null }>;
   activity: Array<{ id: string; action: string; actorEmail: string | null; result: string; createdAt: string }>;
 };
 
@@ -78,9 +84,9 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
   if (detail.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
   if (detail.isError || !detail.data) return <p className="text-sm text-red-400">Failed to load node.</p>;
 
-  const { node, activity } = detail.data;
-  const offline = node.status === "OFFLINE" || node.status === "UNKNOWN";
-  const stale = !offline && node.lastHeartbeatAt && Date.now() - new Date(node.lastHeartbeatAt).getTime() > 5 * 60_000;
+  const { node, activity, attentionItems } = detail.data;
+  const offline = node.heartbeatState === "OFFLINE";
+  const stale = node.heartbeatState === "STALE";
 
   const containerColumns: Column<RuntimeContainer>[] = [
     {
@@ -110,6 +116,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           <Badge variant={offline ? "danger" : stale ? "warning" : "success"}>
             {offline ? "offline" : stale ? "stale heartbeat" : "online"}
           </Badge>
+          {node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}
           {!node.isActive && <Badge>disabled</Badge>}
           <button
             type="button"
@@ -132,7 +139,26 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
       <TabBar tabs={TABS} active={tab} onChange={setTab} idPrefix="node" />
 
       {tab === "Overview" && (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
+          {attentionItems.length > 0 && (
+            <div className="space-y-2">
+              {attentionItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${
+                    item.severity === "critical" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"
+                  }`}
+                >
+                  <div>
+                    <p className="text-sm font-medium">{item.title}</p>
+                    <p className="text-xs text-muted">{item.detail}</p>
+                  </div>
+                  <AttentionBadge severity={item.severity} />
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Host</h2>
             <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -157,6 +183,29 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           </div>
 
           <div className="rounded-lg border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Resource usage</h2>
+            {(() => {
+              if (!node.telemetryCurrent) {
+                return <p className="text-sm text-muted">Telemetry unavailable. Last reported {timeAgo(node.lastHeartbeatAt)}.</p>;
+              }
+              const sys = node.systemInfo ?? {};
+              const cpu = typeof sys.cpuPercent === "number" ? sys.cpuPercent : null;
+              const mem = typeof sys.memPercent === "number" ? sys.memPercent : null;
+              const disk = typeof sys.diskPercent === "number" ? sys.diskPercent : null;
+              if (cpu === null && mem === null && disk === null) {
+                return <p className="text-sm text-muted">Resource metrics unavailable from this agent yet.</p>;
+              }
+              return (
+                <dl className="grid grid-cols-3 gap-3 text-sm">
+                  <Stat label="CPU" value={cpu !== null ? `${cpu.toFixed(0)}%` : "—"} />
+                  <Stat label="Memory" value={mem !== null ? `${mem.toFixed(0)}%` : "—"} />
+                  <Stat label="Disk" value={disk !== null ? `${disk.toFixed(0)}%` : "—"} />
+                </dl>
+              );
+            })()}
+          </div>
+
+          <div className="rounded-lg border border-border bg-panel p-4 lg:col-span-2">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Docker storage</h2>
             {node.storageSummary.length === 0 ? (
               <p className="text-sm text-muted">Storage summary unavailable.</p>
@@ -204,6 +253,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
                 ))}
               </ul>
             )}
+          </div>
           </div>
         </div>
       )}

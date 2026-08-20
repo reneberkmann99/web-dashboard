@@ -6,6 +6,7 @@ import { secureFetch, SecureTransportError } from "@/server/services/node-agent/
 import {
   containerDetailResponseSchema,
   containerLogsResponseSchema,
+  containerActionResponseSchema,
   listContainersResponseSchema,
   storageSummaryResponseSchema,
   networksInspectResponseSchema,
@@ -212,7 +213,9 @@ export class NodeAgentClient {
       `/containers/${encodeURIComponent(containerId)}/${action}`,
       "POST"
     );
-    return result.ok;
+    if (!result.ok || !result.data) return false;
+    const parsed = containerActionResponseSchema.safeParse(result.data);
+    return parsed.success && parsed.data.nodeOnline && parsed.data.success;
   }
 
   async checkHealth(node: Node): Promise<boolean> {
@@ -468,7 +471,7 @@ export class NodeAgentClient {
     return parsed.success ? parsed.data : null;
   }
 
-  /** Agent + host metadata (version, docker version, os, cpu, memory, compose). */
+  /** Agent + host metadata (version, docker version, os, cpu, memory, disk, compose). */
   async getNodeInfo(node: Node): Promise<{
     agentVersion?: string;
     dockerVersion?: string;
@@ -501,7 +504,15 @@ export class NodeAgentClient {
           ? {
               hostname: data.hostname ?? null,
               cpuCount: data.cpuCount ?? null,
-              totalMemBytes: data.totalMemBytes ?? null
+              totalMemBytes: data.totalMemBytes ?? null,
+              // Point-in-time snapshot from the agent's most recent /info call —
+              // sustained pressure is derived server-side from NodeResourceSample
+              // history (see server/services/attention.ts), not from this alone.
+              cpuPercent: typeof data.cpuPercent === "number" ? data.cpuPercent : null,
+              memPercent: typeof data.memPercent === "number" ? data.memPercent : null,
+              diskPercent: typeof data.diskPercent === "number" ? data.diskPercent : null,
+              diskTotalBytes: typeof data.diskTotalBytes === "number" ? data.diskTotalBytes : null,
+              diskFreeBytes: typeof data.diskFreeBytes === "number" ? data.diskFreeBytes : null
             }
           : undefined
     };
