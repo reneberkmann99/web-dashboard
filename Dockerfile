@@ -29,6 +29,7 @@ ENV NODE_ENV=production
 # Next.js standalone output (includes its own minimal node_modules)
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
+COPY --from=build /app/public ./public
 
 # Prisma CLI + all transitive deps (merged into standalone node_modules)
 COPY --from=prisma-cli /tmp/prisma/node_modules ./node_modules
