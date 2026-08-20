@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import type { WorkloadSummary } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
-import { rememberResourceNavigation } from "@/components/navigation/view-state";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 
 export default function ClientWorkloadsPage(): React.JSX.Element {
   const router = useRouter();
+  const go = useResourceNavigation();
   const query = useQuery({
     queryKey: ["client-workloads"],
     queryFn: () => apiFetch<WorkloadsPayload>("/api/client/workloads"),
@@ -36,7 +37,14 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
       key: "containers",
       header: "Containers",
       sortValue: (w) => w.runningContainers,
-      render: (w) => <span className="text-sm">{w.runningContainers}/{w.totalContainers} running</span>
+      render: (w) => (
+        <span className="text-sm">
+          {w.runningContainers}/{w.totalContainers} running
+          {w.intentionallyStoppedContainers > 0 && (
+            <span className="text-text-muted"> · {w.intentionallyStoppedContainers} stopped</span>
+          )}
+        </span>
+      )
     },
     {
       key: "health",
@@ -69,9 +77,7 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
         stateKey="client-workloads"
         ariaLabel="Workloads"
         onRowClick={(w) => {
-          const destination = `/client/workloads/${w.id}`;
-          rememberResourceNavigation(destination);
-          router.push(destination);
+          go({ url: `/client/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
         }}
         rowKey={(w) => w.id}
       />

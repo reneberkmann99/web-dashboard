@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
-import { rememberResourceNavigation } from "@/components/navigation/view-state";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 
 type ClientListRecord = {
   id: string;
@@ -31,6 +31,7 @@ type ClientsPayload = { clients: ClientListRecord[]; total: number; page: number
 const PAGE_SIZE = 25;
 
 export default function AdminClientsPage(): React.JSX.Element {
+  const go = useResourceNavigation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -158,9 +159,7 @@ export default function AdminClientsPage(): React.JSX.Element {
         emptyTitle="No clients yet"
         emptyBody="Create a client to represent an organization, then invite users and grant workloads."
         onRowClick={(c) => {
-          const href = `/admin/clients/${c.id}`;
-          rememberResourceNavigation(href);
-          router.push(href);
+          go({ url: `/admin/clients/${c.id}`, label: c.name, type: "client", id: c.id });
         }}
         rowKey={(c) => c.id}
       />

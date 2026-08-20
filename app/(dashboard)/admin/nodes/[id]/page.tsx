@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -17,7 +17,8 @@ import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { AttentionItem, AttentionSeverity } from "@/types/domain";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
-import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
+import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
+import { useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 type NodeDetailPayload = {
@@ -58,6 +59,8 @@ const TABS = ["Overview", "Workloads", "Containers", "Configuration", "Activity"
 export default function AdminNodeDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const nav = useOptionalNavigation();
+  const go = useResourceNavigation();
   const [tab, setTab] = useDetailTab(TABS, "Overview");
 
   const detail = useQuery({
@@ -65,6 +68,11 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
     queryFn: () => apiFetch<NodeDetailPayload>(`/api/admin/nodes/${params.id}`),
     refetchInterval: 15000
   });
+
+  useEffect(() => {
+    const name = detail.data?.node?.name;
+    if (name) nav?.renameCurrent(name);
+  }, [detail.data?.node?.name, nav]);
 
   const containersQuery = useQuery({
     queryKey: ["node-containers", params.id],
@@ -117,7 +125,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
       <PageHeader
           eyebrow="Node"
           title={node.name}
-          back={<Breadcrumbs items={[{ label: "Nodes", href: "/admin/nodes" }, { label: node.name }]} />}
+          back={<Breadcrumbs />}
           description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span><Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale heartbeat" : "online"}</Badge>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
           actions={<Button variant="outline" size="sm" onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}>View activity →</Button>}
       />
@@ -275,9 +283,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           emptyBody="Workloads assigned to this node will appear here."
           rowKey={(p) => p.id}
           onRowClick={(p) => {
-            const href = `/admin/workloads/${p.id}`;
-            rememberResourceNavigation(href);
-            router.push(href);
+            go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
           }}
         />
       )}
@@ -293,9 +299,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           stateKey={`node:${node.id}:containers`}
           ariaLabel="Node containers"
           onRowClick={(c) => {
-            const href = `/admin/containers/${node.id}/${c.id}`;
-            rememberResourceNavigation(href);
-            router.push(href);
+            go({ url: `/admin/containers/${node.id}/${c.id}`, label: c.name, type: "container", id: c.id });
           }}
           rowKey={(c) => c.id}
         />

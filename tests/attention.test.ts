@@ -169,7 +169,7 @@ describe("attention model — container conditions", () => {
     expect(item!.severity).toBe("warning");
   });
 
-  it("unexpected stop (restart policy always) is critical; intentional stop (policy no) is info", async () => {
+  it("unexpected stop (restart policy always) is critical; a stopped 'no' container raises nothing", async () => {
     const node = nodeView({ id: world.node1.id, name: world.node1.name });
     const snap = snapshot([node], {
       [world.node1.id]: [
@@ -182,8 +182,8 @@ describe("attention model — container conditions", () => {
     const intentional = conditions.find((c) => c.resourceId === `${world.node1.id}:intentional-stop-1`);
     expect(unexpected?.conditionType).toBe(CONDITION.CONTAINER_UNEXPECTED_STOP);
     expect(unexpected?.severity).toBe("critical");
-    expect(intentional?.conditionType).toBe(CONDITION.CONTAINER_STOPPED_INTENTIONAL);
-    expect(intentional?.severity).toBe("info");
+    // Intentionally/not-expected-to-run stopped containers are N/A and raise no condition.
+    expect(intentional).toBeUndefined();
   });
 
   it("containers on an offline node are skipped entirely (dedup — node card covers them)", async () => {

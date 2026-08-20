@@ -209,19 +209,26 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
     let running = 0;
     let stopped = 0;
     let unexpectedStopped = 0;
+    let intentionallyStopped = 0;
     let unhealthy = 0;
     let cpuSum = 0;
     let cpuCount = 0;
     let memSum = 0;
     for (const c of inProject) {
+      const expectedState = expectedStates.get(`${project.nodeId}:${c.id}`);
+      const intentional = expectedState === "STOPPED" && c.status === "stopped";
       if (c.status === "running") running += 1;
       if (c.status === "stopped") {
         stopped += 1;
-        if (isExpectedRunning(c.restartPolicy, expectedStates.get(`${project.nodeId}:${c.id}`))) {
+        if (isExpectedRunning(c.restartPolicy, expectedState)) {
           unexpectedStopped += 1;
+        } else {
+          intentionallyStopped += 1;
         }
       }
-      if (c.health === "unhealthy" || c.status === "unhealthy") unhealthy += 1;
+      // An intentionally-stopped container is N/A for health aggregation — it
+      // must not count as unhealthy (stale Docker state) nor degrade the stack.
+      if (!intentional && (c.health === "unhealthy" || c.status === "unhealthy")) unhealthy += 1;
       if (typeof c.cpuPercent === "number") {
         cpuSum += c.cpuPercent;
         cpuCount += 1;
@@ -277,6 +284,7 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
       totalContainers: total,
       runningContainers: running,
       stoppedContainers: stopped,
+      intentionallyStoppedContainers: intentionallyStopped,
       unhealthyContainers: unhealthy,
       health,
       cpuPercent: cpuCount > 0 ? Number((cpuSum / cpuCount).toFixed(1)) : null,

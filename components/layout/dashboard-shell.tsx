@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -17,12 +16,13 @@ import {
   Workflow
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { isClientRole } from "@/types/domain";
 import { CommandPalette } from "@/components/search/command-palette";
 import { NoderaftLogo } from "@/components/brand/noderaft-logo";
 import { Menu } from "@/components/ui/menu";
 import { ViewStateRestoration } from "@/components/navigation/view-state";
+import { NavigationProvider, useNavigation } from "@/components/navigation/navigation-context";
+import type { NavRootKey } from "@/lib/navigation";
 
 type ShellSession = {
   displayName: string;
@@ -31,38 +31,32 @@ type ShellSession = {
   clientAccountName: string | null;
 };
 
-const ADMIN_NAV = [
-  { href: "/admin", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/workloads", label: "Workloads", icon: Boxes },
-  { href: "/admin/nodes", label: "Nodes", icon: Server },
-  { href: "/admin/clients", label: "Clients", icon: Users },
-  { href: "/admin/attention", label: "Attention", icon: ShieldAlert },
-  { href: "/admin/activity", label: "Activity", icon: Activity }
+type NavItem = { key: NavRootKey; href: string; label: string; icon: React.ComponentType<{ className?: string }> };
+
+const ADMIN_NAV: NavItem[] = [
+  { key: "overview", href: "/admin", label: "Overview", icon: LayoutDashboard },
+  { key: "workloads", href: "/admin/workloads", label: "Workloads", icon: Boxes },
+  { key: "nodes", href: "/admin/nodes", label: "Nodes", icon: Server },
+  { key: "clients", href: "/admin/clients", label: "Clients", icon: Users },
+  { key: "attention", href: "/admin/attention", label: "Attention", icon: ShieldAlert },
+  { key: "activity", href: "/admin/activity", label: "Activity", icon: Activity }
 ];
 
-const ADMIN_SETTINGS = [
-  { href: "/admin/settings/users", label: "Users", icon: Users },
-  { href: "/admin/settings/containers", label: "Containers", icon: Container },
-  { href: "/admin/settings/notifications", label: "Notifications", icon: BellRing }
+const ADMIN_SETTINGS: NavItem[] = [
+  { key: "users", href: "/admin/settings/users", label: "Users", icon: Users },
+  { key: "containers", href: "/admin/settings/containers", label: "Containers", icon: Container },
+  { key: "notifications", href: "/admin/settings/notifications", label: "Notifications", icon: BellRing }
 ];
 
-const CLIENT_NAV = [
-  { href: "/client", label: "Overview", icon: LayoutDashboard },
-  { href: "/client/workloads", label: "Workloads", icon: Workflow },
-  { href: "/client/activity", label: "Activity", icon: Activity }
+const CLIENT_NAV: NavItem[] = [
+  { key: "overview", href: "/client", label: "Overview", icon: LayoutDashboard },
+  { key: "workloads", href: "/client/workloads", label: "Workloads", icon: Workflow },
+  { key: "activity", href: "/client/activity", label: "Activity", icon: Activity }
 ];
 
-const CLIENT_ADMIN_NAV = [
-  { href: "/client/team", label: "Team", icon: Users }
+const CLIENT_ADMIN_NAV: NavItem[] = [
+  { key: "team", href: "/client/team", label: "Team", icon: Users }
 ];
-
-function isActiveNavPath(pathname: string, href: string): boolean {
-  if (pathname === href) return true;
-  // The role landing routes (/admin and /client) are exact matches; without
-  // this guard they would also match every descendant route.
-  if (href === "/admin" || href === "/client") return false;
-  return pathname.startsWith(`${href}/`);
-}
 
 export type LayoutVariant = "wide" | "standard" | "full";
 
@@ -118,28 +112,70 @@ export function DashboardShell({
   children: React.ReactNode;
   session: ShellSession;
 }): React.JSX.Element {
+  return (
+    <NavigationProvider>
+      <DashboardShellInner session={session}>{children}</DashboardShellInner>
+    </NavigationProvider>
+  );
+}
+
+function DashboardShellInner({
+  children,
+  session
+}: {
+  children: React.ReactNode;
+  session: ShellSession;
+}): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
+  const { rootHref, goRoot } = useNavigation();
   const isAdmin = session.role === "ADMIN";
   const isClientAdmin = session.role === "CLIENT_ADMIN";
-  const navItems = isAdmin
-    ? ADMIN_NAV
-    : [...CLIENT_NAV, ...(isClientAdmin ? CLIENT_ADMIN_NAV : [])];
+  const navItems = isAdmin ? ADMIN_NAV : [...CLIENT_NAV, ...(isClientAdmin ? CLIENT_ADMIN_NAV : [])];
   const settingsItems = isAdmin ? ADMIN_SETTINGS : [];
+  const overviewHref = isAdmin ? "/admin" : "/client";
 
-  // Rendered only after mount so server (UTC) and browser (local timezone)
-  // never disagree during hydration (React #418).
   const [now, setNow] = useState<string | null>(null);
   useEffect(() => {
     setNow(new Date().toLocaleString());
   }, []);
 
+  const renderLink = (item: NavItem, Icon: NavItem["icon"]): React.JSX.Element => {
+    const active = rootHref === item.href;
+    return (
+      <a
+        href={item.href}
+        onClick={(event) => {
+          event.preventDefault();
+          goRoot({ key: item.key, href: item.href, label: item.label });
+        }}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "flex items-center gap-2 rounded-control border border-transparent px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
+          active && "border-selected-border/35 bg-selected text-text"
+        )}
+        key={item.href}
+      >
+        <Icon className="h-4 w-4" />
+        <span>{item.label}</span>
+      </a>
+    );
+  };
+
   return (
     <div className="grid min-h-screen lg:grid-cols-[264px_1fr]">
       <aside className="border-b border-border bg-surface-deck p-4 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
-        <Link href={isAdmin ? "/admin" : "/client"} aria-label="Noderaft overview" className="inline-flex rounded-control focus:outline-none focus:ring-2 focus:ring-focus">
+        <a
+          href={overviewHref}
+          aria-label="Noderaft overview"
+          onClick={(event) => {
+            event.preventDefault();
+            goRoot({ key: "overview", href: overviewHref, label: "Overview" });
+          }}
+          className="inline-flex rounded-control focus:outline-none focus:ring-2 focus:ring-focus"
+        >
           <NoderaftLogo priority />
-        </Link>
+        </a>
 
         <div className="mt-5 border-y border-border py-3">
           <p className="font-medium">{session.displayName}</p>
@@ -150,46 +186,14 @@ export function DashboardShell({
         </div>
 
         <nav className="mt-4 space-y-1" aria-label="Primary">
-          {navItems.map((item) => {
-            const active = isActiveNavPath(pathname, item.href);
-            const Icon = item.icon;
-            return (
-              <Link
-                className={cn(
-                  "flex items-center gap-2 rounded-control border border-transparent px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
-                  active && "border-selected-border/35 bg-selected text-text"
-                )}
-                href={item.href}
-                key={item.href}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
+          {navItems.map((item) => renderLink(item, item.icon))}
         </nav>
 
         {settingsItems.length > 0 && (
           <>
             <p className="mt-6 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-text-subtle">Settings</p>
             <nav className="mt-2 space-y-1" aria-label="Settings">
-              {settingsItems.map((item) => {
-                const active = isActiveNavPath(pathname, item.href);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    className={cn(
-                      "flex items-center gap-2 rounded-control border border-transparent px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
-                      active && "border-selected-border/35 bg-selected text-text"
-                    )}
-                    href={item.href}
-                    key={item.href}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+              {settingsItems.map((item) => renderLink(item, item.icon))}
             </nav>
           </>
         )}

@@ -10,7 +10,7 @@ import { ServerDataTable } from "@/components/ui/server-data-table";
 import type { Column } from "@/components/ui/data-table";
 import type { ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
-import { rememberResourceNavigation } from "@/components/navigation/view-state";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 
 type ContainersPayload = {
   containers: ContainerView[];
@@ -30,6 +30,7 @@ const STATUSES = ["running", "stopped", "restarting", "unknown"] as const;
 
 export default function SettingsContainersPage(): React.JSX.Element {
   const router = useRouter();
+  const go = useResourceNavigation();
   const searchParams = useSearchParams();
 
   // Local filter state mirrors the URL so inputs stay responsive while the
@@ -214,9 +215,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
         emptyTitle="No containers"
         emptyBody="Containers appear here once an agent reports them."
         onRowClick={(c) => {
-          const destination = `/admin/containers/${c.nodeId}/${c.containerId}`;
-          rememberResourceNavigation(destination);
-          router.push(destination);
+          go({ url: `/admin/containers/${c.nodeId}/${c.containerId}`, label: c.name, type: "container", id: c.containerId });
         }}
         rowKey={(c) => `${c.nodeId}:${c.containerId}`}
       />

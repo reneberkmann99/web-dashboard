@@ -14,6 +14,7 @@ import { LogViewer } from "@/components/logs/log-viewer";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
+import { useOptionalNavigation } from "@/components/navigation/navigation-context";
 
 type DetailResponse = {
   container: ContainerView;
@@ -100,6 +101,10 @@ export default function ContainerDetailPage(): React.JSX.Element {
   });
 
   const container = detail.data?.container;
+  const nav = useOptionalNavigation();
+  useEffect(() => {
+    if (container?.name) nav?.renameCurrent(container.name);
+  }, [container?.name, nav]);
   const busy = Boolean(operation && !["SUCCEEDED", "FAILED", "CANCELLED"].includes(operation.state));
   const [confirmStop, setConfirmStop] = useState(false);
 
@@ -109,7 +114,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
         eyebrow="Container"
         title={container?.name ?? "Container details"}
         description="Live state, safe metadata, and recent logs."
-        back={<Breadcrumbs items={[{ label: "Containers", href: "/client/containers" }, { label: container?.name ?? "Container" }]} />}
+        back={<Breadcrumbs />}
       />
 
       {detail.isLoading || !container ? (

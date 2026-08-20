@@ -47,7 +47,6 @@ export const CONDITION = {
   CONTAINER_UNHEALTHY: "CONTAINER_UNHEALTHY",
   CONTAINER_CRASH_LOOP: "CONTAINER_CRASH_LOOP",
   CONTAINER_UNEXPECTED_STOP: "CONTAINER_UNEXPECTED_STOP",
-  CONTAINER_STOPPED_INTENTIONAL: "CONTAINER_STOPPED_INTENTIONAL",
   CONTAINER_HIGH_CPU: "CONTAINER_HIGH_CPU",
   CONTAINER_HIGH_MEMORY: "CONTAINER_HIGH_MEMORY",
   WORKLOAD_DEGRADED: "WORKLOAD_DEGRADED",
@@ -477,6 +476,15 @@ export async function deriveContainerConditions(snapshot: OverviewSnapshot): Pro
     const containers = snapshot.containersByNode.get(node.id) ?? [];
     for (const c of containers) {
       const key = `${node.id}:${c.id}`;
+      const expectedState = expectedStates.get(key);
+      // An intentionally-stopped container (operator pressed Stop and the
+      // runtime is actually stopped) is behaving exactly as requested. It is
+      // "not applicable" for operational health aggregation: no unhealthy,
+      // no unexpected-stop, no crash-loop, no resource-pressure attention —
+      // and it never re-surfaces stale Docker `unhealthy` state.
+      const intentionallyStopped = expectedState === "STOPPED" && c.status === "stopped";
+      if (intentionallyStopped) continue;
+
       if (c.health === "unhealthy" || c.status === "unhealthy") {
         conditions.push({
           resourceType: "CONTAINER",
@@ -506,8 +514,11 @@ export async function deriveContainerConditions(snapshot: OverviewSnapshot): Pro
       }
 
       if (c.status === "stopped") {
-        const expectedRunning = isExpectedRunning(c.restartPolicy, expectedStates.get(key));
-        if (expectedRunning) {
+        // Only reachable when the container is NOT intentionally stopped —
+        // i.e. it is expected to run (or has no explicit intent). An
+        // unexpected absence is a real incident; an intentional one already
+        // `continue`d above and is not an attention condition at all.
+        if (isExpectedRunning(c.restartPolicy, expectedState)) {
           conditions.push({
             resourceType: "CONTAINER",
             resourceId: key,
@@ -515,16 +526,6 @@ export async function deriveContainerConditions(snapshot: OverviewSnapshot): Pro
             severity: "critical",
             title: `${c.name} stopped unexpectedly`,
             detail: `On ${node.name}. Restart policy is "${c.restartPolicy}" but the container is not running.`,
-            nodeId: node.id
-          });
-        } else {
-          conditions.push({
-            resourceType: "CONTAINER",
-            resourceId: key,
-            conditionType: CONDITION.CONTAINER_STOPPED_INTENTIONAL,
-            severity: "info",
-            title: `${c.name} is stopped`,
-            detail: `On ${node.name}.`,
             nodeId: node.id
           });
         }

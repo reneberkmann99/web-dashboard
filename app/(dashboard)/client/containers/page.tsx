@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
@@ -12,14 +11,14 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type Column } from "@/components/ui/data-table";
-import { rememberResourceNavigation } from "@/components/navigation/view-state";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 
 type ListResponse = {
   containers: ContainerView[];
 };
 
 export default function ClientContainersPage(): React.JSX.Element {
-  const router = useRouter();
+  const go = useResourceNavigation();
   const queryClient = useQueryClient();
   const [confirmStop, setConfirmStop] = useState<{ assignmentId: string; name: string } | null>(null);
 
@@ -103,9 +102,7 @@ export default function ClientContainersPage(): React.JSX.Element {
         ariaLabel="Assigned containers"
         rowKey={(container) => container.assignmentId}
         onRowClick={(container) => {
-          const destination = `/client/containers/${container.assignmentId}`;
-          rememberResourceNavigation(destination);
-          router.push(destination);
+          go({ url: `/client/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId });
         }}
       />
 

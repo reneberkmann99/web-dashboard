@@ -16,6 +16,7 @@ import { AttentionBadge } from "@/components/ui/attention-badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { ContextBackLink } from "@/components/navigation/context-back-link";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
+import { useOptionalNavigation } from "@/components/navigation/navigation-context";
 
 type DetailResponse = {
   container: ContainerView;
@@ -92,6 +93,10 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
   });
 
   const container = detail.data?.container;
+  const nav = useOptionalNavigation();
+  useEffect(() => {
+    if (container?.name) nav?.renameCurrent(container.name);
+  }, [container?.name, nav]);
   const busy = Boolean(operation && !["SUCCEEDED", "FAILED", "CANCELLED"].includes(operation.state));
   const nodeOnline = detail.data?.nodeOnline ?? false;
 
@@ -145,7 +150,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Container"
         title={container.name}
-        back={<Breadcrumbs items={[{ label: container.nodeName, href: `/admin/nodes/${nodeId}` }, { label: "Containers", href: `/admin/nodes/${nodeId}?tab=containers` }, { label: container.name }]} />}
+        back={<Breadcrumbs />}
         description={<span className="font-mono text-sm">{container.image}</span>}
         actions={<>
           <Badge

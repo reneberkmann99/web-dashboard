@@ -8,6 +8,7 @@ import {
   isExpectedRunning,
   CONDITION
 } from "@/server/services/attention";
+import { toWorkloadDetail } from "@/server/services/workloads";
 import type { OverviewSnapshot, NodeOperationalView } from "@/server/services/overview";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 
@@ -78,7 +79,7 @@ describe("isExpectedRunning", () => {
 });
 
 describe("intentional-stop semantics", () => {
-  it("a stopped container with explicit operator intent is intentional, not unexpected", async () => {
+  it("a stopped container with explicit operator intent raises NO attention (behaving as requested)", async () => {
     // Mark world.web (restartPolicy always, stopped) as intentionally stopped.
     await prisma.container.update({
       where: { id: world.web.id },
@@ -93,12 +94,26 @@ describe("intentional-stop semantics", () => {
     });
 
     const conditions = await deriveContainerConditions(snap);
-    const stopped = conditions.find(
-      (c) => c.resourceId === `${world.node1.id}:${world.web.dockerContainerId}`
-    );
-    expect(stopped?.conditionType).toBe(CONDITION.CONTAINER_STOPPED_INTENTIONAL);
-    expect(stopped?.severity).toBe("info");
-    expect(conditions.some((c) => c.conditionType === CONDITION.CONTAINER_UNEXPECTED_STOP)).toBe(false);
+    // No unexpected-stop, no unhealthy, no intentional-stop condition.
+    expect(conditions).toHaveLength(0);
+  });
+
+  it("an intentionally stopped container that Docker still reports unhealthy raises nothing", async () => {
+    await prisma.container.update({
+      where: { id: world.web.id },
+      data: { expectedState: "STOPPED" }
+    });
+
+    const node = nodeView(world.node1.id, world.node1.name);
+    const snap = snapshot([node], {
+      [world.node1.id]: [
+        container({ id: world.web.dockerContainerId, status: "stopped", restartPolicy: "always", health: "unhealthy" })
+      ]
+    });
+
+    const conditions = await deriveContainerConditions(snap);
+    expect(conditions.filter((c) => c.conditionType === CONDITION.CONTAINER_UNHEALTHY)).toHaveLength(0);
+    expect(conditions.filter((c) => c.conditionType === CONDITION.CONTAINER_UNEXPECTED_STOP)).toHaveLength(0);
   });
 
   it("without explicit intent, a stopped always-policy container remains unexpected", async () => {
@@ -120,5 +135,56 @@ describe("intentional-stop semantics", () => {
     expect(map.get(`${world.node1.id}:${world.web.dockerContainerId}`)).toBe("RUNNING");
     // worker has no expectedState → absent from the map
     expect(map.get(`${world.node1.id}:${world.worker.dockerContainerId}`)).toBeUndefined();
+  });
+});
+
+describe("workload health respects expected state", () => {
+  const node = { id: "node-x", name: "Main VPS", hostname: "host", status: "ONLINE" };
+
+  function projectWith(ids: string[]) {
+    return {
+      id: "project-x",
+      name: "Mailcow",
+      slug: "mailcow",
+      description: null,
+      source: "COMPOSE",
+      composeProject: "mailcow",
+      node,
+      clientAccount: null,
+      grants: [],
+      containers: ids.map((id) => ({ dockerContainerId: id, dockerName: id }))
+    };
+  }
+
+  it("4 running + 1 intentionally stopped is healthy and truthfully counted", () => {
+    const ids = ["a", "b", "c", "d", "e"];
+    const expected = new Map<string, "RUNNING" | "STOPPED">([[`${node.id}:e`, "STOPPED"]]);
+    const live = ids.map((id) =>
+      container({ id, status: id === "e" ? "stopped" : "running", restartPolicy: "always" })
+    );
+    const detail = toWorkloadDetail(projectWith(ids), live, expected);
+    expect(detail.runningContainers).toBe(4);
+    expect(detail.intentionallyStoppedContainers).toBe(1);
+    expect(detail.stoppedContainers).toBe(1);
+    expect(detail.unhealthyContainers).toBe(0);
+    expect(detail.health).toBe("healthy");
+  });
+
+  it("4 running + 1 unhealthy (expected running) is degraded", () => {
+    const ids = ["a", "b", "c", "d", "e"];
+    const live = ids.map((id) =>
+      container({ id, status: id === "e" ? "running" : "running", health: id === "e" ? "unhealthy" : null })
+    );
+    const detail = toWorkloadDetail(projectWith(ids), live, new Map());
+    expect(detail.unhealthyContainers).toBe(1);
+    expect(detail.health).toBe("degraded");
+  });
+
+  it("1 expected-running container externally stopped is down (unexpected)", () => {
+    const ids = ["a"];
+    const live = ids.map((id) => container({ id, status: "stopped", restartPolicy: "always" }));
+    const detail = toWorkloadDetail(projectWith(ids), live, new Map());
+    expect(detail.health).toBe("down");
+    expect(detail.intentionallyStoppedContainers).toBe(0);
   });
 });

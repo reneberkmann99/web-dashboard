@@ -11,6 +11,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
 import { timeAgo, humanizeAction } from "@/lib/format";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import type { AttentionItem, WorkloadSummary, FleetSummary, RecentFailure, ActiveOperationSummary } from "@/types/domain";
 
 type OverviewPayload = {
@@ -52,6 +53,7 @@ type OverviewPayload = {
  */
 export default function AdminOverviewPage(): React.JSX.Element {
   const router = useRouter();
+  const go = useResourceNavigation();
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["admin-overview"],
@@ -235,10 +237,14 @@ export default function AdminOverviewPage(): React.JSX.Element {
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {workloads.slice(0, 9).map((w) => (
-              <Link
+              <a
                 key={w.id}
                 href={`/admin/workloads/${w.id}`}
-                className="rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
+                onClick={(event) => {
+                  event.preventDefault();
+                  go({ url: `/admin/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
+                }}
+                className="cursor-pointer rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
               >
                 <div className="flex items-center justify-between">
                   <p className="font-medium">{w.name}</p>
@@ -246,7 +252,10 @@ export default function AdminOverviewPage(): React.JSX.Element {
                 </div>
                 <p className="mt-0.5 text-xs text-muted">{w.nodeName}</p>
                 <p className="mt-3 font-mono text-sm">
-                  {w.runningContainers}/{w.totalContainers} containers running
+                  {w.runningContainers}/{w.totalContainers} running
+                  {w.intentionallyStoppedContainers > 0 && (
+                    <span className="text-text-muted"> · {w.intentionallyStoppedContainers} intentionally stopped</span>
+                  )}
                 </p>
                 {(w.cpuPercent !== null || w.memoryUsage) && (
                   <p className="mt-1 text-xs text-muted">
@@ -255,7 +264,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
                     {w.memoryUsage ?? ""}
                   </p>
                 )}
-              </Link>
+              </a>
             ))}
           </div>
         )}
@@ -271,10 +280,14 @@ export default function AdminOverviewPage(): React.JSX.Element {
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           {nodes.map((node) => (
-            <Link
+            <a
               key={node.id}
               href={`/admin/nodes/${node.id}`}
-              className="rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
+              onClick={(event) => {
+                event.preventDefault();
+                go({ url: `/admin/nodes/${node.id}`, label: node.name, type: "node", id: node.id });
+              }}
+              className="cursor-pointer rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
             >
               <div className="flex items-center justify-between">
                 <p className="font-medium">{node.name}</p>
@@ -287,7 +300,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
               <p className="mt-0.5 font-mono text-xs text-text-muted">
                 {node.containerCount} containers · heartbeat {timeAgo(node.lastHeartbeatAt)}
               </p>
-            </Link>
+            </a>
           ))}
         </div>
       </section>

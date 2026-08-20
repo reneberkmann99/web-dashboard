@@ -122,6 +122,7 @@ export type WorkloadSummary = {
   totalContainers: number;
   runningContainers: number;
   stoppedContainers: number;
+  intentionallyStoppedContainers: number;
   unhealthyContainers: number;
   health: "healthy" | "degraded" | "down" | "unknown";
   cpuPercent: number | null;

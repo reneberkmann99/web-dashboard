@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
@@ -15,13 +15,12 @@ import type { NodeRecord } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { rememberResourceNavigation } from "@/components/navigation/view-state";
 
 type NodesPayload = { nodes: NodeRecord[] };
 type EnrollmentResponse = { token: string; expiresAt: string; ttlMinutes: number; nodeId: string | null };
 
 export default function AdminNodesPage(): React.JSX.Element {
-  const router = useRouter();
+  const go = useResourceNavigation();
   const queryClient = useQueryClient();
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollment, setEnrollment] = useState<EnrollmentResponse | null>(null);
@@ -185,9 +184,7 @@ export default function AdminNodesPage(): React.JSX.Element {
         initialSort="attention"
         initialSortDir="asc"
         onRowClick={(node) => {
-          const href = `/admin/nodes/${node.id}`;
-          rememberResourceNavigation(href);
-          router.push(href);
+          go({ url: `/admin/nodes/${node.id}`, label: node.name, type: "node", id: node.id });
         }}
       />
 

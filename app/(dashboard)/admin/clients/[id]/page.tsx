@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -16,7 +16,8 @@ import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
-import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
+import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
+import { useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 type ClientDetailPayload = {
@@ -70,6 +71,8 @@ export default function AdminClientDetailPage(): React.JSX.Element {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [tab, setTab] = useDetailTab(TABS, "Overview");
+  const nav = useOptionalNavigation();
+  const go = useResourceNavigation();
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -85,6 +88,11 @@ export default function AdminClientDetailPage(): React.JSX.Element {
     queryFn: () => apiFetch<ClientDetailPayload>(`/api/admin/clients/${params.id}`),
     refetchInterval: 15000
   });
+
+  useEffect(() => {
+    const name = query.data?.client?.name;
+    if (name) nav?.renameCurrent(name);
+  }, [query.data?.client?.name, nav]);
 
   const inviteMutation = useMutation({
     mutationFn: () =>
@@ -205,7 +213,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Client"
         title={client.name}
-        back={<Breadcrumbs items={[{ label: "Clients", href: "/admin/clients" }, { label: client.name }]} />}
+        back={<Breadcrumbs />}
         description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{client.slug}</span><span>· {client.counts.users} users · {client.counts.projects} workloads</span><Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge></div>}
         actions={<>
           <Button variant="ghost" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>
@@ -261,9 +269,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           stateKey={`client:${client.id}:workloads`}
           ariaLabel="Client workloads"
           onRowClick={(p) => {
-            const href = `/admin/workloads/${p.id}`;
-            rememberResourceNavigation(href);
-            router.push(href);
+            go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
           }}
         />
       )}

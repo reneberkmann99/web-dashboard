@@ -23,7 +23,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { ContextBackLink } from "@/components/navigation/context-back-link";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
-import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
+import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
+import { useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 type WorkloadDetailPayload = {
@@ -48,11 +49,13 @@ type WorkloadDetailPayload = {
       uptime: string | null;
       health: string | null;
       inProject: boolean;
+      intentionallyStopped: boolean;
     }>;
     health: string;
     totalContainers: number;
     runningContainers: number;
     stoppedContainers: number;
+    intentionallyStoppedContainers: number;
     unhealthyContainers: number;
     restartingContainers: number;
     cpuPercent: number | null;
@@ -80,6 +83,8 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [tab, setTab] = useDetailTab(TABS, "Overview");
+  const nav = useOptionalNavigation();
+  const go = useResourceNavigation();
   const [grantModal, setGrantModal] = useState<GrantModalState>({ open: false, clientId: "", level: "start" });
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [confirmDetach, setConfirmDetach] = useState(false);
@@ -104,6 +109,11 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
     queryFn: () => apiFetch<WorkloadDetailPayload>(`/api/admin/workloads/${params.id}`),
     refetchInterval: 15000
   });
+
+  useEffect(() => {
+    const name = query.data?.workload?.name;
+    if (name) nav?.renameCurrent(name);
+  }, [query.data?.workload?.name, nav]);
 
   const restartMutation = useMutation({
     mutationFn: () => apiFetch<RestartResponse>(`/api/admin/workloads/${params.id}/restart`, { method: "POST" }),
@@ -186,10 +196,17 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Workload"
         title={workload.name}
-        back={<Breadcrumbs items={[{ label: "Workloads", href: "/admin/workloads" }, { label: workload.name }]} />}
+        back={<Breadcrumbs />}
         description={<div className="flex flex-wrap items-center gap-2">
           <span>
-            {workload.description ?? workload.slug} · {workload.node.name}
+            {workload.description ?? workload.slug} ·{" "}
+            <button
+              type="button"
+              onClick={() => go({ url: `/admin/nodes/${workload.node.id}`, label: workload.node.name, type: "node", id: workload.node.id })}
+              className="text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus"
+            >
+              {workload.node.name}
+            </button>
           </span>
           {workload.source === "COMPOSE" && <Badge variant="default">Compose{workload.composeProject ? `: ${workload.composeProject}` : ""}</Badge>}
           <Badge variant={healthVariant}>{workload.health}</Badge>
@@ -282,6 +299,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
               <Stat label="Hostname" value={workload.node.hostname} />
               <Stat label="Node state" value={workload.node.status} />
               <Stat label="Containers" value={`${workload.runningContainers}/${workload.totalContainers} running`} />
+              <Stat label="Intentionally stopped" value={String(workload.intentionallyStoppedContainers)} />
               <Stat label="CPU" value={workload.cpuPercent !== null ? `${workload.cpuPercent}%` : "—"} />
               <Stat label="Memory" value={workload.memoryUsage ?? "—"} />
               <Stat label="Client" value={workload.client?.name ?? "—"} />
@@ -332,9 +350,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           ariaLabel="Workload containers"
           rowKey={(c) => c.containerId}
           onRowClick={(c) => {
-            const href = `/admin/containers/${workload.node.id}/${c.containerId}`;
-            rememberResourceNavigation(href);
-            router.push(href);
+            go({ url: `/admin/containers/${workload.node.id}/${c.containerId}`, label: c.dockerName, type: "container", id: c.containerId });
           }}
         />
       )}

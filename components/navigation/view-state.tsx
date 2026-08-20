@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useOptionalNavigation } from "@/components/navigation/navigation-context";
 
 const STORAGE_PREFIX = "noderaft:view:";
 const RETURN_PREFIX = "noderaft:return:";
@@ -46,6 +47,7 @@ export function useDetailTab<T extends string>(tabs: readonly T[], defaultTab: T
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const nav = useOptionalNavigation();
   const requested = searchParams.get("tab");
   const active = useMemo(
     () => tabs.find((tab) => tabParamValue(tab) === requested) ?? defaultTab,
@@ -58,9 +60,15 @@ export function useDetailTab<T extends string>(tabs: readonly T[], defaultTab: T
       if (tab === defaultTab) params.delete("tab");
       else params.set("tab", tabParamValue(tab));
       const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const url = query ? `${pathname}?${query}` : pathname;
+      if (nav) {
+        // Record the tab as a trail segment (default tab clears it) and navigate.
+        nav.setTab(tab === defaultTab ? null : tab, url);
+      } else {
+        router.replace(url, { scroll: false });
+      }
     },
-    [defaultTab, pathname, router, searchParams]
+    [defaultTab, nav, pathname, router, searchParams]
   );
 
   return [active, setActive];

@@ -57,11 +57,13 @@ export type WorkloadDetail = {
     uptime: string | null;
     health: string | null;
     inProject: boolean;
+    intentionallyStopped: boolean;
   }>;
   health: "healthy" | "degraded" | "down" | "unknown";
   totalContainers: number;
   runningContainers: number;
   stoppedContainers: number;
+  intentionallyStoppedContainers: number;
   unhealthyContainers: number;
   restartingContainers: number;
   cpuPercent: number | null;
@@ -103,20 +105,25 @@ export function toWorkloadDetail(
       ports: c.ports,
       uptime: c.uptime,
       health: c.health ?? c.details?.health ?? null,
-      inProject: projectIds.has(c.id)
+      inProject: projectIds.has(c.id),
+      intentionallyStopped:
+        expectedStates?.get(`${project.node.id}:${c.id}`) === "STOPPED" && c.status === "stopped"
     }))
     .filter((c) => c.inProject);
 
-  const inProject = containerSummaries.filter((c) => c.inProject);
+  const inProject = containerSummaries;
   const running = inProject.filter((c) => c.status === "running").length;
   const stopped = inProject.filter((c) => c.status === "stopped").length;
-  const unhealthy = inProject.filter((c) => c.health === "unhealthy" || c.status === "unhealthy").length;
+  const intentionallyStopped = inProject.filter((c) => c.intentionallyStopped).length;
+  const unhealthy = inProject.filter(
+    (c) => !c.intentionallyStopped && (c.health === "unhealthy" || c.status === "unhealthy")
+  ).length;
   const restarting = inProject.filter((c) => c.status === "restarting").length;
   // A stopped container is only "unexpected" when its restart policy (or
   // explicit operator intent) says it should be running. Intentional stops
   // do not degrade the workload (Phase 6F.5 correction).
   const unexpectedStopped = inProject.filter(
-    (c) => c.status === "stopped" && isExpectedRunning(c.restartPolicy, expectedStates?.get(`${project.node.id}:${c.containerId}`))
+    (c) => c.status === "stopped" && !c.intentionallyStopped && isExpectedRunning(c.restartPolicy, expectedStates?.get(`${project.node.id}:${c.containerId}`))
   ).length;
   const total = inProject.length;
 
@@ -128,9 +135,7 @@ export function toWorkloadDetail(
           ? running === 0
             ? "down"
             : "degraded"
-          : total > 0 && running + (stopped - unexpectedStopped) === total
-            ? "healthy"
-            : "unknown"
+          : "healthy"
       : "unknown";
 
   const cpuSum = inProject.reduce((acc, c) => acc + (c.cpuPercent ?? 0), 0);
@@ -170,6 +175,7 @@ export function toWorkloadDetail(
     totalContainers: total,
     runningContainers: running,
     stoppedContainers: stopped,
+    intentionallyStoppedContainers: intentionallyStopped,
     unhealthyContainers: unhealthy,
     restartingContainers: restarting,
     cpuPercent: cpuCount > 0 ? Number((cpuSum / cpuCount).toFixed(1)) : null,

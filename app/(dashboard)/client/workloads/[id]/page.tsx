@@ -15,7 +15,8 @@ import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
-import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
+import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
+import { useDetailTab } from "@/components/navigation/view-state";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type ContainersPayload = { containers: ContainerView[] };
@@ -61,6 +62,11 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
   });
 
   const workload = workloads.data?.workloads.find((w) => w.id === params.id);
+  const nav = useOptionalNavigation();
+  const go = useResourceNavigation();
+  useEffect(() => {
+    if (workload?.name) nav?.renameCurrent(workload.name);
+  }, [workload?.name, nav]);
   const workloadContainers = useMemo(() => {
     if (!workload) return [];
     return (containers.data?.containers ?? []).filter((c) => c.projectName === workload.name);
@@ -85,7 +91,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Workload"
         title={workload.name}
-        back={<Breadcrumbs items={[{ label: "Workloads", href: "/client/workloads" }, { label: workload.name }]} />}
+        back={<Breadcrumbs />}
         description={<span>{workload.nodeName} · <span className="font-mono">{workload.runningContainers}/{workload.totalContainers}</span> running</span>}
         actions={<>
           <Badge variant={workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : "danger"}>{workload.health}</Badge>
@@ -117,9 +123,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
           stateKey={`client-workload:${workload.id}:containers`}
           ariaLabel={`${workload.name} containers`}
           onRowClick={(c) => {
-            const destination = `/client/containers/${c.assignmentId}`;
-            rememberResourceNavigation(destination);
-            router.push(destination);
+            go({ url: `/client/containers/${c.assignmentId}`, label: c.name, type: "container", id: c.containerId });
           }}
           rowKey={(c) => c.containerId}
         />

@@ -12,7 +12,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { humanizeAction, timeAgo } from "@/lib/format";
 import type { WorkloadSummary } from "@/types/domain";
-import { rememberResourceNavigation, useStoredViewState } from "@/components/navigation/view-state";
+import { useStoredViewState } from "@/components/navigation/view-state";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type RefPayload = { nodes: Array<{ id: string; name: string }>; clients: Array<{ id: string; name: string }> };
@@ -28,6 +29,7 @@ function healthAttention(w: WorkloadSummary): "critical" | "warning" | "info" | 
 }
 
 export default function AdminWorkloadsPage(): React.JSX.Element {
+  const go = useResourceNavigation();
   const router = useRouter();
   const [filters, setFilters] = useStoredViewState("filters:admin-workloads", {
     nodeFilter: "",
@@ -104,6 +106,9 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       render: (w) => (
         <span className="font-mono text-sm">
           {w.runningContainers}/{w.totalContainers} running
+          {w.intentionallyStoppedContainers > 0 && (
+            <span className="text-text-muted"> · {w.intentionallyStoppedContainers} stopped</span>
+          )}
         </span>
       )
     },
@@ -235,9 +240,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         emptyTitle="No workloads yet"
         emptyBody="Create a stack and attach containers to group them into a logical workload."
         onRowClick={(w) => {
-          const href = `/admin/workloads/${w.id}`;
-          rememberResourceNavigation(href);
-          router.push(href);
+          go({ url: `/admin/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
         }}
         rowKey={(w) => w.id}
       />
