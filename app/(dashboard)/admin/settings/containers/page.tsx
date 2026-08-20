@@ -118,7 +118,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Runtime inventory" title="All containers" description="Every container across all nodes, including unassigned ones." />
+      <PageHeader eyebrow="Runtime inventory" title="Containers" description="Every container across all nodes, including unassigned ones." />
 
       <div className="flex flex-wrap gap-2">
         <input

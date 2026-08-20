@@ -15,6 +15,7 @@ import type { AttentionItem, ContainerView, OperationView, OperationState } from
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 
 type DetailResponse = {
   container: ContainerView;
@@ -144,7 +145,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Container"
         title={container.name}
-        back={<ContextBackLink fallback="/admin/settings/containers" label="Back" allowedReturnPrefixes={["/admin/settings/containers", "/admin/nodes", "/admin/workloads"]} />}
+        back={<Breadcrumbs items={[{ label: container.nodeName, href: `/admin/nodes/${nodeId}` }, { label: "Containers", href: `/admin/nodes/${nodeId}?tab=containers` }, { label: container.name }]} />}
         description={<span className="font-mono text-sm">{container.image}</span>}
         actions={<>
           <Badge
@@ -316,7 +317,10 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
           </div>
           <LogViewer
             streamPath={`/api/admin/containers/direct/${nodeId}/${dockerId}/logs/stream`}
+            historicalPath={`/api/admin/containers/direct/${nodeId}/${dockerId}/logs`}
             downloadName={container.name}
+            containerStatus={container.status}
+            nodeOnline={nodeOnline}
           />
         </section>
       </div>

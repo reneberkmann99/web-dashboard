@@ -4,6 +4,7 @@ import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import { humanizeAction } from "@/server/services/overview";
 import { requestOperation, OperationConflictError } from "@/server/services/operations";
 import { recordNodePoll } from "@/server/services/node-heartbeat";
+import { isExpectedRunning } from "@/server/services/attention";
 import type { AuthSession } from "@/server/auth/session";
 
 /**
@@ -81,7 +82,8 @@ export function toWorkloadDetail(
     grants: Array<{ id: string; allowedActions: string[]; clientAccount: { name: string } }>;
     containers: Array<{ dockerContainerId: string; dockerName: string }>;
   },
-  liveContainers: RuntimeContainer[]
+  liveContainers: RuntimeContainer[],
+  expectedStates?: Map<string, "RUNNING" | "STOPPED">
 ): WorkloadDetail {
   const projectIds = new Set(project.containers.map((c) => c.dockerContainerId));
 
@@ -97,6 +99,7 @@ export function toWorkloadDetail(
       cpuPercent: c.cpuPercent,
       memoryUsage: c.memoryUsage,
       restartCount: c.restartCount,
+      restartPolicy: c.restartPolicy,
       ports: c.ports,
       uptime: c.uptime,
       health: c.health ?? c.details?.health ?? null,
@@ -109,17 +112,25 @@ export function toWorkloadDetail(
   const stopped = inProject.filter((c) => c.status === "stopped").length;
   const unhealthy = inProject.filter((c) => c.health === "unhealthy" || c.status === "unhealthy").length;
   const restarting = inProject.filter((c) => c.status === "restarting").length;
+  // A stopped container is only "unexpected" when its restart policy (or
+  // explicit operator intent) says it should be running. Intentional stops
+  // do not degrade the workload (Phase 6F.5 correction).
+  const unexpectedStopped = inProject.filter(
+    (c) => c.status === "stopped" && isExpectedRunning(c.restartPolicy, expectedStates?.get(`${project.node.id}:${c.containerId}`))
+  ).length;
   const total = inProject.length;
 
   const health: WorkloadDetail["health"] =
     project.node.status === "ONLINE"
       ? unhealthy > 0
         ? "degraded"
-        : total > 0 && running === total
-          ? "healthy"
-          : running === 0
+        : unexpectedStopped > 0
+          ? running === 0
             ? "down"
             : "degraded"
+          : total > 0 && running + (stopped - unexpectedStopped) === total
+            ? "healthy"
+            : "unknown"
       : "unknown";
 
   const cpuSum = inProject.reduce((acc, c) => acc + (c.cpuPercent ?? 0), 0);

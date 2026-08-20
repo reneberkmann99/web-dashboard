@@ -16,7 +16,7 @@ import { CodePanel } from "@/components/ui/code-panel";
 import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { AttentionItem, AttentionSeverity } from "@/types/domain";
-import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
@@ -117,7 +117,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
       <PageHeader
           eyebrow="Node"
           title={node.name}
-          back={<ContextBackLink fallback="/admin/nodes" label="Nodes" allowedReturnPrefixes={["/admin/nodes"]} />}
+          back={<Breadcrumbs items={[{ label: "Nodes", href: "/admin/nodes" }, { label: node.name }]} />}
           description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span><Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale heartbeat" : "online"}</Badge>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
           actions={<Button variant="outline" size="sm" onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}>View activity →</Button>}
       />

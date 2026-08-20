@@ -3,8 +3,8 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isInteractiveTableTarget, type Column } from "@/components/ui/data-table";
-import { Button } from "@/components/ui/button";
 import { StatePanel } from "@/components/ui/state-panel";
+import { Pagination } from "@/components/ui/pagination";
 
 /**
  * Server-side data table: the API returns one page; this component renders it
@@ -139,32 +139,14 @@ export function ServerDataTable<T>({
         </table>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-muted">
-        <span>
-          {total > 0 ? `${start}–${end} of ${total}` : "0 results"}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            disabled={safePage <= 1}
-            onClick={() => onPageChange(safePage - 1)}
-            variant="outline"
-            size="sm"
-          >
-            Prev
-          </Button>
-          <span>
-            Page {safePage} of {pageCount}
-          </span>
-          <Button
-            disabled={safePage >= pageCount}
-            onClick={() => onPageChange(safePage + 1)}
-            variant="outline"
-            size="sm"
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <Pagination
+        start={start}
+        end={end}
+        total={total}
+        page={safePage}
+        pageCount={pageCount}
+        onPageChange={onPageChange}
+      />
       {footer}
     </div>
   );

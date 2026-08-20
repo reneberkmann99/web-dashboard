@@ -13,7 +13,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogViewer } from "@/components/logs/log-viewer";
 import type { ContainerView, OperationView, OperationState } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
-import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 
 type DetailResponse = {
   container: ContainerView;
@@ -109,7 +109,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
         eyebrow="Container"
         title={container?.name ?? "Container details"}
         description="Live state, safe metadata, and recent logs."
-        back={<ContextBackLink fallback="/client/containers" label="Containers" allowedReturnPrefixes={["/client/containers", "/client/workloads"]} />}
+        back={<Breadcrumbs items={[{ label: "Containers", href: "/client/containers" }, { label: container?.name ?? "Container" }]} />}
       />
 
       {detail.isLoading || !container ? (
@@ -163,16 +163,27 @@ export default function ContainerDetailPage(): React.JSX.Element {
                 <Info label="Created" value={container.createdAt ?? "-"} />
                 <Info label="Updated" value={container.lastUpdatedAt} />
               </div>
-              <div className="flex gap-2">
-                <Button disabled={busy} onClick={() => actionMutation.mutate("start")}>
-                  {busy ? "Working…" : "Start"}
-                </Button>
-                <Button disabled={busy} variant="secondary" onClick={() => actionMutation.mutate("restart")}>
-                  {busy ? "Working…" : "Restart"}
-                </Button>
-                <Button disabled={busy} variant="danger" onClick={() => setConfirmStop(true)}>
-                  {busy ? "Working…" : "Stop"}
-                </Button>
+              <div className="flex flex-wrap gap-2">
+                {!container.nodeOnline ? (
+                  <p className="text-sm text-muted">Actions are disabled because the node is offline.</p>
+                ) : busy ? (
+                  <p className="text-sm text-warning-foreground">An operation is in progress — conflicting actions are disabled.</p>
+                ) : container.status === "running" ? (
+                  <>
+                    <Button disabled={busy} variant="secondary" onClick={() => actionMutation.mutate("restart")}>
+                      Restart
+                    </Button>
+                    <Button disabled={busy} variant="danger" onClick={() => setConfirmStop(true)}>
+                      Stop
+                    </Button>
+                  </>
+                ) : container.status === "stopped" ? (
+                  <Button disabled={busy} onClick={() => actionMutation.mutate("start")}>
+                    Start
+                  </Button>
+                ) : (
+                  <p className="text-sm text-muted">No actions available while the container is {container.status}.</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -185,7 +196,10 @@ export default function ContainerDetailPage(): React.JSX.Element {
             <CardContent>
               <LogViewer
                 streamPath={`/api/client/containers/${assignmentId}/logs/stream`}
+                historicalPath={`/api/client/containers/${assignmentId}/logs`}
                 downloadName={container.name}
+                containerStatus={container.status}
+                nodeOnline={container.nodeOnline}
               />
             </CardContent>
           </Card>

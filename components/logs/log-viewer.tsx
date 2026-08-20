@@ -11,6 +11,14 @@ import { Button } from "@/components/ui/button";
  * Live container logs via Server-Sent Events (relayed through the control
  * plane — the browser never talks to the node agent directly).
  *
+ * State-aware (Phase 6F.5 correction):
+ *  - `nodeOnline === false` → "Logs unavailable — node is offline" (no stream,
+ *    no reconnect loop).
+ *  - `containerStatus` stopped/exited → historical logs only (single fetch via
+ *    `historicalPath`), Live disabled, no SSE follow, no reconnect, banner
+ *    "Container stopped — showing existing logs".
+ *  - running/restarting/unknown → live tail + follow (existing behavior).
+ *
  * Features: initial tail + live follow, pause/resume (buffered), client-side
  * filter, auto-scroll only while already at the bottom, connection status,
  * bounded line buffer, and download of the current view.
@@ -30,11 +38,180 @@ const MAX_PAUSE_BUFFER = 2000;
 type LogViewerProps = {
   /** Base path of the SSE stream (no query string); `?tail=` is appended internally. Must be render-stable. */
   streamPath: string;
+  /** Base path of the non-SSE historical logs endpoint, used when the container is stopped. */
+  historicalPath?: string;
   downloadName: string;
   initialTail?: number;
+  /** Runtime status of the container ("running" | "stopped" | "restarting" | "unhealthy" | "unknown"). */
+  containerStatus?: string;
+  /** Whether the hosting node is currently reachable. */
+  nodeOnline?: boolean;
 };
 
-export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogViewerProps): React.JSX.Element {
+function isStopped(status?: string): boolean {
+  return status === "stopped" || status === "exited";
+}
+
+export function LogViewer({
+  streamPath,
+  historicalPath,
+  downloadName,
+  initialTail = 200,
+  containerStatus,
+  nodeOnline = true
+}: LogViewerProps): React.JSX.Element {
+  // Offline node: never start a stream or a reconnect loop.
+  if (nodeOnline === false) {
+    return (
+      <div className="overflow-hidden rounded-panel border border-border bg-surface-deck">
+        <div className="flex items-center gap-2 border-b border-border bg-surface-raised/55 px-3 py-2 text-sm text-muted">
+          <WifiOff size={13} />
+          Logs unavailable — node is offline
+        </div>
+        <div className="h-[420px] bg-surface-hull/80 p-3 font-mono text-[11px] text-muted">
+          No log data can be read while the node is unreachable.
+        </div>
+      </div>
+    );
+  }
+
+  if (isStopped(containerStatus)) {
+    return (
+      <HistoricalLogViewer
+        historicalPath={historicalPath ?? streamPath}
+        downloadName={downloadName}
+        initialTail={initialTail}
+        banner="Container stopped — showing existing logs"
+      />
+    );
+  }
+
+  return (
+    <LiveLogViewer
+      streamPath={streamPath}
+      downloadName={downloadName}
+      initialTail={initialTail}
+    />
+  );
+}
+
+/** Single-shot historical logs for a stopped/exited container — no SSE, no reconnect. */
+function HistoricalLogViewer({
+  historicalPath,
+  downloadName,
+  initialTail,
+  banner
+}: {
+  historicalPath: string;
+  downloadName: string;
+  initialTail: number;
+  banner: string;
+}): React.JSX.Element {
+  const [tail, setTail] = useState(initialTail);
+  const [filter, setFilter] = useState("");
+  const [lines, setLines] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLines(null);
+    setError(null);
+    void (async () => {
+      try {
+        const response = await fetch(`${historicalPath}?tail=${tail}`, {
+          credentials: "include",
+          cache: "no-store"
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = (await response.json()) as { logs?: string[] };
+        if (!cancelled) setLines(payload.logs ?? []);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load logs");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [historicalPath, tail]);
+
+  const filtered = useMemo(() => {
+    if (!filter) return lines ?? [];
+    const q = filter.toLowerCase();
+    return (lines ?? []).filter((l) => l.toLowerCase().includes(q));
+  }, [lines, filter]);
+
+  const download = (): void => {
+    const blob = new Blob([filtered.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${downloadName}-logs.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="overflow-hidden rounded-panel border border-border bg-surface-deck">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised/55 px-3 py-2">
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+          {banner}
+        </span>
+        <div className="flex items-center gap-2">
+          <Input
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter logs…"
+            aria-label="Filter logs"
+            className="h-control-sm w-36 px-2 py-1 font-mono text-xs"
+          />
+          <Select
+            value={tail}
+            onChange={(e) => setTail(Number(e.target.value))}
+            aria-label="Number of log lines"
+            className="h-control-sm w-auto px-2 py-1 font-mono text-xs"
+          >
+            {[100, 200, 500].map((n) => (
+              <option key={n} value={n}>
+                {n} lines
+              </option>
+            ))}
+          </Select>
+          <Button onClick={download} aria-label="Download logs" variant="outline" size="sm">
+            <Download size={12} /> Download
+          </Button>
+        </div>
+      </div>
+
+      <pre className="log-scroll h-[420px] max-h-[420px] overflow-auto bg-surface-hull/80 p-3 font-mono text-[11px] leading-relaxed text-text">
+        {error !== null ? (
+          <span className="text-muted">Failed to load logs: {error}</span>
+        ) : lines === null ? (
+          <span className="text-muted">Loading…</span>
+        ) : filtered.length === 0 ? (
+          <span className="text-muted">{filter ? "No log lines match." : "No logs available."}</span>
+        ) : (
+          filtered.map((line, i) => <div key={`${i}-${line.length}`}>{maskSecrets(line)}</div>)
+        )}
+      </pre>
+      <div className="border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted">
+        {lines === null ? "—" : `${lines.length} lines`}
+      </div>
+    </div>
+  );
+}
+
+/** Live tail + follow (existing SSE behavior, unchanged). */
+function LiveLogViewer({
+  streamPath,
+  downloadName,
+  initialTail
+}: {
+  streamPath: string;
+  downloadName: string;
+  initialTail: number;
+}): React.JSX.Element {
   const [tail, setTail] = useState(initialTail);
   const [filter, setFilter] = useState("");
   const [paused, setPaused] = useState(false);
@@ -70,8 +247,6 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
     setLines((prev) => prev.concat(line).slice(-MAX_LINES));
   }, []);
 
-  // Pause/resume: flush the buffer on resume, and re-establish the stream if
-  // it dropped while paused (otherwise the view would stay stale forever).
   useEffect(() => {
     pausedRef.current = paused;
     if (!paused) {
@@ -84,9 +259,6 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
     }
   }, [paused]);
 
-  // Establish the SSE connection. Re-runs only when tail or streamPath change.
-  // On (re)connect the server re-sends the tail, so the first successful
-  // delivery replaces the line buffer rather than appending to it.
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -110,7 +282,6 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
           }
           setConnected(true);
           connectedRef.current = true;
-          // Fresh connection → the incoming tail is the new baseline.
           setLines([]);
 
           const reader = response.body.getReader();
@@ -152,17 +323,11 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
     };
   }, [tail, streamPath, appendLine]);
 
-  // Auto-scroll: only pin to the bottom while the user is already at/near the
-  // bottom and autoScroll is on.
   const handleScroll = (): void => {
     const el = preRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    if (!atBottom) {
-      setAutoScroll(false);
-    } else {
-      setAutoScroll(true);
-    }
+    setAutoScroll(atBottom);
   };
 
   useEffect(() => {
@@ -234,12 +399,7 @@ export function LogViewer({ streamPath, downloadName, initialTail = 200 }: LogVi
               </option>
             ))}
           </Select>
-          <Button
-            onClick={download}
-            aria-label="Download logs"
-            variant="outline"
-            size="sm"
-          >
+          <Button onClick={download} aria-label="Download logs" variant="outline" size="sm">
             <Download size={12} /> Download
           </Button>
         </div>

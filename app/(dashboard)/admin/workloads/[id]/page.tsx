@@ -22,6 +22,7 @@ import type { AttentionItem } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
@@ -185,7 +186,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Workload"
         title={workload.name}
-        back={<ContextBackLink fallback="/admin/workloads" label="Workloads" allowedReturnPrefixes={["/admin/workloads"]} />}
+        back={<Breadcrumbs items={[{ label: "Workloads", href: "/admin/workloads" }, { label: workload.name }]} />}
         description={<div className="flex flex-wrap items-center gap-2">
           <span>
             {workload.description ?? workload.slug} · {workload.node.name}

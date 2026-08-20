@@ -97,7 +97,7 @@ describe("recent failures", () => {
       }
     });
     const failures = await getRecentFailures();
-    const found = failures.find((f) => f.id === op.id);
+    const found = failures.find((f) => f.resourceId === op.id);
     expect(found).toBeDefined();
     expect(found?.href).toContain(world.node1.id);
     expect(found?.detail).toContain("agent rejected");
@@ -115,7 +115,7 @@ describe("recent failures", () => {
       data: { type: "DEPLOY", state: "FAILED", requestId: `fail-deploy-${suffix}`, deploymentId: deployment.id, error: "apply failed", finishedAt: new Date() }
     });
     const failures = await getRecentFailures();
-    const found = failures.find((f) => f.id === op.id);
+    const found = failures.find((f) => f.resourceId === project.id);
     expect(found).toBeDefined();
     expect(found?.href).toBe(`/admin/workloads/${project.id}`);
   });

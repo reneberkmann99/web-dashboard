@@ -4,8 +4,8 @@ import { useMemo } from "react";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { StatePanel } from "@/components/ui/state-panel";
+import { Pagination } from "@/components/ui/pagination";
 import { useStoredViewState } from "@/components/navigation/view-state";
 
 export type Column<T> = {
@@ -238,29 +238,14 @@ export function DataTable<T>({
       </div>
 
       {pageCount > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted">
-          <span>
-            {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, filtered.length)} of {filtered.length}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              disabled={safePage === 0}
-              onClick={() => setView((current) => ({ ...current, page: Math.max(0, current.page - 1) }))}
-              variant="outline"
-              size="sm"
-            >
-              Prev
-            </Button>
-            <Button
-              disabled={safePage >= pageCount - 1}
-              onClick={() => setView((current) => ({ ...current, page: Math.min(pageCount - 1, current.page + 1) }))}
-              variant="outline"
-              size="sm"
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          start={safePage * pageSize + 1}
+          end={Math.min((safePage + 1) * pageSize, filtered.length)}
+          total={filtered.length}
+          page={safePage + 1}
+          pageCount={pageCount}
+          onPageChange={(p) => setView((current) => ({ ...current, page: Math.max(0, p - 1) }))}
+        />
       )}
     </div>
   );

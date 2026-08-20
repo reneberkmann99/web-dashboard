@@ -375,6 +375,11 @@ model Container {
   composeProject    String?
   composeService    String?
   lastKnownStatus   String?
+  // Explicit operator intent ("RUNNING" | "STOPPED"), null = unspecified.
+  // Set when a start/stop/restart operation succeeds through Noderaft; used by
+  // the attention domain to distinguish an intentional stop from an unexpected
+  // process exit (Phase 6F.5 correction).
+  expectedState     String?
   firstSeenAt       DateTime              @default(now())
   lastSeenAt        DateTime              @default(now())
   isActive          Boolean               @default(true)
@@ -1075,4 +1080,20 @@ model NotificationDelivery {
   @@index([destinationId, status])
   @@index([notificationEventId])
   @@index([status, nextRetryAt])
+}
+
+/**
+ * Operator dismissal of a Recent Failure (Phase 6F.5 correction). Removing a
+ * failure from the Overview "Recent failures" feed is a UI-only concern — it
+ * never deletes Audit/Activity history, mutates the underlying operation, or
+ * resolves an active attention condition. Keyed by the grouped incident key
+ * (e.g. `deployment:<projectId>` or `operation:<nodeId>:<dockerId>:<type>`).
+ */
+model RecentFailureDismissal {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  dismissedBy String?
+  dismissedAt DateTime @default(now())
+
+  @@index([dismissedAt])
 }

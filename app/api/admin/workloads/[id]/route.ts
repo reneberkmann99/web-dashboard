@@ -4,7 +4,7 @@ import { cuidParamSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 import { listContainersForNode, toWorkloadDetail } from "@/server/services/workloads";
 import { getAdminWorkloadDeploymentStatus } from "@/server/services/deployments";
-import { getAttentionFeedForAdmin } from "@/server/services/attention";
+import { getAttentionFeedForAdmin, getExpectedStates } from "@/server/services/attention";
 
 export async function GET(
   _: Request,
@@ -28,7 +28,8 @@ export async function GET(
     }
 
     const containers = await listContainersForNode(project.node.id);
-    const detail = toWorkloadDetail(project, containers);
+    const expectedStates = await getExpectedStates([project.node.id]);
+    const detail = toWorkloadDetail(project, containers, expectedStates);
 
     const activity = await prisma.auditLog.findMany({
       where: {

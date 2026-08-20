@@ -2,7 +2,7 @@ import { prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { reconcileComposeIfDue } from "@/server/services/compose";
 import { recordNodePoll, type HeartbeatState } from "@/server/services/node-heartbeat";
-import { syncAttentionIfDue, getAttentionFeedForAdmin, getAttentionMap } from "@/server/services/attention";
+import { syncAttentionIfDue, getAttentionFeedForAdmin, getAttentionMap, getExpectedStates, isExpectedRunning } from "@/server/services/attention";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { WorkloadSummary } from "@/types/domain";
 import { humanizeAction } from "@/lib/format";
@@ -183,13 +183,14 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
     }
   });
 
-  const [attentionMap, projectEvents] = await Promise.all([
+  const [attentionMap, projectEvents, expectedStates] = await Promise.all([
     getAttentionMap(),
     prisma.auditLog.findMany({
       where: { targetType: "PROJECT", targetId: { in: projects.map((p) => p.id) } },
       orderBy: { createdAt: "desc" },
       select: { targetId: true, action: true, createdAt: true, result: true }
-    })
+    }),
+    getExpectedStates(projects.map((p) => p.nodeId))
   ]);
   const lastEventByProject = new Map<string, (typeof projectEvents)[number]>();
   for (const event of projectEvents) {
@@ -207,13 +208,19 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
 
     let running = 0;
     let stopped = 0;
+    let unexpectedStopped = 0;
     let unhealthy = 0;
     let cpuSum = 0;
     let cpuCount = 0;
     let memSum = 0;
     for (const c of inProject) {
       if (c.status === "running") running += 1;
-      if (c.status === "stopped") stopped += 1;
+      if (c.status === "stopped") {
+        stopped += 1;
+        if (isExpectedRunning(c.restartPolicy, expectedStates.get(`${project.nodeId}:${c.id}`))) {
+          unexpectedStopped += 1;
+        }
+      }
       if (c.health === "unhealthy" || c.status === "unhealthy") unhealthy += 1;
       if (typeof c.cpuPercent === "number") {
         cpuSum += c.cpuPercent;
@@ -243,11 +250,11 @@ export async function collectWorkloads(snapshot: OverviewSnapshot): Promise<Work
       ? "unknown"
       : unhealthy > 0
         ? "degraded"
-        : running === total
-          ? "healthy"
-          : running === 0
+        : unexpectedStopped > 0
+          ? running === 0
             ? "down"
-            : "degraded";
+            : "degraded"
+          : "healthy";
     if (managed && telemetryCurrent) {
       if (runtimeState === "DRIFTED") health = "down";
       else if (runtimeState === "DEGRADED" && health === "healthy") health = "degraded";

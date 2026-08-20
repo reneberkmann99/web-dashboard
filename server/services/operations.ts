@@ -36,6 +36,29 @@ export class OperationConflictError extends Error {
   }
 }
 
+/**
+ * Record explicit operator intent for a container. Uses an upsert so it also
+ * works for containers that don't yet have a discovered `Container` row (they
+ * exist in the agent inventory even if never adopted). `dockerName` is best-
+ * effort (the operation row doesn't carry the display name).
+ */
+export async function setContainerExpectedState(
+  nodeId: string,
+  dockerContainerId: string,
+  expectedState: "RUNNING" | "STOPPED"
+): Promise<void> {
+  await prisma.container.upsert({
+    where: { nodeId_dockerContainerId: { nodeId, dockerContainerId } },
+    create: {
+      nodeId,
+      dockerContainerId,
+      dockerName: dockerContainerId,
+      expectedState
+    },
+    update: { expectedState }
+  }).catch(() => undefined);
+}
+
 function toOperationView(op: {
   id: string;
   type: string;
@@ -199,6 +222,15 @@ export async function executeOperation(operationId: string): Promise<void> {
       where: { id: operation.id },
       data: { state: "SUCCEEDED", finishedAt: new Date(), error: null }
     });
+    // Persist explicit operator intent so the attention domain treats an
+    // intentional stop as expected (no unexpected-stop alert) and a start as
+    // "expected running" (so a later crash is a real incident).
+    const expectedState = operation.type === "CONTAINER_STOP" ? "STOPPED" : "RUNNING";
+    await setContainerExpectedState(
+      operation.nodeId,
+      operation.dockerContainerId,
+      expectedState
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown failure";
     await prisma.operation.update({

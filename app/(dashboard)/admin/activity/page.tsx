@@ -9,6 +9,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { formatDateTime, humanizeAction } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
 import { ActivityTimeline, type TimelineEvent } from "@/components/activity/activity-timeline";
 
 type AuditEntry = {
@@ -156,14 +157,14 @@ export default function AdminActivityPage(): React.JSX.Element {
       />
 
       {(query.data?.pageCount ?? 0) > 1 && (
-        <div className="flex items-center justify-between gap-3 text-sm text-text-muted">
-          <span>{query.data?.total ?? 0} events</span>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => syncUrl({ page: String(page - 1) })}>Previous</Button>
-            <span className="font-mono">{page} / {query.data?.pageCount ?? 1}</span>
-            <Button size="sm" variant="secondary" disabled={page >= (query.data?.pageCount ?? 1)} onClick={() => syncUrl({ page: String(page + 1) })}>Next</Button>
-          </div>
-        </div>
+        <Pagination
+          start={(page - 1) * PAGE_SIZE + 1}
+          end={Math.min(page * PAGE_SIZE, query.data?.total ?? 0)}
+          total={query.data?.total ?? 0}
+          page={page}
+          pageCount={query.data?.pageCount ?? 1}
+          onPageChange={(p) => syncUrl({ page: String(p) })}
+        />
       )}
 
       <Modal

@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
-import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
@@ -205,7 +205,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Client"
         title={client.name}
-        back={<ContextBackLink fallback="/admin/clients" label="Clients" allowedReturnPrefixes={["/admin/clients"]} />}
+        back={<Breadcrumbs items={[{ label: "Clients", href: "/admin/clients" }, { label: client.name }]} />}
         description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{client.slug}</span><span>· {client.counts.users} users · {client.counts.projects} workloads</span><Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge></div>}
         actions={<>
           <Button variant="ghost" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>

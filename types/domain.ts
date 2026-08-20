@@ -149,14 +149,19 @@ export type FleetSummary = {
 
 /** Recent failure entry for the Overview "Recent failures" section (§13). */
 export type RecentFailure = {
+  /** Stable grouped-incident key — also the dismissal key. */
   id: string;
   kind: string;
   title: string;
+  /** Short single-line summary (latest error, truncated) — raw output lives in the resource detail, not Overview. */
   detail: string | null;
   resourceType: "node" | "container" | "operation" | "workload" | "deployment";
   resourceId: string | null;
   href: string | null;
+  /** Latest occurrence. */
   createdAt: string;
+  /** Number of failed attempts grouped into this incident. */
+  attempts: number;
 };
 
 /** Active (in-flight) operation summary for the Overview "Active operations" section (§12). */

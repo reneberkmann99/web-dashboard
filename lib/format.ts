@@ -126,11 +126,19 @@ export function humanizeAction(action: string): string {
       CONTAINER_UNHEALTHY: ["Container became unhealthy", "Container recovered"],
       CONTAINER_CRASH_LOOP: ["Container entered a crash loop", "Container left the crash loop"],
       CONTAINER_STOPPED_INTENTIONAL: ["Container stopped", "Container started"],
+      CONTAINER_UNEXPECTED_STOP: ["Container stopped unexpectedly", "Container recovered"],
+      CONTAINER_HIGH_CPU: ["Container CPU pressure detected", "Container CPU pressure cleared"],
+      CONTAINER_HIGH_MEMORY: ["Container memory pressure detected", "Container memory pressure cleared"],
       WORKLOAD_DEGRADED: ["Workload became degraded", "Workload returned healthy"],
       WORKLOAD_DRIFTED: ["Workload drift detected", "Workload returned to expected state"],
       NODE_OFFLINE: ["Node went offline", "Node recovered"],
       NODE_HEARTBEAT_STALE: ["Node heartbeat became stale", "Node heartbeat recovered"],
       NODE_CPU_PRESSURE: ["Node CPU pressure detected", "Node CPU pressure cleared"],
+      NODE_MEM_PRESSURE: ["Node memory pressure detected", "Node memory pressure cleared"],
+      NODE_DISK_PRESSURE: ["Node disk pressure detected", "Node disk pressure cleared"],
+      NODE_AGENT_OUTDATED: ["Node agent became outdated", "Node agent updated"],
+      NODE_CERT_EXPIRY: ["Node certificate expiry approaching", "Node certificate renewed"],
+      OPERATION_STUCK: ["Operation became stuck", "Operation completed"],
       DEPLOYMENT_FAILED: ["Deployment failed", "Deployment failure cleared"]
     };
     const labels = conditions[condition];

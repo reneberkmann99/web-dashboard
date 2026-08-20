@@ -14,7 +14,7 @@ import { SecretsTab } from "@/components/workloads/deployment/secrets-tab";
 import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
-import { ContextBackLink } from "@/components/navigation/context-back-link";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { rememberResourceNavigation, useDetailTab } from "@/components/navigation/view-state";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
@@ -85,7 +85,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Workload"
         title={workload.name}
-        back={<ContextBackLink fallback="/client/workloads" label="Workloads" allowedReturnPrefixes={["/client/workloads"]} />}
+        back={<Breadcrumbs items={[{ label: "Workloads", href: "/client/workloads" }, { label: workload.name }]} />}
         description={<span>{workload.nodeName} · <span className="font-mono">{workload.runningContainers}/{workload.totalContainers}</span> running</span>}
         actions={<>
           <Badge variant={workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : "danger"}>{workload.health}</Badge>

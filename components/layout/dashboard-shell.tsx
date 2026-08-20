@@ -7,11 +7,11 @@ import {
   Activity,
   BellRing,
   Boxes,
+  Container,
   LayoutDashboard,
   ChevronDown,
   Search,
   Server,
-  Settings,
   ShieldAlert,
   Users,
   Workflow
@@ -41,8 +41,8 @@ const ADMIN_NAV = [
 ];
 
 const ADMIN_SETTINGS = [
-  { href: "/admin/settings/users", label: "Users", icon: Settings },
-  { href: "/admin/settings/containers", label: "All containers", icon: Settings },
+  { href: "/admin/settings/users", label: "Users", icon: Users },
+  { href: "/admin/settings/containers", label: "Containers", icon: Container },
   { href: "/admin/settings/notifications", label: "Notifications", icon: BellRing }
 ];
 
@@ -64,11 +64,25 @@ function isActiveNavPath(pathname: string, href: string): boolean {
   return pathname.startsWith(`${href}/`);
 }
 
-export function contentWidthClass(pathname: string): string {
-  if (pathname.includes("/deployment/edit") || pathname.startsWith("/admin/containers/") || pathname.startsWith("/client/containers/")) {
-    return "max-w-[1680px]";
+export type LayoutVariant = "wide" | "standard" | "full";
+
+/**
+ * Resolve a route to one of three intentional layout variants (no arbitrary
+ * per-page max widths):
+ *  - `wide`   inventory surfaces (Overview, Workloads, Nodes, Clients, Attention, Activity)
+ *  - `standard` detail / settings pages
+ *  - `full`   logs / editors
+ */
+export function layoutVariantFor(pathname: string): LayoutVariant {
+  if (
+    pathname.includes("/deployment/edit") ||
+    pathname.startsWith("/admin/containers/") ||
+    pathname.startsWith("/client/containers/")
+  ) {
+    return "full";
   }
   const wideRoutes = new Set([
+    "/admin",
     "/admin/workloads",
     "/admin/nodes",
     "/admin/clients",
@@ -78,12 +92,23 @@ export function contentWidthClass(pathname: string): string {
     "/admin/settings/containers",
     "/admin/settings/users",
     "/admin/settings/notifications",
+    "/client",
     "/client/workloads",
     "/client/containers",
     "/client/activity",
     "/client/team"
   ]);
-  return wideRoutes.has(pathname) ? "max-w-[1536px]" : "max-w-7xl";
+  return wideRoutes.has(pathname) ? "wide" : "standard";
+}
+
+const VARIANT_CLASS: Record<LayoutVariant, string> = {
+  wide: "max-w-[1536px]",
+  standard: "max-w-7xl",
+  full: "max-w-[1680px]"
+};
+
+export function contentWidthClass(pathname: string): string {
+  return VARIANT_CLASS[layoutVariantFor(pathname)];
 }
 
 export function DashboardShell({

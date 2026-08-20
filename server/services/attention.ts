@@ -215,6 +215,41 @@ async function recentlyDeployedContainerIds(nodeIds: string[]): Promise<Set<stri
 // Node resource pressure (§9)
 // ---------------------------------------------------------------------------
 
+/**
+ * Explicit operator intent per container ("RUNNING" | "STOPPED"), keyed by
+ * `${nodeId}:${dockerContainerId}`. Only containers the operator has touched
+ * have an entry — everything else returns undefined (unspecified).
+ */
+export async function getExpectedStates(
+  nodeIds: string[]
+): Promise<Map<string, "RUNNING" | "STOPPED">> {
+  const out = new Map<string, "RUNNING" | "STOPPED">();
+  if (nodeIds.length === 0) return out;
+  const rows = await prisma.container.findMany({
+    where: { nodeId: { in: nodeIds }, expectedState: { not: null } },
+    select: { nodeId: true, dockerContainerId: true, expectedState: true }
+  });
+  for (const row of rows) {
+    if (row.expectedState === "RUNNING" || row.expectedState === "STOPPED") {
+      out.set(`${row.nodeId}:${row.dockerContainerId}`, row.expectedState);
+    }
+  }
+  return out;
+}
+
+/**
+ * Is this container expected to be running right now? Explicit operator intent
+ * (expectedState) wins; otherwise fall back to the restart-policy heuristic.
+ */
+export function isExpectedRunning(
+  restartPolicy: string | null | undefined,
+  expectedState: "RUNNING" | "STOPPED" | null | undefined
+): boolean {
+  if (expectedState === "STOPPED") return false;
+  if (expectedState === "RUNNING") return true;
+  return restartPolicy === "always" || restartPolicy === "unless-stopped";
+}
+
 export async function recordNodeResourceSample(
   nodeId: string,
   sample: { cpuPercent: number | null; memPercent: number | null; diskPercent: number | null },
@@ -430,9 +465,10 @@ export async function deriveContainerConditions(snapshot: OverviewSnapshot): Pro
   const onlineNodes = snapshot.nodes.filter((n) => n.isActive && n.polledOnline && !n.offline);
   const nodeIds = onlineNodes.map((n) => n.id);
 
-  const [restartRates, suppressed] = await Promise.all([
+  const [restartRates, suppressed, expectedStates] = await Promise.all([
     getRestartRates(nodeIds),
-    recentlyDeployedContainerIds(nodeIds)
+    recentlyDeployedContainerIds(nodeIds),
+    getExpectedStates(nodeIds)
   ]);
   const { warningCount, criticalCount } = ATTENTION_CONFIG.restartLoop;
   const { sustainedSamples, cpuWarningPercent, memWarningPercent, memCriticalPercent } = ATTENTION_CONFIG.containerResource;
@@ -470,7 +506,7 @@ export async function deriveContainerConditions(snapshot: OverviewSnapshot): Pro
       }
 
       if (c.status === "stopped") {
-        const expectedRunning = c.restartPolicy === "always" || c.restartPolicy === "unless-stopped";
+        const expectedRunning = isExpectedRunning(c.restartPolicy, expectedStates.get(key));
         if (expectedRunning) {
           conditions.push({
             resourceType: "CONTAINER",
@@ -1142,51 +1178,128 @@ export function worstOf(...severities: Array<AttentionSeverity | "healthy" | "un
   return best;
 }
 
-/** Recent failures (§13) — point-in-time, not part of the persisted condition model. */
+/**
+ * Recent failures (§13) — point-in-time, not part of the persisted condition
+ * model. Grouped per incident (multiple failed attempts of the same
+ * deployment/operation collapse into one row with an `attempts` count) and
+ * filtered by any operator dismissals. "Recent" is bounded by the recency
+ * window (ATTENTION_CONFIG.recentFailures.windowMs, default 24h).
+ */
 export async function getRecentFailures(limit = ATTENTION_CONFIG.recentFailures.limit): Promise<RecentFailure[]> {
   const since = new Date(Date.now() - ATTENTION_CONFIG.recentFailures.windowMs);
-  const [containerOps, deployOps] = await Promise.all([
+  // Fetch more than the final limit so aggregation can collapse duplicates
+  // before we trim.
+  const fetchLimit = limit * 20;
+  const [containerOps, deployOps, dismissed] = await Promise.all([
     prisma.operation.findMany({
       where: { state: "FAILED", finishedAt: { gte: since } },
       orderBy: { finishedAt: "desc" },
-      take: limit,
+      take: fetchLimit,
       include: { node: { select: { id: true, name: true } } }
     }),
     prisma.deploymentOperation.findMany({
       where: { state: "FAILED", finishedAt: { gte: since } },
       orderBy: { finishedAt: "desc" },
-      take: limit,
+      take: fetchLimit,
       include: { deployment: { select: { projectId: true, project: { select: { name: true, nodeId: true } } } } }
-    })
+    }),
+    prisma.recentFailureDismissal.findMany({ select: { key: true } })
   ]);
+  const dismissedKeys = new Set(dismissed.map((d) => d.key));
 
-  const failures: RecentFailure[] = [];
+  const groups = new Map<string, { title: string; detail: string | null; resourceType: RecentFailure["resourceType"]; resourceId: string | null; href: string | null; createdAt: string; attempts: number; kind: string }>();
+
+  const summarize = (raw: string | null): string | null => {
+    if (!raw) return null;
+    const single = raw.replace(/\s+/g, " ").trim();
+    return single.length > 200 ? `${single.slice(0, 197)}…` : single;
+  };
+
   for (const op of containerOps) {
-    failures.push({
-      id: op.id,
+    const key = `operation:${op.nodeId}:${op.dockerContainerId}:${op.type}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.attempts += 1;
+      if ((op.finishedAt ?? op.requestedAt).toISOString() > existing.createdAt) {
+        existing.createdAt = (op.finishedAt ?? op.requestedAt).toISOString();
+        existing.detail = summarize(op.error);
+      }
+      continue;
+    }
+    groups.set(key, {
       kind: "operation",
-      title: `${op.type.replace("CONTAINER_", "").toLowerCase()} failed on ${op.node.name}`,
-      detail: op.error,
+      title: `${capitalize(op.type.replace("CONTAINER_", "").toLowerCase())} failed — ${op.node.name}`,
+      detail: summarize(op.error),
       resourceType: "operation",
       resourceId: op.id,
       href: `/admin/containers/${op.nodeId}/${op.dockerContainerId}`,
-      createdAt: (op.finishedAt ?? op.requestedAt).toISOString()
-    });
-  }
-  for (const op of deployOps) {
-    failures.push({
-      id: op.id,
-      kind: "deployment",
-      title: `${op.type.toLowerCase()} failed on ${op.deployment.project.name}`,
-      detail: op.error,
-      resourceType: "workload",
-      resourceId: op.deployment.projectId,
-      href: `/admin/workloads/${op.deployment.projectId}`,
-      createdAt: (op.finishedAt ?? op.requestedAt).toISOString()
+      createdAt: (op.finishedAt ?? op.requestedAt).toISOString(),
+      attempts: 1
     });
   }
 
-  return failures.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+  for (const op of deployOps) {
+    const project = op.deployment?.project;
+    if (!project || !op.deployment) continue;
+    const projectId = op.deployment.projectId;
+    const key = `deployment:${projectId}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.attempts += 1;
+      if ((op.finishedAt ?? op.requestedAt).toISOString() > existing.createdAt) {
+        existing.createdAt = (op.finishedAt ?? op.requestedAt).toISOString();
+        existing.detail = summarize(op.error);
+      }
+      continue;
+    }
+    groups.set(key, {
+      kind: "deployment",
+      title: `Deployment failed — ${project.name}`,
+      detail: summarize(op.error),
+      resourceType: "workload",
+      resourceId: projectId,
+      href: `/admin/workloads/${projectId}`,
+      createdAt: (op.finishedAt ?? op.requestedAt).toISOString(),
+      attempts: 1
+    });
+  }
+
+  return Array.from(groups.entries())
+    .filter(([key]) => !dismissedKeys.has(key))
+    .map(([key, g]) => ({
+      id: key,
+      kind: g.kind,
+      title: g.title,
+      detail: g.detail,
+      resourceType: g.resourceType,
+      resourceId: g.resourceId,
+      href: g.href,
+      createdAt: g.createdAt,
+      attempts: g.attempts
+    }))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, limit);
+}
+
+/** Dismiss one grouped recent failure (UI-only; audit/activity/operation intact). */
+export async function dismissRecentFailure(key: string, actorEmail?: string | null): Promise<void> {
+  await prisma.recentFailureDismissal.upsert({
+    where: { key },
+    create: { key, dismissedBy: actorEmail ?? null },
+    update: { dismissedBy: actorEmail ?? null, dismissedAt: new Date() }
+  });
+}
+
+/** Dismiss every currently-listed recent failure (safe: never touches audit/activity/operations). */
+export async function dismissAllRecentFailures(actorEmail?: string | null): Promise<number> {
+  const failures = await getRecentFailures(ATTENTION_CONFIG.recentFailures.limit * 20);
+  const keys = failures.map((f) => f.id);
+  if (keys.length === 0) return 0;
+  await prisma.recentFailureDismissal.createMany({
+    data: keys.map((key) => ({ key, dismissedBy: actorEmail ?? null })),
+    skipDuplicates: true
+  });
+  return keys.length;
 }
 
 /** Active (in-flight) operations for the Overview "Active operations" section (§12). */
@@ -1278,4 +1391,8 @@ function timeAgo(date: Date): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

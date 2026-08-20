@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Loader2, PlayCircle } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, ArrowRight, Loader2, PlayCircle, X } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { AttentionBadge } from "@/components/ui/attention-badge";
@@ -52,10 +52,28 @@ type OverviewPayload = {
  */
 export default function AdminOverviewPage(): React.JSX.Element {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["admin-overview"],
     queryFn: () => apiFetch<OverviewPayload>("/api/admin/overview"),
     refetchInterval: 20000
+  });
+
+  const dismissFailure = useMutation({
+    mutationFn: (key: string) =>
+      apiFetch("/api/admin/recent-failures/dismiss", {
+        method: "POST",
+        body: JSON.stringify({ key })
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-overview"] })
+  });
+  const dismissAllFailures = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/admin/recent-failures/dismiss", {
+        method: "POST",
+        body: JSON.stringify({ all: true })
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-overview"] })
   });
 
   if (query.isLoading) {
@@ -274,25 +292,48 @@ export default function AdminOverviewPage(): React.JSX.Element {
         </div>
       </section>
 
-      {/* Recent failures (§13) — operational, distinct from full Activity audit log */}
+      {/* Recent failures (§13) — grouped, recency-windowed, dismissible (UI-only) */}
       {recentFailures.length > 0 && (
         <section>
-          <h2 className="mb-2 text-lg font-semibold">Recent failures</h2>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Recent failures</h2>
+            <button
+              type="button"
+              onClick={() => dismissAllFailures.mutate()}
+              disabled={dismissAllFailures.isPending}
+              className="text-sm text-accent hover:underline disabled:opacity-50"
+            >
+              Dismiss all
+            </button>
+          </div>
           <div className="rounded-lg border border-border bg-panel">
             <ul className="divide-y divide-border">
               {recentFailures.slice(0, 8).map((f) => (
-                <li key={f.id}>
-                  <button
-                    type="button"
-                    onClick={() => f.href && router.push(f.href)}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-panelAlt/60"
-                  >
-                    <span>
-                      {f.title}
-                      {f.detail && <span className="ml-2 text-xs text-muted">{f.detail}</span>}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted">{timeAgo(f.createdAt)}</span>
-                  </button>
+                <li key={f.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="font-medium">{f.title}</span>
+                      {f.attempts > 1 && <span className="font-mono text-xs text-muted">{f.attempts} attempts</span>}
+                    </div>
+                    {f.detail && <p className="truncate text-xs text-muted">{f.detail}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {f.href && (
+                      <button type="button" onClick={() => f.href && router.push(f.href)} className="text-xs text-accent hover:underline">
+                        View details
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => dismissFailure.mutate(f.id)}
+                      disabled={dismissFailure.isPending}
+                      aria-label={`Dismiss ${f.title}`}
+                      className="text-xs text-muted hover:text-text disabled:opacity-50"
+                    >
+                      <X size={13} />
+                    </button>
+                    <span className="shrink-0 font-mono text-xs text-muted">{timeAgo(f.createdAt)}</span>
+                  </div>
                 </li>
               ))}
             </ul>

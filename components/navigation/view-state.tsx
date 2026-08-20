@@ -86,15 +86,34 @@ export function readRememberedReturn(pathname: string): string | null {
   }
 }
 
+// A Back/Forward navigation fires `popstate` (before the new route's effects
+// run). A fresh navigation (sidebar Link / router.push) does not. We track the
+// most recent navigation type in a module singleton so scroll restoration can
+// distinguish "return to where I was" from "open a new page at the top".
+let popListenerRegistered = false;
+let pendingPopNavigation = false;
+
+function ensurePopListener(): void {
+  if (typeof window === "undefined" || popListenerRegistered) return;
+  popListenerRegistered = true;
+  window.addEventListener("popstate", () => {
+    pendingPopNavigation = true;
+  });
+}
+
 export function ViewStateRestoration(): null {
   const pathname = usePathname();
 
   useEffect(() => {
+    ensurePopListener();
+    const restoreFromPop = pendingPopNavigation;
+    pendingPopNavigation = false;
+
     const key = `${STORAGE_PREFIX}scroll:${pathname}`;
+    const saved = Number(window.sessionStorage.getItem(key) ?? "0");
     let frame = 0;
     let attempts = 0;
     let cancelled = false;
-    const saved = Number(window.sessionStorage.getItem(key) ?? "0");
 
     const restore = (): void => {
       if (cancelled || !Number.isFinite(saved) || saved <= 0) return;
@@ -104,7 +123,13 @@ export function ViewStateRestoration(): null {
         window.setTimeout(restore, 50);
       }
     };
-    frame = window.requestAnimationFrame(restore);
+
+    if (restoreFromPop) {
+      frame = window.requestAnimationFrame(restore);
+    } else {
+      // Fresh navigation always starts at the top.
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
 
     const onScroll = (): void => {
       window.sessionStorage.setItem(key, String(Math.round(window.scrollY)));
