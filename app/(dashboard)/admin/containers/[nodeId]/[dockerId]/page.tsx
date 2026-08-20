@@ -48,6 +48,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
 
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<"start" | "stop" | "restart" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const detail = useQuery({
@@ -90,6 +91,15 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
       setActiveOperationId(data.operationId);
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Action failed")
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => apiFetch<{ deleted: boolean }>(`/api/admin/containers/direct/${nodeId}/${dockerId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Container deleted");
+      router.push("/admin/containers");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Delete failed")
   });
 
   const container = detail.data?.container;
@@ -266,6 +276,17 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
                 ))}
               </div>
             )}
+
+            {!detail.data?.managedDeployment?.managed && (
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="mb-2 text-xs text-muted">
+                  Permanently remove this container from the node. Named volumes are preserved.
+                </p>
+                <Button variant="danger" disabled={!nodeOnline || busy} onClick={() => setConfirmDelete(true)}>
+                  Delete container
+                </Button>
+              </div>
+            )}
           </section>
 
           <section className="rounded-lg border border-border bg-panel p-4">
@@ -347,6 +368,19 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
         }
         confirmLabel={confirmAction ? confirmAction.charAt(0).toUpperCase() + confirmAction.slice(1) : "Confirm"}
         danger={confirmAction === "stop"}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          await deleteMutation.mutateAsync();
+          setConfirmDelete(false);
+        }}
+        title={`Delete ${container.name}?`}
+        impact="The container will be removed from the node. Named volumes are preserved. This is irreversible."
+        confirmLabel="Delete container"
+        danger
       />
     </div>
   );

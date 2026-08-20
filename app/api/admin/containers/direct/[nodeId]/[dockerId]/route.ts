@@ -7,6 +7,7 @@ import { fail, fromError, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
 import { prisma } from "@/server/db";
 import { getAttentionFeedForAdmin } from "@/server/services/attention";
+import { deleteContainer } from "@/server/services/container-lifecycle";
 
 const ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/;
 
@@ -91,6 +92,37 @@ export async function POST(
       }
       throw error;
     }
+  } catch (error) {
+    return fromError(error);
+  }
+}
+
+/**
+ * DELETE /api/admin/containers/direct/:nodeId/:dockerId — delete a standalone
+ * container. Managed workload services are refused (edit the workload
+ * revision instead of creating drift).
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ nodeId: string; dockerId: string }> }
+): Promise<Response> {
+  try {
+    const session = await requireApiRole("ADMIN");
+    const sourceIp = getSourceIpFromRequest(request);
+    const { nodeId, dockerId } = await params;
+    if (!ID_RE.test(dockerId)) {
+      return fail("VALIDATION_ERROR", "Invalid container id", 400);
+    }
+
+    const row = await prisma.container.findUnique({
+      where: { nodeId_dockerContainerId: { nodeId, dockerContainerId: dockerId } }
+    });
+    if (!row) {
+      return fail("NOT_FOUND", "Container not found", 404);
+    }
+
+    const plan = await deleteContainer(session, row.id, sourceIp);
+    return ok({ deleted: true, id: plan.containerId, dockerName: plan.dockerName });
   } catch (error) {
     return fromError(error);
   }

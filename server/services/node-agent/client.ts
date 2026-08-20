@@ -218,6 +218,18 @@ export class NodeAgentClient {
     return parsed.success && parsed.data.nodeOnline && parsed.data.success;
   }
 
+  /** Remove a container (`docker rm -f`, volumes preserved). */
+  async removeContainer(node: Node, containerId: string): Promise<boolean> {
+    const result = await this.call<unknown>(
+      node,
+      `/containers/${encodeURIComponent(containerId)}`,
+      "DELETE"
+    );
+    if (!result.ok || !result.data) return false;
+    const parsed = containerActionResponseSchema.safeParse(result.data);
+    return parsed.success && parsed.data.nodeOnline && parsed.data.success;
+  }
+
   async checkHealth(node: Node): Promise<boolean> {
     const result = await this.call<unknown>(node, "/health");
     return result.ok;

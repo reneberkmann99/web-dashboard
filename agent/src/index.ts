@@ -770,6 +770,25 @@ app.post("/containers/:id/:action", async (req: Request, res: Response) => {
 });
 
 /**
+ * Remove a container (`docker rm -f`). Never removes volumes. Used by the
+ * control-plane container/workload delete lifecycle; the removal is always
+ * the result of an explicit, planned, confirmed admin action upstream.
+ */
+app.delete("/containers/:id", async (req: Request, res: Response) => {
+  try {
+    const containerId = containerIdSchema.parse(req.params.id);
+    if (!adapter.removeContainer) {
+      res.status(501).json({ nodeOnline: true, success: false, error: "Not supported by this adapter" });
+      return;
+    }
+    const success = await adapter.removeContainer(containerId);
+    res.json({ nodeOnline: true, success });
+  } catch (error) {
+    res.status(502).json({ nodeOnline: true, success: false, error: "Remove failed" });
+  }
+});
+
+/**
  * TLS certificate enrollment (Phase 6B.1). The agent generates its key + CSR
  * LOCALLY and sends only the CSR, authenticated by a short-lived one-time
  * enrollment token. The control plane assigns the identity and returns the

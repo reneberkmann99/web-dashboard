@@ -1,10 +1,13 @@
 import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
-import { cuidParamSchema } from "@/server/validation/admin";
+import { cuidParamSchema, updateProjectSchema } from "@/server/validation/admin";
 import { fail, fromError, ok } from "@/server/http";
 import { listContainersForNode, toWorkloadDetail } from "@/server/services/workloads";
 import { getAdminWorkloadDeploymentStatus } from "@/server/services/deployments";
 import { getAttentionFeedForAdmin, getExpectedStates } from "@/server/services/attention";
+import { logAuditEvent } from "@/server/audit";
+import { getSourceIpFromRequest } from "@/server/request";
+import { deleteWorkload } from "@/server/services/workload-lifecycle";
 
 export async function GET(
   _: Request,
@@ -75,6 +78,75 @@ export async function GET(
     );
 
     return ok({ workload: detail, activity, deployment, attentionItems, activeOperations, maintenance });
+  } catch (error) {
+    return fromError(error);
+  }
+}
+
+/**
+ * PATCH /api/admin/workloads/:id — edit general settings (name/slug/description/
+ * client/node) and deactivate/reactivate. Pure DB; never mutates Docker.
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<Response> {
+  try {
+    const session = await requireApiRole("ADMIN");
+    const sourceIp = getSourceIpFromRequest(request);
+    const id = cuidParamSchema.parse((await params).id);
+    const body = updateProjectSchema.parse(await request.json());
+
+    const target = await prisma.project.findUnique({ where: { id } });
+    if (!target) {
+      return fail("NOT_FOUND", "Workload not found", 404);
+    }
+
+    await prisma.project.update({
+      where: { id },
+      data: {
+        name: body.name,
+        slug: body.slug,
+        description: body.description,
+        clientAccountId: body.clientAccountId,
+        isActive: body.isActive
+      }
+    });
+
+    await logAuditEvent({
+      actorUserId: session.userId,
+      actorEmail: session.email,
+      actorRole: session.role,
+      action: "WORKLOAD_UPDATE",
+      targetType: "PROJECT",
+      targetId: id,
+      metadata: { ...body },
+      result: "SUCCESS",
+      sourceIp
+    });
+
+    return ok({ success: true });
+  } catch (error) {
+    return fromError(error);
+  }
+}
+
+/**
+ * DELETE /api/admin/workloads/:id — destructive delete. Managed workloads are
+ * refused (remove-from-management first). Otherwise removes containers via the
+ * agent (volumes preserved) and hard-deletes the workload record.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<Response> {
+  try {
+    const session = await requireApiRole("ADMIN");
+    const sourceIp = getSourceIpFromRequest(request);
+    const id = cuidParamSchema.parse((await params).id);
+
+    const plan = await deleteWorkload(session, id, sourceIp);
+    return ok({ deleted: true, id: plan.projectId, name: plan.name, containersRemoved: plan.containers.length });
   } catch (error) {
     return fromError(error);
   }

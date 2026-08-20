@@ -35,6 +35,7 @@ type WorkloadDetailPayload = {
     description: string | null;
     source: string;
     composeProject: string | null;
+    isActive: boolean;
     node: { id: string; name: string; hostname: string; status: string };
     client: { id: string; name: string; slug: string } | null;
     grants: Array<{ id: string; allowedActions: string[]; clientName: string }>;
@@ -89,6 +90,8 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [confirmDetach, setConfirmDetach] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const searchParams = useSearchParams();
 
@@ -146,6 +149,37 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       queryClient.invalidateQueries({ queryKey: ["workload", params.id] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Conversion failed")
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: (isActive: boolean) =>
+      apiFetch<{ success: boolean }>(`/api/admin/workloads/${params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive })
+      }),
+    onSuccess: (_data, isActive) => {
+      toast.success(isActive ? "Workload reactivated" : "Workload deactivated — client access disabled, Docker resources left running");
+      queryClient.invalidateQueries({ queryKey: ["workload", params.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Update failed")
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => apiFetch<{ deleted: boolean }>(`/api/admin/workloads/${params.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Workload deleted");
+      router.push("/admin/workloads");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Delete failed")
+  });
+
+  const deletionPlan = useQuery({
+    queryKey: ["workload-deletion-plan", params.id],
+    queryFn: () =>
+      apiFetch<{ managed: boolean; containers: Array<{ dockerName: string }>; grants: Array<{ clientAccountName: string }>; namedVolumesPreserved: boolean; networksPreserved: boolean }>(
+        `/api/admin/workloads/${params.id}/deletion-plan`
+      ),
+    enabled: confirmDelete
   });
 
   // Conversion eligibility (only meaningful for MANUAL workloads).
@@ -229,7 +263,17 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
                 : []),
               ...(workload.totalContainers > 0
                 ? [{ label: "Restart workload", tone: "danger" as const, disabled: restartMutation.isPending || activeOperations.length > 0, onSelect: () => setConfirmRestart(true) }]
-                : [])
+                : []),
+              {
+                label: workload.isActive ? "Deactivate workload" : "Reactivate workload",
+                tone: "default" as const,
+                onSelect: () => setConfirmDeactivate(true)
+              },
+              {
+                label: "Delete workload",
+                tone: "danger" as const,
+                onSelect: () => setConfirmDelete(true)
+              }
             ]}
           />
         </>}
@@ -445,6 +489,40 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         title={`Convert ${workload.name} to Compose-managed?`}
         impact={`Noderaft will start tracking this workload from Compose project "${convertPreview.data?.preview.composeProject ?? ""}". Its ID, name, client, grants and activity history are retained. Membership will then sync automatically as containers are recreated.`}
         confirmLabel="Convert to Compose-managed"
+      />
+
+      <ConfirmDialog
+        open={confirmDeactivate}
+        onClose={() => setConfirmDeactivate(false)}
+        onConfirm={() => {
+          setConfirmDeactivate(false);
+          toggleActiveMutation.mutate(!workload.isActive);
+        }}
+        title={`${workload.isActive ? "Deactivate" : "Reactivate"} ${workload.name}?`}
+        impact={
+          workload.isActive
+            ? "The workload remains in Noderaft but client access is disabled and Noderaft stops operational management/notifications. Docker containers, volumes, and networks are left completely untouched. This is reversible."
+            : "The workload becomes visible and operational again. Docker resources were never touched while deactivated."
+        }
+        confirmLabel={workload.isActive ? "Deactivate workload" : "Reactivate workload"}
+        danger={workload.isActive}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          await deleteMutation.mutateAsync();
+          setConfirmDelete(false);
+        }}
+        title={`Delete ${workload.name}?`}
+        impact={
+          deletionPlan.data?.managed
+            ? "This workload is managed by Noderaft. Remove it from Noderaft management first, then delete."
+            : `${deletionPlan.data?.containers.length ?? workload.totalContainers} container${(deletionPlan.data?.containers.length ?? workload.totalContainers) === 1 ? "" : "s"} will be removed. Named volumes and networks are preserved. Noderaft release/activity history will remain in Activity. This is irreversible.`
+        }
+        confirmLabel="Delete workload"
+        danger
       />
     </div>
   );

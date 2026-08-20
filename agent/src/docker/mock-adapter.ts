@@ -155,4 +155,13 @@ export class MockDockerAdapter implements DockerAdapter {
 
     return true;
   }
+
+  async removeContainer(containerId: string): Promise<boolean> {
+    const index = mockContainers.findIndex((container) => container.id === containerId);
+    if (index === -1) {
+      return false;
+    }
+    mockContainers.splice(index, 1);
+    return true;
+  }
 }

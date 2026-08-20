@@ -63,6 +63,13 @@ export interface DockerAdapter {
     kill: () => void;
   };
   runAction(containerId: string, action: "start" | "stop" | "restart"): Promise<boolean>;
+  /**
+   * Remove a container (`docker rm -f`). Never removes volumes — only
+   * `-v` would, and this path deliberately never passes it. Used by the
+   * control-plane container/workload delete lifecycle (safe default: preserve
+   * named volumes).
+   */
+  removeContainer?(containerId: string): Promise<boolean>;
   /** Docker disk usage summary (images/containers/volumes/build-cache). */
   getStorageSummary?(): Promise<StorageSummaryEntry[]>;
   /** Batch-inspect specific networks by name (bounded by caller). */

@@ -42,6 +42,7 @@ export type WorkloadDetail = {
   description: string | null;
   source: string;
   composeProject: string | null;
+  isActive: boolean;
   node: { id: string; name: string; hostname: string; status: string };
   /** Null when this is an internal workload with no owning client yet. */
   client: { id: string; name: string; slug: string } | null;
@@ -79,6 +80,7 @@ export function toWorkloadDetail(
     description: string | null;
     source: string;
     composeProject: string | null;
+    isActive: boolean;
     node: { id: string; name: string; hostname: string; status: string };
     clientAccount: { id: string; name: string; slug: string } | null;
     grants: Array<{ id: string; allowedActions: string[]; clientAccount: { name: string } }>;
@@ -161,6 +163,7 @@ export function toWorkloadDetail(
     description: project.description,
     source: project.source,
     composeProject: project.composeProject,
+    isActive: project.isActive,
     node: project.node,
     client: project.clientAccount
       ? { id: project.clientAccount.id, name: project.clientAccount.name, slug: project.clientAccount.slug }

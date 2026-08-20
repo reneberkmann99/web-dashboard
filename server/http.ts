@@ -46,6 +46,12 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "ALREADY_ACTIVE") {
       return fail("ALREADY_ACTIVE", "This account is already active", 409);
     }
+    if (error.message === "MANAGED_WORKLOAD") {
+      return fail("MANAGED_WORKLOAD", "This workload is managed by Noderaft — remove it from management before deleting", 409);
+    }
+    if (error.message === "MANAGED_CONTAINER") {
+      return fail("MANAGED_CONTAINER", "This container is a managed workload service — edit the workload revision instead of deleting it directly", 409);
+    }
     if (error.message === "ATTENTION_NOT_ACTIVE") {
       return fail("ATTENTION_NOT_ACTIVE", "The attention condition is no longer active", 409);
     }

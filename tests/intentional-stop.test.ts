@@ -149,6 +149,7 @@ describe("workload health respects expected state", () => {
       description: null,
       source: "COMPOSE",
       composeProject: "mailcow",
+      isActive: true,
       node,
       clientAccount: null,
       grants: [],

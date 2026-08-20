@@ -437,4 +437,12 @@ export class RootlessDockerAdapter implements DockerAdapter {
     await this.runDocker([action, safeId]);
     return true;
   }
+
+  async removeContainer(containerId: string): Promise<boolean> {
+    const safeId = sanitizeContainerId(containerId);
+    // `-f` ensures removal even of a running container; no `-v`, so named
+    // volumes are never deleted as a side effect.
+    await this.runDocker(["rm", "-f", safeId]);
+    return true;
+  }
 }
