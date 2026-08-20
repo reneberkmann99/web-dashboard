@@ -34,7 +34,7 @@ services:
       # binds only that transient IP, making localhost health probes fail.
       HOSTNAME: "0.0.0.0"
       COOKIE_SECURE: "${COOKIE_SECURE:-}"
-      HOSTPANEL_PUBLIC_BASE_URL: "${HOSTPANEL_PUBLIC_BASE_URL:-https://localhost:1337}"
+      HOSTPANEL_PUBLIC_BASE_URL: "${HOSTPANEL_PUBLIC_BASE_URL:-https://platform.noderaft.ee}"
       NOTIFICATION_DESTINATIONS_KEY: "${NOTIFICATION_DESTINATIONS_KEY:-}"
       WEBHOOK_ALLOW_PRIVATE_NETWORKS: "${WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}"
       WEBHOOK_TIMEOUT_MS: "${WEBHOOK_TIMEOUT_MS:-8000}"
@@ -48,6 +48,11 @@ services:
       # Agent CA material (private key 0600) — persisted outside the image and
       # outside Postgres. BACK THIS UP: see scripts/bootstrap-agent-ca.ts.
       - hostpanel-ca-data:/data/pki
+    networks:
+      default:
+      public-proxy:
+        aliases:
+          - noderaft-web
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/login || exit 1"]
       interval: 10s
@@ -126,3 +131,8 @@ volumes:
   hostpanel-ca-data:
   hostpanel-agent-data:
   hostpanel-agent-rootless-data:
+
+networks:
+  public-proxy:
+    external: true
+    name: nginx-network

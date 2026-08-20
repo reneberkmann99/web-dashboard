@@ -1,4 +1,14 @@
-# HostPanel private-VPN HTTPS
+# Noderaft public and private HTTPS
+
+The canonical application is `https://platform.noderaft.ee`. Nginx Proxy
+Manager owns public TCP/80 and TCP/443, terminates the publicly trusted
+certificate, and forwards both Noderaft hostnames over the private
+`nginx-network` Docker network to `noderaft-web:3000`. The landing hostname
+`noderaft.ee` is intentionally separate from the authenticated platform.
+
+The private endpoint documented below remains a VPN-only break-glass path. It
+is not canonical and must never replace the public base URL used in generated
+notifications or platform links.
 
 HostPanel terminates browser TLS at the lightweight `proxy` service
 (`nginx:1.27-alpine`). The Next.js `web` service is exposed only on the private
@@ -13,8 +23,9 @@ The existing host port `1337` now speaks **HTTPS only**:
   `nordlynx` may reach TCP/1337. The Docker publish still binds all host
   interfaces, so those firewall rules must remain in place.
 
-Port 443 is not used because it already belongs to Nginx Proxy Manager. No
-public exposure or ACME challenge is needed for this private deployment.
+The recovery proxy does not use port 443 because that port belongs to Nginx
+Proxy Manager. Its self-signed certificate is distinct from the public
+Let's Encrypt certificate.
 
 ## Generate the persistent certificate
 
@@ -79,6 +90,9 @@ The LogViewer SSE route has buffering, request buffering, cache and compression
 disabled, `X-Accel-Buffering: no`, and a one-hour read timeout. Browser API,
 SSE and static requests remain same-origin/relative, preventing mixed content.
 No WebSocket endpoint currently exists; none was introduced for TLS.
+
+Public platform cookies are host-only: no `Domain` attribute is set, so the
+browser does not send platform session or CSRF cookies to `noderaft.ee`.
 
 TLS permits 1.2 and 1.3 only. HSTS is deliberately omitted for a self-signed
 private deployment. Response headers include `nosniff`, same-origin referrer

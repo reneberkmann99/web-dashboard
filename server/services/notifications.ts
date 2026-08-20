@@ -31,7 +31,7 @@ export type NotificationConditionState = {
 };
 
 function publicBaseUrl(): URL {
-  const raw = process.env.HOSTPANEL_PUBLIC_BASE_URL ?? "https://localhost:8443";
+  const raw = process.env.HOSTPANEL_PUBLIC_BASE_URL ?? "https://platform.noderaft.ee";
   const url = new URL(raw);
   if (url.protocol !== "https:") throw new Error("HOSTPANEL_PUBLIC_BASE_URL_MUST_BE_HTTPS");
   url.pathname = url.pathname.replace(/\/$/, "");

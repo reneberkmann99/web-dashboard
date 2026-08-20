@@ -1,6 +1,6 @@
 # Noderaft public landing site
 
-Phase 6F.3 implements the public marketing surface as a statically rendered route at `/landing` for internal qualification. The route declares `https://noderaft.ee/` as its canonical URL, but no public domain, proxy, certificate, redirect or production routing is configured in this phase.
+Phase 6F.3 implemented the public marketing surface as a statically rendered route at `/landing`. Phase 6F.4 publishes that route at `https://noderaft.ee/`; hostname-aware middleware keeps the authenticated platform on `https://platform.noderaft.ee/`.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ Phase 6F.3 implements the public marketing surface as a statically rendered rout
 - `components/landing/landing-page.tsx` is a server component with no API requests, polling, SSE, client state or animation library.
 - Shared platform providers (TanStack Query and toast UI) live only in the authenticated/dashboard route groups, so the landing page does not load them.
 - Existing Noderaft design tokens, locally hosted IBM Plex fonts and supplied brand assets are reused.
-- `app/robots.ts` and `app/sitemap.ts` publish the canonical public origin while keeping authenticated and API paths out of crawler discovery.
+- `app/robots.txt/route.ts` emits an indexable policy only for `noderaft.ee`; platform and private-recovery hosts disallow all crawling. `app/sitemap.ts` publishes only the canonical public origin.
 
 ## Marketing claim audit
 

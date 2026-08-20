@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { BRAND } from "@/lib/brand";
 
 const SESSION_COOKIE = "hostpanel_session";
 const CSRF_COOKIE = "hostpanel_csrf";
 const CSRF_HEADER = "x-csrf-token";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const PUBLIC_HOST = new URL(BRAND.publicSiteUrl).hostname;
+const PLATFORM_ONLY_PREFIXES = ["/admin", "/client", "/api", "/login", "/activate", "/forbidden"];
 
 // Endpoints that perform their own authentication and are exempt from the
 // double-submit CSRF check (login/activation have no session yet; logout is
@@ -25,15 +28,41 @@ function randomCsrfToken(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function requestHostname(request: NextRequest): string {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const rawHost = forwardedHost || request.headers.get("host") || request.nextUrl.hostname;
+  return rawHost.replace(/:\d+$/, "").toLowerCase();
+}
+
+function applyIndexingBoundary(response: NextResponse, hostname: string): NextResponse {
+  if (hostname !== PUBLIC_HOST) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
+  return response;
+}
+
 export function middleware(request: NextRequest): NextResponse {
   const pathname = request.nextUrl.pathname;
   const method = request.method;
+  const hostname = requestHostname(request);
+
+  // The public hostname serves the statically generated landing page at its
+  // canonical root. Platform-only surfaces are never presented on that host.
+  if (hostname === PUBLIC_HOST) {
+    if (pathname === "/") {
+      return NextResponse.rewrite(new URL("/landing", request.url));
+    }
+
+    if (PLATFORM_ONLY_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+      return NextResponse.redirect(new URL("/", BRAND.publicSiteUrl), 307);
+    }
+  }
 
   // Page-level gate (UX only — API routes enforce their own auth).
   const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
   const hasSessionCookie = Boolean(sessionCookie);
   if ((pathname.startsWith("/admin") || pathname.startsWith("/client")) && !hasSessionCookie) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return applyIndexingBoundary(NextResponse.redirect(new URL("/login", request.url)), hostname);
   }
 
   const csrfCookie = request.cookies.get(CSRF_COOKIE)?.value;
@@ -77,9 +106,9 @@ export function middleware(request: NextRequest): NextResponse {
     });
   }
 
-  return response;
+  return applyIndexingBoundary(response, hostname);
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/client/:path*", "/api/:path*"]
+  matcher: ["/", "/login", "/activate", "/forbidden", "/admin/:path*", "/client/:path*", "/api/:path*"]
 };

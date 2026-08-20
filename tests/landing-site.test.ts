@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import robots from "@/app/robots";
+import { robotsTextForHostname } from "@/lib/robots";
 import sitemap from "@/app/sitemap";
 import { BRAND } from "@/lib/brand";
 
@@ -43,15 +43,10 @@ describe("Noderaft public landing site", () => {
   });
 
   it("publishes indexable SEO discovery routes for the public origin", () => {
-    expect(robots()).toEqual({
-      rules: {
-        userAgent: "*",
-        allow: "/",
-        disallow: ["/admin/", "/client/", "/api/", "/login", "/activate", "/forbidden"]
-      },
-      sitemap: "https://noderaft.ee/sitemap.xml",
-      host: "https://noderaft.ee"
-    });
+    expect(robotsTextForHostname("noderaft.ee")).toContain("Allow: /");
+    expect(robotsTextForHostname("noderaft.ee")).toContain("Sitemap: https://noderaft.ee/sitemap.xml");
+    expect(robotsTextForHostname("platform.noderaft.ee")).toBe("User-agent: *\nDisallow: /\n");
+    expect(robotsTextForHostname("10.99.2.1")).toBe("User-agent: *\nDisallow: /\n");
     expect(sitemap()).toEqual([
       {
         url: "https://noderaft.ee/",
