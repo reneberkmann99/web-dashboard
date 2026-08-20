@@ -1,5 +1,11 @@
+import type { Metadata } from "next";
 import { requirePageSession } from "@/server/auth/guards";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { PlatformProviders } from "@/components/providers/platform-providers";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false }
+};
 
 export default async function DashboardLayout({
   children
@@ -9,15 +15,17 @@ export default async function DashboardLayout({
   const session = await requirePageSession();
 
   return (
-    <DashboardShell
-      session={{
-        email: session.email,
-        displayName: session.displayName,
-        role: session.role,
-        clientAccountName: session.clientAccountName
-      }}
-    >
-      {children}
-    </DashboardShell>
+    <PlatformProviders>
+      <DashboardShell
+        session={{
+          email: session.email,
+          displayName: session.displayName,
+          role: session.role,
+          clientAccountName: session.clientAccountName
+        }}
+      >
+        {children}
+      </DashboardShell>
+    </PlatformProviders>
   );
 }

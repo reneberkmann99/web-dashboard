@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "test:browser": "playwright test tests/phase6d-regressions.spec.ts",
     "test:browser:operational": "playwright test tests/phase6d-operational.spec.ts",
-    "test:browser:phase6e": "playwright test phase6e-browser.spec.ts"
+    "test:browser:phase6e": "playwright test phase6e-browser.spec.ts",
+    "test:landing": "node scripts/qualify-landing.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.6",

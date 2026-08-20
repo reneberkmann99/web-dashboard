@@ -4,5 +4,7 @@ export const BRAND = {
   technicalName: "noderaft",
   agentName: "Noderaft Agent",
   tagline: "Your fleet, on one deck.",
-  description: "Self-hosted control panel for nodes, workloads and containers."
+  description: "Self-hosted control panel for nodes, workloads and containers.",
+  publicSiteUrl: "https://noderaft.ee",
+  platformUrl: "https://platform.noderaft.ee"
 } as const;

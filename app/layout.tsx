@@ -5,11 +5,9 @@ import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@/app/globals.css";
-import { QueryProvider } from "@/components/providers/query-provider";
-import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://panel.noderaft.io"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://platform.noderaft.ee"),
   title: {
     default: "Noderaft",
     template: "%s · Noderaft"
@@ -47,25 +45,7 @@ export default function RootLayout({
 }>): React.JSX.Element {
   return (
     <html lang="en" className="dark">
-      <body>
-        <QueryProvider>
-          {children}
-          <Toaster
-            theme="dark"
-            position="bottom-right"
-            toastOptions={{
-              classNames: {
-                toast: "!border-border !bg-surface-overlay !text-text !shadow-overlay",
-                description: "!text-text-muted",
-                success: "!border-success/40",
-                warning: "!border-warning/40",
-                error: "!border-critical/40",
-                info: "!border-info/40"
-              }
-            }}
-          />
-        </QueryProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
