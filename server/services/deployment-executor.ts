@@ -8,6 +8,7 @@ import type { AuthSession } from "@/server/auth/session";
 import { getManagedExecutionEligibility } from "@/server/services/node-agent/execution-eligibility";
 import { recomputePlanHash, resolveLatestSecretVersions, deriveImageRefs } from "@/server/services/deployment-plan";
 import { reanalyzeRevision } from "@/server/services/deployments";
+import { parse as parseYaml } from "yaml";
 
 /**
  * Managed deployment executor (Phase 6B.4/5).
@@ -324,6 +325,28 @@ export async function executeDeploymentOperation(operationId: string): Promise<v
   if (!applied.ok) {
     applyError = applied.error ?? "apply failed";
     await patchResult(operationId, { applyError });
+  } else {
+    // Service removal (managed): `docker compose up -d` is deliberately run
+    // WITHOUT `--remove-orphans` (removed from the whitelist as a broad
+    // destructive command). So after a successful apply, remove any container
+    // that belongs to this compose project but whose compose service is no
+    // longer in the new revision — by EXACT docker identity, never a wildcard.
+    // Named volumes and external networks are never touched. Live agent
+    // inventory (compose labels) is the source of truth, not DB rows that may
+    // not have reconciled yet.
+    try {
+      const root = parseYaml(revision.composeCanonical) as { services?: Record<string, unknown> };
+      const desiredServices = new Set(Object.keys(root.services ?? {}));
+      const live = await nodeAgentClient.listContainers(node);
+      for (const c of live.containers) {
+        if (c.composeProject !== deployment.composeProjectName) continue;
+        if (c.composeService && !desiredServices.has(c.composeService)) {
+          await nodeAgentClient.removeContainer(node, c.id);
+        }
+      }
+    } catch {
+      // Orphan reconciliation is best-effort; a failure must not fail the deploy.
+    }
   }
 
   // ---- VERIFYING -----------------------------------------------------------

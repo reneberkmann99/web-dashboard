@@ -10,9 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const session = await requireApiCapability("deployment.view");
+    const session = await requireApiCapability("secrets.manage");
     const { id } = await params;
-    await requireClientDeployment(session, id, "deployment.view");
+    await requireClientDeployment(session, id, "secrets.manage");
     const secrets = await listSecrets(id);
     return ok({ data: secrets, total: secrets.length });
   } catch (error) {

@@ -233,21 +233,46 @@ export type DiscoveredComposeProject = {
  * when called shortly after a dashboard poll).
  */
 export async function listDiscoveredComposeProjects(): Promise<DiscoveredComposeProject[]> {
-  const dbContainers = await prisma.container.findMany({
-    where: { isActive: true, composeProject: { not: null } },
-    select: {
-      id: true,
-      nodeId: true,
-      node: { select: { name: true } },
-      composeProject: true,
-      composeService: true,
-      dockerContainerId: true,
-      projectId: true,
-      lastSeenAt: true,
-      project: { select: { id: true, source: true, composeProject: true } }
-    }
-  });
-  if (dbContainers.length === 0) return [];
+  // Discovery is LIVE-DRIVEN, not DB-driven: poll the agent inventory on every
+  // active node and group by the live `com.docker.compose.project` label.
+  // (The previous DB-driven approach only surfaced projects already synced by a
+  // throttled overview reconcile, so a freshly-created stack was invisible.)
+  const nodes = await prisma.node.findMany({ where: { isActive: true } });
+
+  const liveByNode = new Map<string, Awaited<ReturnType<typeof nodeAgentClient.listContainers>>>();
+  await Promise.all(
+    nodes.map(async (node) => {
+      try {
+        liveByNode.set(node.id, await nodeAgentClient.listContainers(node));
+      } catch {
+        liveByNode.set(node.id, { nodeOnline: false, containers: [] });
+      }
+    })
+  );
+
+  // Conflict + adoption metadata: which live containers already belong to a
+  // different Noderaft workload, and which compose projects are already
+  // adopted as a COMPOSE workload. Live `c.id` is the docker container ID,
+  // which maps to Container.dockerContainerId (scoped per node).
+  const liveContainerIds = new Set<string>();
+  for (const payload of liveByNode.values()) {
+    for (const c of payload.containers) liveContainerIds.add(c.id);
+  }
+  const dbRows = liveContainerIds.size === 0
+    ? []
+    : await prisma.container.findMany({
+        where: {
+          isActive: true,
+          OR: Array.from(liveContainerIds).map((id) => ({ dockerContainerId: id }))
+        },
+        select: {
+          dockerContainerId: true,
+          nodeId: true,
+          projectId: true,
+          project: { select: { id: true, name: true, source: true, composeProject: true } }
+        }
+      });
+  const dbByKey = new Map(dbRows.map((r) => [`${r.nodeId}:${r.dockerContainerId}`, r]));
 
   const adoptedProjects = await prisma.project.findMany({
     where: { source: ProjectSource.COMPOSE, isActive: true },
@@ -255,94 +280,71 @@ export async function listDiscoveredComposeProjects(): Promise<DiscoveredCompose
   });
   const adoptedByKey = new Map(adoptedProjects.map((p) => [`${p.nodeId}:${p.composeProject}`, p]));
 
-  // Group by node so we fetch live inventory once per node.
-  const nodeIds = Array.from(new Set(dbContainers.map((c) => c.nodeId)));
-  const nodes = await prisma.node.findMany({ where: { id: { in: nodeIds } } });
-  const liveByNode = new Map<string, Awaited<ReturnType<typeof nodeAgentClient.listContainers>>>();
-  for (const node of nodes) {
-    liveByNode.set(node.id, await nodeAgentClient.listContainers(node));
-  }
-
   const groups = new Map<
     string,
     {
       nodeId: string;
       nodeName: string;
       composeProject: string;
-      dockerIds: string[];
+      running: number;
+      unhealthy: number;
+      total: number;
       services: Set<string>;
+      networkNames: Set<string>;
+      volumeNames: Set<string>;
       hasConflict: boolean;
-      lastObservedAt: Date | null;
     }
   >();
 
-  for (const c of dbContainers) {
-    if (!c.composeProject) continue;
-    const key = `${c.nodeId}:${c.composeProject}`;
-    const entry = groups.get(key) ?? {
-      nodeId: c.nodeId,
-      nodeName: c.node.name,
-      composeProject: c.composeProject,
-      dockerIds: [],
-      services: new Set<string>(),
-      hasConflict: false,
-      lastObservedAt: null
-    };
-    entry.dockerIds.push(c.dockerContainerId);
-    if (c.composeService) entry.services.add(c.composeService);
-    if (!entry.lastObservedAt || c.lastSeenAt > entry.lastObservedAt) entry.lastObservedAt = c.lastSeenAt;
-    // Conflict: this container belongs to a project other than the COMPOSE
-    // project matching this key (i.e. a MANUAL workload, or a different
-    // COMPOSE workload entirely — should not normally happen but is possible
-    // after a relabel).
-    if (c.projectId && !(c.project?.source === ProjectSource.COMPOSE && c.project.composeProject === c.composeProject)) {
-      entry.hasConflict = true;
+  for (const node of nodes) {
+    const payload = liveByNode.get(node.id);
+    if (!payload?.nodeOnline) continue;
+    for (const c of payload.containers) {
+      if (!c.composeProject) continue;
+      const key = `${node.id}:${c.composeProject}`;
+      const entry = groups.get(key) ?? {
+        nodeId: node.id,
+        nodeName: node.name,
+        composeProject: c.composeProject,
+        running: 0,
+        unhealthy: 0,
+        total: 0,
+        services: new Set<string>(),
+        networkNames: new Set<string>(),
+        volumeNames: new Set<string>(),
+        hasConflict: false
+      };
+      entry.total += 1;
+      if (c.status === "running") entry.running += 1;
+      if (c.health === "unhealthy" || c.status === "unhealthy") entry.unhealthy += 1;
+      if (c.composeService) entry.services.add(c.composeService);
+      for (const n of c.networkNames ?? []) entry.networkNames.add(n);
+      for (const m of c.mountRefs ?? []) {
+        if (m.type === "volume" && m.volumeName) entry.volumeNames.add(m.volumeName);
+      }
+      const db = dbByKey.get(`${node.id}:${c.id}`);
+      if (db?.projectId && !(db.project?.source === ProjectSource.COMPOSE && db.project.composeProject === c.composeProject)) {
+        entry.hasConflict = true;
+      }
+      groups.set(key, entry);
     }
-    groups.set(key, entry);
   }
 
   const results: DiscoveredComposeProject[] = [];
   for (const [key, g] of groups) {
-    const live = liveByNode.get(g.nodeId);
-    const liveById = new Map((live?.containers ?? []).map((c) => [c.id, c]));
-    const networkNames = new Set<string>();
-    const volumeNames = new Set<string>();
-    let running = 0;
-    let unhealthy = 0;
-    for (const dockerId of g.dockerIds) {
-      const lc = liveById.get(dockerId);
-      if (!lc) continue;
-      if (lc.status === "running") running += 1;
-      if (lc.health === "unhealthy" || lc.status === "unhealthy") unhealthy += 1;
-      for (const n of lc.networkNames ?? []) networkNames.add(n);
-      for (const m of lc.mountRefs ?? []) {
-        if (m.type === "volume" && m.volumeName) volumeNames.add(m.volumeName);
-      }
-    }
-    const total = g.dockerIds.length;
-    const healthSummary: DiscoveredComposeProject["healthSummary"] = !live?.nodeOnline
-      ? "unknown"
-      : unhealthy > 0
-        ? "degraded"
-        : running === total
-          ? "healthy"
-          : running === 0
-            ? "down"
-            : "degraded";
-
     const adopted = adoptedByKey.get(key);
     results.push({
       nodeId: g.nodeId,
       nodeName: g.nodeName,
       composeProject: g.composeProject,
-      containerCount: total,
-      runningCount: running,
-      healthSummary,
+      containerCount: g.total,
+      runningCount: g.running,
+      healthSummary: g.unhealthy > 0 ? "degraded" : g.running === g.total ? "healthy" : g.running === 0 ? "down" : "degraded",
       serviceNames: Array.from(g.services).sort(),
-      networkCount: networkNames.size,
-      volumeCount: volumeNames.size,
+      networkCount: g.networkNames.size,
+      volumeCount: g.volumeNames.size,
       hasConflict: g.hasConflict,
-      lastObservedAt: g.lastObservedAt ? g.lastObservedAt.toISOString() : null,
+      lastObservedAt: null,
       adopted: Boolean(adopted),
       workloadId: adopted?.id ?? null,
       workloadName: adopted?.name ?? null
@@ -431,25 +433,31 @@ export async function getDiscoveredComposeProjectDetail(
   const node = await prisma.node.findUnique({ where: { id: nodeId } });
   if (!node) return null;
 
-  const dbContainers = await prisma.container.findMany({
-    where: { nodeId, composeProject, isActive: true }
-  });
-  if (dbContainers.length === 0) return null;
-
+  // Live-driven like listDiscoveredComposeProjects: derive services from the
+  // agent inventory directly, not from DB rows that may not be synced yet.
   const live = await nodeAgentClient.listContainers(node);
-  const liveById = new Map(live.containers.map((c) => [c.id, c]));
+  const liveServices = live.containers.filter((c) => c.composeProject === composeProject);
+  if (liveServices.length === 0) return null;
 
-  const services = dbContainers.map((dc) => {
-    const lc = liveById.get(dc.dockerContainerId);
-    return {
-      dockerContainerId: dc.dockerContainerId,
-      dockerName: dc.dockerName,
-      composeService: dc.composeService,
-      status: lc?.status ?? "unknown",
-      health: lc?.health ?? null,
-      image: lc?.image ?? dc.image ?? "unknown"
-    };
+  // Conflict + adoption metadata: map docker IDs to already-managed DB rows.
+  const dbRows = await prisma.container.findMany({
+    where: {
+      nodeId,
+      isActive: true,
+      OR: liveServices.map((c) => ({ dockerContainerId: c.id }))
+    },
+    select: { id: true, dockerContainerId: true, projectId: true }
   });
+  const dbIdByDocker = new Map(dbRows.map((r) => [r.dockerContainerId, r.id]));
+
+  const services = liveServices.map((lc) => ({
+    dockerContainerId: lc.id,
+    dockerName: lc.name,
+    composeService: lc.composeService ?? null,
+    status: lc.status,
+    health: lc.health ?? null,
+    image: lc.image ?? "unknown"
+  }));
 
   const total = services.length;
   const running = services.filter((s) => s.status === "running").length;
@@ -466,28 +474,22 @@ export async function getDiscoveredComposeProjectDetail(
 
   const networkNames = new Set<string>();
   const volumeNames = new Set<string>();
-  for (const dc of dbContainers) {
-    const lc = liveById.get(dc.dockerContainerId);
-    for (const n of lc?.networkNames ?? []) networkNames.add(n);
-    for (const m of lc?.mountRefs ?? []) {
+  for (const lc of liveServices) {
+    for (const n of lc.networkNames ?? []) networkNames.add(n);
+    for (const m of lc.mountRefs ?? []) {
       if (m.type === "volume" && m.volumeName) volumeNames.add(m.volumeName);
     }
   }
 
   const conflicts = await detectComposeConflicts(
     composeProject,
-    dbContainers.map((c) => c.id)
+    dbRows.map((r) => r.id)
   );
 
   const adopted = await prisma.project.findFirst({
     where: { nodeId, composeProject, source: ProjectSource.COMPOSE },
     select: { id: true, name: true }
   });
-
-  const lastObserved = dbContainers.reduce<Date | null>(
-    (acc, c) => (!acc || c.lastSeenAt > acc ? c.lastSeenAt : acc),
-    null
-  );
 
   return {
     nodeId,
@@ -499,7 +501,7 @@ export async function getDiscoveredComposeProjectDetail(
     healthSummary,
     networks: Array.from(networkNames).sort(),
     volumes: Array.from(volumeNames).sort(),
-    lastObservedAt: lastObserved ? lastObserved.toISOString() : null,
+    lastObservedAt: null,
     conflicts,
     adopted: Boolean(adopted),
     workloadId: adopted?.id ?? null,
@@ -533,6 +535,25 @@ export async function adoptComposeProject(input: {
   description?: string | null;
   moveConflictingContainers?: boolean;
 }): Promise<AdoptComposeResult> {
+  // Record live compose metadata first so a freshly-created stack (not yet
+  // synced by the throttled overview reconcile) is adoptable immediately.
+  const node = await prisma.node.findUnique({ where: { id: input.nodeId } });
+  if (node) {
+    try {
+      const live = await nodeAgentClient.listContainers(node);
+      if (live.nodeOnline) {
+        await recordComposeMetadata(
+          input.nodeId,
+          live.containers
+            .filter((c) => c.composeProject === input.composeProject)
+            .map((c) => ({ id: c.id, name: c.name, image: c.image, composeProject: c.composeProject ?? null, composeService: c.composeService ?? null }))
+        );
+      }
+    } catch {
+      // fall through to DB-backed membership below
+    }
+  }
+
   const members = await prisma.container.findMany({
     where: { nodeId: input.nodeId, composeProject: input.composeProject, isActive: true },
     select: { id: true }
