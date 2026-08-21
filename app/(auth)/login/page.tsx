@@ -70,7 +70,7 @@ export default function LoginPage(): React.JSX.Element {
       <div className="grid w-full gap-8 lg:grid-cols-[1.2fr_1fr]">
         <section className="panel hidden p-12 lg:block">
           <NoderaftLogo className="h-10" priority />
-          <p className="eyebrow mt-12">Self-hosted control panel · Rootless Docker</p>
+          <p className="eyebrow mt-12">Self-hosted Docker fleet operations</p>
           <h1 className="mt-4 max-w-lg text-5xl font-semibold leading-[1.05] tracking-[-0.04em]">
             Your fleet,<br />on one deck.
           </h1>

@@ -15,8 +15,8 @@ import { logAuditEvent } from "@/server/audit";
 import { type AuthSession } from "@/server/auth/session";
 import { can, type Capability } from "@/server/auth/policy";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
-import { recordNodePoll } from "@/server/services/node-heartbeat";
-import { getAttentionMap, syncAttentionIfDue } from "@/server/services/attention";
+import { recordNodePoll, type HeartbeatState } from "@/server/services/node-heartbeat";
+import { getAttentionMap, syncAttentionIfDue, getExpectedStates, isExpectedRunning } from "@/server/services/attention";
 import { collectOverviewSnapshot } from "@/server/services/overview";
 import { ContainerView, OverviewStats, DiscoveredContainer } from "@/types/domain";
 
@@ -598,6 +598,15 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
   for (const item of results) {
     item.attention = attentionMap.get(`CONTAINER:${item.nodeId}:${item.containerId}`)
       ?? (item.status === "running" && item.health !== "unhealthy" ? "healthy" : "unknown");
+  }
+
+  // Operator-declared intent (expectedState) lets the UI render "stopped
+  // intentionally" quietly instead of as an unexpected stop (design status
+  // vocabulary). Backend-authoritative: the frontend never guesses intent.
+  const expectedStates = await getExpectedStates(nodeIds);
+  for (const item of results) {
+    const expected = expectedStates.get(`${item.nodeId}:${item.containerId}`);
+    item.expectedStopped = isExpectedRunning(item.restartPolicy, expected) === false;
   }
 
   return results.sort(

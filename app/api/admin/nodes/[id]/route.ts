@@ -8,6 +8,7 @@ import { getSourceIpFromRequest } from "@/server/request";
 import { pollContainersForNode } from "@/server/services/workloads";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { getAttentionMap, getAttentionFeedForAdmin } from "@/server/services/attention";
+import { resourceThresholds } from "@/server/services/attention-config";
 
 export async function GET(
   _: Request,
@@ -71,6 +72,7 @@ export async function GET(
     const nodeAttentionItems = attentionFeed.filter((item) => item.nodeId === node.id);
 
     return ok({
+      resourceThresholds: resourceThresholds(),
       node: {
         id: node.id,
         name: node.name,

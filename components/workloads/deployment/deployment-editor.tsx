@@ -8,6 +8,7 @@ import { apiFetch, isApiError } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Modal } from "@/components/ui/modal";
 import { TabBar } from "@/components/ui/tab-bar";
 import { PlanView } from "./plan-view";
@@ -475,12 +476,12 @@ export function DeploymentEditor({
                 <p className="text-xs text-text-subtle">
                   Advanced: edit the compose document directly. Switching back to the Form tab re-reads this source.
                 </p>
-                <textarea
+                <Textarea
                   value={compose}
                   readOnly={editingDisabled}
                   onChange={(e) => applyCompose(e.target.value)}
                   spellCheck={false}
-                  className="h-[420px] w-full resize-y rounded-lg border border-border bg-panelAlt p-4 font-mono text-xs leading-relaxed text-text outline-none focus:border-accent"
+                  className="h-[420px] resize-y font-mono text-xs leading-relaxed"
                   aria-label="Compose YAML"
                 />
               </div>

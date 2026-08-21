@@ -15,8 +15,10 @@ import type { NodeRecord } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ResourceUsageStrip } from "@/components/ui/resource-usage";
+import type { ResourceThresholds } from "@/types/domain";
 
-type NodesPayload = { nodes: NodeRecord[] };
+type NodesPayload = { resourceThresholds: ResourceThresholds; nodes: NodeRecord[] };
 type EnrollmentResponse = { token: string; expiresAt: string; ttlMinutes: number; nodeId: string | null };
 
 export default function AdminNodesPage(): React.JSX.Element {
@@ -114,14 +116,25 @@ export default function AdminNodesPage(): React.JSX.Element {
       hideBelow: "md",
       render: (n) => {
         if (n.offline || n.staleHeartbeat) {
-          return <span className="text-xs text-muted">Telemetry stale · {timeAgo(n.lastHeartbeatAt)}</span>;
+          return <span className="text-xs text-text-muted">Telemetry stale · {timeAgo(n.lastHeartbeatAt)}</span>;
         }
         const sys = (n.systemInfo ?? {}) as Record<string, unknown>;
-        const cpu = typeof sys.cpuPercent === "number" ? `${sys.cpuPercent.toFixed(0)}% CPU` : null;
-        const mem = typeof sys.memPercent === "number" ? `${sys.memPercent.toFixed(0)}% RAM` : null;
-        const disk = typeof sys.diskPercent === "number" ? `${sys.diskPercent.toFixed(0)}% disk` : null;
-        const parts = [cpu, mem, disk].filter(Boolean);
-        return <span className="font-mono text-xs text-muted">{parts.length > 0 ? parts.join(" · ") : "—"}</span>;
+        const cpu = typeof sys.cpuPercent === "number" ? sys.cpuPercent : null;
+        const mem = typeof sys.memPercent === "number" ? sys.memPercent : null;
+        const disk = typeof sys.diskPercent === "number" ? sys.diskPercent : null;
+        return (
+          <ResourceUsageStrip
+            cpuPercent={cpu}
+            memPercent={mem}
+            diskPercent={disk}
+            telemetryCurrent
+            thresholds={query.data?.resourceThresholds ?? {
+              cpu: { warning: 85, critical: 97 },
+              mem: { warning: 85, critical: 95 },
+              disk: { warning: 85, critical: 95 }
+            }}
+          />
+        );
       }
     },
     {

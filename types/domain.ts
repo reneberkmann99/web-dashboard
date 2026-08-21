@@ -62,6 +62,28 @@ export type ContainerView = {
   details?: ContainerDetailsView | null;
   /** Backend-derived attention severity for this container (Phase 6D). */
   attention?: "critical" | "warning" | "info" | "healthy" | "unknown";
+  /** Operator-declared intent (backend-authoritative): the container is expected to stay stopped. */
+  expectedStopped?: boolean;
+};
+
+/** Authoritative backend resource-pressure thresholds (attention-config.ts). */
+export type ResourceThresholds = {
+  cpu: { warning: number; critical: number };
+  mem: { warning: number; critical: number };
+  disk: { warning: number; critical: number };
+};
+
+/** Per-node live resource telemetry snapshot (real agent data only). */
+export type NodeResourceTelemetry = {
+  cpuPercent: number | null;
+  memPercent: number | null;
+  diskPercent: number | null;
+  diskTotalBytes: number | null;
+  diskFreeBytes: number | null;
+  totalMemBytes: number | null;
+  cpuCount: number | null;
+  /** True when the node was reachable for this poll; false = stale/offline. */
+  telemetryCurrent: boolean;
 };
 
 export type AttentionSeverity = "critical" | "warning" | "info";

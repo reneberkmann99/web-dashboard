@@ -21,6 +21,7 @@ import type { WorkloadDeploymentStatus } from "@/components/workloads/deployment
 import type { AttentionItem } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
+import { Select } from "@/components/ui/select";
 import { ContextBackLink } from "@/components/navigation/context-back-link";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
@@ -608,11 +609,10 @@ function GrantModal({
           <label htmlFor="grant-client" className="text-sm text-muted">
             Client
           </label>
-          <select
+          <Select
             id="grant-client"
             value={clientId}
             onChange={(e) => onClientChange(e.target.value)}
-            className="w-full rounded-md border border-border bg-panelAlt px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="">Select client…</option>
             {(clientsQuery.data?.clients ?? []).map((c) => (
@@ -620,7 +620,7 @@ function GrantModal({
                 {c.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="space-y-1">
           <label className="text-sm text-muted">Permission level</label>

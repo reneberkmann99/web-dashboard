@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
@@ -349,16 +350,15 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
                     Assign to existing client
                   </label>
                   {clientId !== "" && (
-                    <select
+                    <Select
                       value={clientId}
                       onChange={(e) => setClientId(e.target.value)}
                       aria-label="Select client"
-                      className="w-full rounded-md border border-border bg-panelAlt px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
                     >
                       {(refs.data?.clients ?? []).map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
-                    </select>
+                    </Select>
                   )}
                 </div>
                 <p className="text-xs text-muted">

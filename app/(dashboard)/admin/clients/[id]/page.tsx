@@ -12,6 +12,7 @@ import { TabBar } from "@/components/ui/tab-bar";
 import { Modal } from "@/components/ui/modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
@@ -341,11 +342,11 @@ export default function AdminClientDetailPage(): React.JSX.Element {
             </div>
             <div className="space-y-1">
               <label htmlFor="invite-role" className="text-sm text-muted">Role</label>
-              <select id="invite-role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="w-full rounded-md border border-border bg-panelAlt px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
+              <Select id="invite-role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
                 {ROLE_OPTIONS.map((r) => (
                   <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
         )}

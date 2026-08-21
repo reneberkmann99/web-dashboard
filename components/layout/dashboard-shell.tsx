@@ -178,9 +178,19 @@ function DashboardShellInner({
         </a>
 
         <div className="mt-5 border-y border-border py-3">
-          <p className="font-medium">{session.displayName}</p>
-          <p className="truncate font-mono text-[11px] text-text-muted">{session.email}</p>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-text-subtle">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-selected-border/30 bg-surface-raised font-mono text-xs font-medium text-brand"
+            >
+              {(session.displayName || session.email || "?").charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-medium">{session.displayName}</p>
+              <p className="truncate font-mono text-[11px] text-text-muted">{session.email}</p>
+            </div>
+          </div>
+          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-text-subtle">
             {isAdmin ? "Administrator" : session.clientAccountName}
           </p>
         </div>
@@ -211,7 +221,8 @@ function DashboardShellInner({
               aria-label="Open search"
             >
               <Search size={14} />
-              <span>Search</span>
+              <span className="hidden lg:inline">{isAdmin ? "Search nodes, workloads, containers" : "Search workloads, containers"}</span>
+              <span className="lg:hidden">Search</span>
               <kbd className="rounded-sm border border-border px-1.5 text-[10px]">⌘K</kbd>
             </button>
             <Menu

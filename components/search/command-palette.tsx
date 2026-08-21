@@ -6,6 +6,7 @@ import { Boxes, Box, Loader2, Search, Server, Users, CornerDownLeft } from "luci
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/fetcher";
 import { useFocusTrap } from "@/components/ui/use-focus-trap";
+import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import type { SearchGroup, SearchResultItem } from "@/server/services/search";
 
 /**
@@ -30,6 +31,7 @@ const GROUP_ICON: Record<SearchResultItem["type"], typeof Box> = {
 export function CommandPalette(): React.JSX.Element | null {
   const pathname = usePathname();
   const router = useRouter();
+  const go = useResourceNavigation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [groups, setGroups] = useState<SearchGroup[]>([]);
@@ -123,11 +125,13 @@ export function CommandPalette(): React.JSX.Element | null {
   }, [open]);
 
   const navigate = useCallback(
-    (href: string): void => {
+    (item: SearchResultItem): void => {
       setOpen(false);
-      router.push(href);
+      // Opening a result extends the persistent navigation trail so the
+      // sidebar root stays highlighted and breadcrumbs reflect the path.
+      go({ url: item.href, label: item.title, type: item.type, id: item.id });
     },
-    [router]
+    [go]
   );
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
@@ -149,7 +153,7 @@ export function CommandPalette(): React.JSX.Element | null {
     if (event.key === "Enter") {
       event.preventDefault();
       const item = flat[cursor];
-      if (item) navigate(item.href);
+      if (item) navigate(item);
     }
   };
 
@@ -219,7 +223,7 @@ export function CommandPalette(): React.JSX.Element | null {
                       key={`${item.type}-${item.id}`}
                       type="button"
                       data-index={index}
-                      onClick={() => navigate(item.href)}
+                      onClick={() => navigate(item)}
                       onMouseEnter={() => setCursor(index)}
                       className={cn(
                         "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition",

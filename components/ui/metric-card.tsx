@@ -17,7 +17,7 @@ export function MetricCard({
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           {Icon && <Icon size={14} className="text-text-muted" />}
-          <CardDescription>{label}</CardDescription>
+          <CardDescription className="font-mono text-[11px] uppercase tracking-[0.14em]">{label}</CardDescription>
         </div>
       </CardHeader>
       <CardContent>

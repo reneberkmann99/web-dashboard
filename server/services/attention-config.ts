@@ -107,3 +107,16 @@ export const ATTENTION_CONFIG = {
     maxItems: envInt("ATTENTION_FEED_MAX_ITEMS", 30)
   }
 } as const;
+
+/**
+ * Resource-pressure thresholds in the wire shape consumed by the UI.
+ * Single source of truth: the frontend never hard-codes its own thresholds.
+ */
+export function resourceThresholds() {
+  const r = ATTENTION_CONFIG.nodeResource;
+  return {
+    cpu: { warning: r.cpuWarningPercent, critical: r.cpuCriticalPercent },
+    mem: { warning: r.memWarningPercent, critical: r.memCriticalPercent },
+    disk: { warning: r.diskWarningPercent, critical: r.diskCriticalPercent }
+  };
+}

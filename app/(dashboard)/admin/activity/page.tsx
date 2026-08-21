@@ -7,6 +7,8 @@ import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { formatDateTime, humanizeAction } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -105,46 +107,46 @@ export default function AdminActivityPage(): React.JSX.Element {
       )}
 
       <div className="flex flex-wrap gap-2">
-        <input
+        <Input
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search events, actors…"
           aria-label="Search activity"
-          className="w-64 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-64"
         />
-        <select
+        <Select
           value={result}
           onChange={(e) => setResult(e.target.value)}
           aria-label="Filter by result"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-36"
         >
           <option value="">All results</option>
           <option value="SUCCESS">Success</option>
           <option value="FAILURE">Failure</option>
-        </select>
-        <select
+        </Select>
+        <Select
           value={nodeId}
           onChange={(e) => setNodeId(e.target.value)}
           aria-label="Filter by node"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All nodes</option>
           {(refsQuery.data?.nodes ?? []).map((n) => (
             <option key={n.id} value={n.id}>{n.name}</option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           aria-label="Filter by client"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All clients</option>
           {(refsQuery.data?.clients ?? []).map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <ActivityTimeline

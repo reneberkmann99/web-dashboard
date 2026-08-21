@@ -7,6 +7,7 @@ import { apiFetch, isApiError } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { Input } from "@/components/ui/input";
 import { PlanView } from "./plan-view";
 import { OperationProgress } from "./operation-progress";
 import { OperationResultView } from "./operation-result-view";
@@ -203,10 +204,9 @@ function RotateFlow({
             Current version <span className="font-medium">v{secret.latestVersion?.versionNumber ?? "—"}</span>. Enter the new value — it will be
             encrypted at rest and never displayed again.
           </p>
-          <input
+          <Input
             type="password"
             autoComplete="new-password"
-            className="w-full rounded border border-border bg-panelAlt px-3 py-2 text-sm text-text outline-none focus:border-accent"
             placeholder="New secret value"
             value={value}
             onChange={(e) => setValue(e.target.value)}

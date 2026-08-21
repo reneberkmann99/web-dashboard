@@ -6,8 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { AttentionBadge } from "@/components/ui/attention-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ServerDataTable } from "@/components/ui/server-data-table";
 import type { Column } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import type { ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
@@ -103,10 +106,10 @@ export default function SettingsContainersPage(): React.JSX.Element {
     },
     { key: "node", header: "Node", sortValue: (c) => c.nodeName, render: (c) => <span className="text-sm">{c.nodeName}</span>, hideBelow: "sm" },
     { key: "client", header: "Client", sortValue: (c) => c.clientName, render: (c) => <span className="text-sm">{c.clientName}</span>, hideBelow: "sm" },
-    { key: "status", header: "State", sortValue: (c) => c.status, render: (c) => <Badge variant={c.status === "running" ? "success" : c.status === "stopped" ? "danger" : "warning"}>{c.status}</Badge> },
+    { key: "status", header: "State", sortValue: (c) => c.status, render: (c) => <StatusBadge status={c.status} expectedStopped={c.expectedStopped} /> },
     { key: "health", header: "Health", sortValue: (c) => c.health ?? "none", render: (c) => c.health ? <Badge variant={c.health === "healthy" ? "success" : c.health === "unhealthy" ? "danger" : "warning"}>{c.health}</Badge> : <span className="text-xs text-muted">—</span> },
-    { key: "cpu", header: "CPU", sortValue: (c) => c.cpuPercent ?? -1, render: (c) => <span className="text-sm">{c.cpuPercent !== null ? `${c.cpuPercent.toFixed(1)}%` : "—"}</span>, hideBelow: "md" },
-    { key: "mem", header: "Memory", render: (c) => <span className="text-sm">{c.memoryUsage ?? "—"}</span>, hideBelow: "md" },
+    { key: "cpu", header: "CPU", sortValue: (c) => c.cpuPercent ?? -1, render: (c) => <span className="font-mono text-sm">{c.cpuPercent !== null ? `${c.cpuPercent.toFixed(1)}%` : "—"}</span>, hideBelow: "md" },
+    { key: "mem", header: "Memory", render: (c) => <span className="font-mono text-sm">{c.memoryUsage ?? "—"}</span>, hideBelow: "md" },
     { key: "restartCount", header: "Restarts", sortValue: (c) => c.restartCount ?? 0, render: (c) => <span className="text-sm">{c.restartCount ?? 0}</span>, hideBelow: "lg" },
     { key: "uptime", header: "Uptime", render: (c) => <span className="text-xs text-muted">{c.uptime ?? "—"}</span>, hideBelow: "lg" },
     {
@@ -122,70 +125,70 @@ export default function SettingsContainersPage(): React.JSX.Element {
       <PageHeader eyebrow="Runtime inventory" title="Containers" description="Every container across all nodes, including unassigned ones." />
 
       <div className="flex flex-wrap gap-2">
-        <input
+        <Input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search containers…"
           aria-label="Search containers"
-          className="w-64 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-64"
         />
-        <select
+        <Select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           aria-label="Filter by status"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-36"
         >
           <option value="">All statuses</option>
           {STATUSES.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           value={nodeId}
           onChange={(e) => setNodeId(e.target.value)}
           aria-label="Filter by node"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All nodes</option>
           {(refsQuery.data?.nodes ?? []).map((n) => (
             <option key={n.id} value={n.id}>{n.name}</option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           aria-label="Filter by client"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All clients</option>
           {(refsQuery.data?.clients ?? []).map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
           aria-label="Filter by workload"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All workloads</option>
           {(refsQuery.data?.workloads ?? []).map((w) => (
             <option key={w.id} value={w.id}>{w.name}</option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           value={health}
           onChange={(e) => setHealth(e.target.value)}
           aria-label="Filter by health"
-          className="rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-auto min-w-40"
         >
           <option value="">All health states</option>
           <option value="healthy">Healthy</option>
           <option value="unhealthy">Unhealthy</option>
           <option value="starting">Starting</option>
           <option value="none">No healthcheck</option>
-        </select>
+        </Select>
         <label className="flex items-center gap-2 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm">
           <input
             type="checkbox"

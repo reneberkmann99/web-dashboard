@@ -13,15 +13,17 @@ import { TabBar } from "@/components/ui/tab-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel, LoadingBlock } from "@/components/ui/state-panel";
 import { CodePanel } from "@/components/ui/code-panel";
+import { ResourceUsage } from "@/components/ui/resource-usage";
 import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
-import type { AttentionItem, AttentionSeverity } from "@/types/domain";
+import type { AttentionItem, AttentionSeverity, ResourceThresholds } from "@/types/domain";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 type NodeDetailPayload = {
+  resourceThresholds: ResourceThresholds;
   node: {
     id: string;
     name: string;
@@ -193,25 +195,18 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
 
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Resource usage</h2>
-            {(() => {
-              if (!node.telemetryCurrent) {
-                return <p className="text-sm text-muted">Telemetry unavailable. Last reported {timeAgo(node.lastHeartbeatAt)}.</p>;
-              }
-              const sys = node.systemInfo ?? {};
-              const cpu = typeof sys.cpuPercent === "number" ? sys.cpuPercent : null;
-              const mem = typeof sys.memPercent === "number" ? sys.memPercent : null;
-              const disk = typeof sys.diskPercent === "number" ? sys.diskPercent : null;
-              if (cpu === null && mem === null && disk === null) {
-                return <p className="text-sm text-muted">Resource metrics unavailable from this agent yet.</p>;
-              }
-              return (
-                <dl className="grid grid-cols-3 gap-3 text-sm">
-                  <Stat label="CPU" value={cpu !== null ? `${cpu.toFixed(0)}%` : "—"} />
-                  <Stat label="Memory" value={mem !== null ? `${mem.toFixed(0)}%` : "—"} />
-                  <Stat label="Disk" value={disk !== null ? `${disk.toFixed(0)}%` : "—"} />
-                </dl>
-              );
-            })()}
+            <ResourceUsage
+              cpuPercent={typeof node.systemInfo?.cpuPercent === "number" ? Number(node.systemInfo.cpuPercent) : null}
+              memPercent={typeof node.systemInfo?.memPercent === "number" ? Number(node.systemInfo.memPercent) : null}
+              diskPercent={typeof node.systemInfo?.diskPercent === "number" ? Number(node.systemInfo.diskPercent) : null}
+              diskTotalBytes={typeof node.systemInfo?.diskTotalBytes === "number" ? Number(node.systemInfo.diskTotalBytes) : null}
+              diskFreeBytes={typeof node.systemInfo?.diskFreeBytes === "number" ? Number(node.systemInfo.diskFreeBytes) : null}
+              totalMemBytes={typeof node.systemInfo?.totalMemBytes === "number" ? Number(node.systemInfo.totalMemBytes) : null}
+              cpuCount={typeof node.systemInfo?.cpuCount === "number" ? Number(node.systemInfo.cpuCount) : null}
+              telemetryCurrent={node.telemetryCurrent}
+              state={offline ? "offline" : stale ? "stale" : "current"}
+              thresholds={detail.data.resourceThresholds}
+            />
           </div>
 
           <div className="rounded-lg border border-border bg-panel p-4 lg:col-span-2">

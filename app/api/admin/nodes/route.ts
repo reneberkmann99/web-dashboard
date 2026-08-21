@@ -7,6 +7,7 @@ import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { collectOverviewSnapshot } from "@/server/services/overview";
 import { getAttentionMap, syncAttentionIfDue } from "@/server/services/attention";
+import { resourceThresholds } from "@/server/services/attention-config";
 
 export async function GET(): Promise<Response> {
   try {
@@ -37,6 +38,7 @@ export async function GET(): Promise<Response> {
     });
 
     return ok({
+      resourceThresholds: resourceThresholds(),
       nodes: nodes.map((n) => {
         const op = live.get(n.id);
         const offline = op?.offline ?? n.status === "OFFLINE";

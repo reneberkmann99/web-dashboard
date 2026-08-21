@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { DataTable, type Column } from "@/components/ui/data-table";
 import type { UserRecord, UserRole, NameRef } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
@@ -179,117 +180,131 @@ export default function AdminUsersPage(): React.JSX.Element {
           <CardTitle>Users</CardTitle>
           <CardDescription>Disable to revoke access reversibly; delete to permanently remove the account.</CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          {query.isLoading ? (
-            <div className="space-y-3">
-              <div className="h-10 animate-pulse rounded bg-panelAlt" />
-              <div className="h-10 animate-pulse rounded bg-panelAlt" />
-            </div>
-          ) : query.isError ? (
-            <p className="text-sm text-critical-foreground">Failed to load users.</p>
-          ) : !(query.data?.users ?? []).length ? (
-            <p className="text-sm text-muted">No users yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="pb-2">User</th>
-                  <th className="pb-2">Client</th>
-                  <th className="pb-2">Role</th>
-                  <th className="pb-2">Status</th>
-                  <th className="pb-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(query.data?.users ?? []).map((user) => (
-                  <tr className="border-t border-border" key={user.id}>
-                    <td className="py-3">
-                      <p>{user.displayName}</p>
-                      <p className="text-xs text-muted">{user.email}</p>
-                    </td>
-                    <td className="py-3">
-                      {user.role === "ADMIN" ? (
-                        <span className="text-muted">—</span>
-                      ) : (
-                        <Select
-                          value={user.clientAccountId ?? ""}
-                          onChange={(event) =>
-                            updateMutation.mutate({
-                              id: user.id,
-                              role: user.role,
-                              isActive: user.isActive,
-                              clientAccountId: event.target.value || null
-                            })
-                          }
-                        >
-                          <option value="">Unassigned</option>
-                          {(query.data?.clients ?? []).map((client) => (
-                            <option key={client.id} value={client.id}>
-                              {client.name}
-                            </option>
-                          ))}
-                        </Select>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      <Select
-                        value={user.role}
-                        onChange={(event) =>
-                          updateMutation.mutate({
-                            id: user.id,
-                            role: event.target.value as UserRole,
-                            isActive: user.isActive,
-                            clientAccountId: user.clientAccountId
-                          })
+        <CardContent>
+          <DataTable
+            columns={[
+              {
+                key: "user",
+                header: "User",
+                sortValue: (u: UserRecord) => u.displayName.toLowerCase(),
+                render: (u: UserRecord) => (
+                  <div>
+                    <p className="font-medium">{u.displayName}</p>
+                    <p className="font-mono text-xs text-muted">{u.email}</p>
+                  </div>
+                )
+              },
+              {
+                key: "client",
+                header: "Client",
+                sortValue: (u: UserRecord) => u.clientAccount?.name ?? "",
+                render: (u: UserRecord) =>
+                  u.role === "ADMIN" ? (
+                    <span className="text-muted">—</span>
+                  ) : (
+                    <Select
+                      value={u.clientAccountId ?? ""}
+                      onChange={(event) =>
+                        updateMutation.mutate({
+                          id: u.id,
+                          role: u.role,
+                          isActive: u.isActive,
+                          clientAccountId: event.target.value || null
+                        })
+                      }
+                    >
+                      <option value="">Unassigned</option>
+                      {(query.data?.clients ?? []).map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name}
+                        </option>
+                      ))}
+                    </Select>
+                  )
+              },
+              {
+                key: "role",
+                header: "Role",
+                sortValue: (u: UserRecord) => u.role,
+                render: (u: UserRecord) => (
+                  <Select
+                    value={u.role}
+                    onChange={(event) =>
+                      updateMutation.mutate({
+                        id: u.id,
+                        role: event.target.value as UserRole,
+                        isActive: u.isActive,
+                        clientAccountId: u.clientAccountId
+                      })
+                    }
+                  >
+                    {ROLE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                )
+              },
+              {
+                key: "status",
+                header: "Status",
+                sortValue: (u: UserRecord) => statusLabel(u),
+                render: (u: UserRecord) =>
+                  u.isActive ? (
+                    <span className="text-success-foreground">Active</span>
+                  ) : u.pending ? (
+                    <span className="text-warning-foreground">Pending activation</span>
+                  ) : (
+                    <span className="text-critical-foreground">Disabled</span>
+                  )
+              },
+              {
+                key: "actions",
+                header: "",
+                render: (u: UserRecord) => (
+                  <div className="flex justify-end">
+                    <Menu
+                      label={`Actions for ${u.displayName}`}
+                      items={[
+                        ...(u.pending
+                          ? [{
+                              label: "Resend activation",
+                              tone: "default" as const,
+                              onSelect: () => resendMutation.mutate(u.id)
+                            }]
+                          : []),
+                        {
+                          label: u.isActive ? "Disable user" : "Enable user",
+                          tone: "default" as const,
+                          onSelect: () =>
+                            u.isActive
+                              ? setConfirmDisable(u)
+                              : updateMutation.mutate({ id: u.id, role: u.role, isActive: true, clientAccountId: u.clientAccountId })
+                        },
+                        {
+                          label: "Delete user",
+                          tone: "danger" as const,
+                          onSelect: () => setConfirmDelete(u)
                         }
-                      >
-                        {ROLE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </td>
-                    <td className="py-3">
-                      {user.isActive ? (
-                        <span className="text-success-foreground">Active</span>
-                      ) : user.pending ? (
-                        <span className="text-warning-foreground">Pending activation</span>
-                      ) : (
-                        <span className="text-critical-foreground">Disabled</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      <Menu
-                        label={`Actions for ${user.displayName}`}
-                        items={[
-                          ...(user.pending
-                            ? [{
-                                label: "Resend activation",
-                                tone: "default" as const,
-                                onSelect: () => resendMutation.mutate(user.id)
-                              }]
-                            : []),
-                          {
-                            label: user.isActive ? "Disable user" : "Enable user",
-                            tone: "default" as const,
-                            onSelect: () => user.isActive
-                              ? setConfirmDisable(user)
-                              : updateMutation.mutate({ id: user.id, role: user.role, isActive: true, clientAccountId: user.clientAccountId })
-                          },
-                          {
-                            label: "Delete user",
-                            tone: "danger" as const,
-                            onSelect: () => setConfirmDelete(user)
-                          }
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                      ]}
+                    />
+                  </div>
+                )
+              }
+            ]}
+            rows={query.data?.users ?? []}
+            searchableText={(u: UserRecord) => `${u.displayName} ${u.email} ${u.role} ${u.clientAccount?.name ?? ""}`}
+            searchPlaceholder="Search users…"
+            loading={query.isLoading}
+            error={query.isError ? "Failed to load users." : null}
+            emptyTitle="No users yet"
+            emptyBody="Invite the first user to get started."
+            pageSize={25}
+            stateKey="admin-users"
+            ariaLabel="Users"
+            rowKey={(u: UserRecord) => u.id}
+          />
         </CardContent>
       </Card>
 

@@ -11,7 +11,10 @@ import { AttentionBadge } from "@/components/ui/attention-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Pagination } from "@/components/ui/pagination";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -116,6 +119,8 @@ export default function AttentionPage(): React.JSX.Element {
   const [maintenanceStart, setMaintenanceStart] = useState("");
   const [maintenanceEnd, setMaintenanceEnd] = useState("");
   const [maintenanceReason, setMaintenanceReason] = useState("");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 15;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const params = new URLSearchParams({ view });
@@ -245,28 +250,28 @@ export default function AttentionPage(): React.JSX.Element {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <select value={severity} onChange={(event) => setSeverity(event.target.value)} className="rounded-md border border-border bg-panelAlt px-3 py-2 text-sm">
+        <Select value={severity} onChange={(event) => { setSeverity(event.target.value); setPage(0); }} className="w-auto min-w-36">
           <option value="">All severities</option><option value="CRITICAL">Critical</option><option value="WARNING">Warning</option><option value="INFO">Info</option>
-        </select>
-        <select value={conditionType} onChange={(event) => setConditionType(event.target.value)} className="rounded-md border border-border bg-panelAlt px-3 py-2 text-sm">
+        </Select>
+        <Select value={conditionType} onChange={(event) => { setConditionType(event.target.value); setPage(0); }} className="w-auto min-w-44">
           <option value="">All condition types</option>{conditionTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-        </select>
-        <select value={nodeId} onChange={(event) => setNodeId(event.target.value)} className="rounded-md border border-border bg-panelAlt px-3 py-2 text-sm">
+        </Select>
+        <Select value={nodeId} onChange={(event) => { setNodeId(event.target.value); setPage(0); }} className="w-auto min-w-40">
           <option value="">All nodes</option>{(refsQuery.data?.nodes ?? []).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}
-        </select>
-        <select value={workloadId} onChange={(event) => setWorkloadId(event.target.value)} className="rounded-md border border-border bg-panelAlt px-3 py-2 text-sm">
+        </Select>
+        <Select value={workloadId} onChange={(event) => { setWorkloadId(event.target.value); setPage(0); }} className="w-auto min-w-44">
           <option value="">All workloads</option>{(refsQuery.data?.workloads ?? []).map((workload) => <option key={workload.id} value={workload.id}>{workload.name}</option>)}
-        </select>
-        <select value={maintenanceFilter} onChange={(event) => setMaintenanceFilter(event.target.value)} className="rounded-md border border-border bg-panelAlt px-3 py-2 text-sm">
+        </Select>
+        <Select value={maintenanceFilter} onChange={(event) => { setMaintenanceFilter(event.target.value); setPage(0); }} className="w-auto min-w-44">
           <option value="">Any maintenance state</option><option value="active">Under maintenance</option><option value="none">Not under maintenance</option>
-        </select>
+        </Select>
       </div>
 
       <section className="space-y-2" aria-label={`${view} attention conditions`}>
         {conditionsQuery.isLoading && <div className="h-24 animate-pulse rounded-lg bg-panelAlt" />}
         {conditionsQuery.isError && <p className="rounded-lg border border-critical/30 bg-critical/5 p-4 text-critical-foreground">Failed to load attention conditions.</p>}
         {!conditionsQuery.isLoading && conditions.length === 0 && <p className="rounded-lg border border-border bg-panelAlt/40 p-5 text-sm text-muted">No conditions match these filters.</p>}
-        {conditions.map((condition) => (
+        {conditions.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((condition) => (
           <button key={condition.id} type="button" onClick={() => setSelectedId(condition.id)} className={`w-full rounded-lg border p-4 text-left transition hover:border-accent/50 ${condition.resolvedAt ? "border-border bg-panelAlt/30 opacity-75" : condition.severity === "CRITICAL" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -289,6 +294,17 @@ export default function AttentionPage(): React.JSX.Element {
           </button>
         ))}
       </section>
+
+      {conditions.length > PAGE_SIZE && (
+        <Pagination
+          start={page * PAGE_SIZE + 1}
+          end={Math.min((page + 1) * PAGE_SIZE, conditions.length)}
+          total={conditions.length}
+          page={page + 1}
+          pageCount={Math.ceil(conditions.length / PAGE_SIZE)}
+          onPageChange={(p) => setPage(p - 1)}
+        />
+      )}
 
       {maintenanceWindows.length > 0 && (
         <section>
@@ -335,11 +351,11 @@ export default function AttentionPage(): React.JSX.Element {
       </Modal>
 
       <Modal open={silenceOpen} onClose={() => setSilenceOpen(false)} title="Silence notifications" description="The issue remains visible and operational severity does not change." footer={<><Button variant="secondary" onClick={() => setSilenceOpen(false)}>Cancel</Button><Button onClick={() => silence.mutate()} disabled={silence.isPending || (silenceDuration === "custom" && !silenceCustomEnd)}>Silence</Button></>}>
-        <div className="space-y-3"><label className="block text-sm">Duration<select className="mt-1 w-full rounded-md border border-border bg-panelAlt px-3 py-2" value={silenceDuration} onChange={(event) => setSilenceDuration(event.target.value)}><option value="30">30 minutes</option><option value="60">1 hour</option><option value="240">4 hours</option><option value="tomorrow">Until tomorrow 09:00</option><option value="custom">Custom</option></select></label>{silenceDuration === "custom" && <label className="block text-sm">Ends ({timeZone})<input type="datetime-local" className="mt-1 w-full rounded-md border border-border bg-panelAlt px-3 py-2" value={silenceCustomEnd} onChange={(event) => setSilenceCustomEnd(event.target.value)} /></label>}<label className="block text-sm">Reason (optional)<Textarea className="mt-1" value={silenceReason} onChange={(event) => setSilenceReason(event.target.value)} maxLength={1000} /></label></div>
+        <div className="space-y-3"><label className="block text-sm">Duration<Select className="mt-1" value={silenceDuration} onChange={(event) => setSilenceDuration(event.target.value)}><option value="30">30 minutes</option><option value="60">1 hour</option><option value="240">4 hours</option><option value="tomorrow">Until tomorrow 09:00</option><option value="custom">Custom</option></Select></label>{silenceDuration === "custom" && <label className="block text-sm">Ends ({timeZone})<Input type="datetime-local" className="mt-1" value={silenceCustomEnd} onChange={(event) => setSilenceCustomEnd(event.target.value)} /></label>}<label className="block text-sm">Reason (optional)<Textarea className="mt-1" value={silenceReason} onChange={(event) => setSilenceReason(event.target.value)} maxLength={1000} /></label></div>
       </Modal>
 
       <Modal open={maintenanceOpen} onClose={() => setMaintenanceOpen(false)} title="Schedule maintenance" description={`Times are shown in ${timeZone}. No containers will be stopped.`} footer={<><Button variant="secondary" onClick={() => setMaintenanceOpen(false)}>Cancel</Button><Button onClick={() => schedule.mutate()} disabled={schedule.isPending || !maintenanceResourceId || !maintenanceEnd}>Schedule</Button></>}>
-        <div className="space-y-3"><label className="block text-sm">Resource type<select className="mt-1 w-full rounded-md border border-border bg-panelAlt px-3 py-2" value={maintenanceScope} onChange={(event) => { const scope = event.target.value as "NODE" | "WORKLOAD"; setMaintenanceScope(scope); setMaintenanceResourceId(scope === "NODE" ? refsQuery.data?.nodes[0]?.id ?? "" : refsQuery.data?.workloads[0]?.id ?? ""); }}><option value="NODE">Node</option><option value="WORKLOAD">Workload</option></select></label><label className="block text-sm">Resource<select className="mt-1 w-full rounded-md border border-border bg-panelAlt px-3 py-2" value={maintenanceResourceId} onChange={(event) => setMaintenanceResourceId(event.target.value)}><option value="">Select resource</option>{(maintenanceScope === "NODE" ? refsQuery.data?.nodes ?? [] : refsQuery.data?.workloads ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm">Starts<input type="datetime-local" className="mt-1 w-full rounded-md border border-border bg-panelAlt px-3 py-2" value={maintenanceStart} onChange={(event) => setMaintenanceStart(event.target.value)} /></label><label className="block text-sm">Ends<input type="datetime-local" className="mt-1 w-full rounded-md border border-border bg-panelAlt px-3 py-2" value={maintenanceEnd} onChange={(event) => setMaintenanceEnd(event.target.value)} /></label></div><label className="block text-sm">Reason<Textarea className="mt-1" value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} maxLength={1000} placeholder="Kernel update" /></label><p className="text-xs text-muted">Behavior: suppress operational notifications. Underlying health remains truthful.</p></div>
+        <div className="space-y-3"><label className="block text-sm">Resource type<Select className="mt-1" value={maintenanceScope} onChange={(event) => { const scope = event.target.value as "NODE" | "WORKLOAD"; setMaintenanceScope(scope); setMaintenanceResourceId(scope === "NODE" ? refsQuery.data?.nodes[0]?.id ?? "" : refsQuery.data?.workloads[0]?.id ?? ""); }}><option value="NODE">Node</option><option value="WORKLOAD">Workload</option></Select></label><label className="block text-sm">Resource<Select className="mt-1" value={maintenanceResourceId} onChange={(event) => setMaintenanceResourceId(event.target.value)}><option value="">Select resource</option>{(maintenanceScope === "NODE" ? refsQuery.data?.nodes ?? [] : refsQuery.data?.workloads ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></label><div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm">Starts<Input type="datetime-local" className="mt-1" value={maintenanceStart} onChange={(event) => setMaintenanceStart(event.target.value)} /></label><label className="block text-sm">Ends<Input type="datetime-local" className="mt-1" value={maintenanceEnd} onChange={(event) => setMaintenanceEnd(event.target.value)} /></label></div><label className="block text-sm">Reason<Textarea className="mt-1" value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} maxLength={1000} placeholder="Kernel update" /></label><p className="text-xs text-muted">Behavior: suppress operational notifications. Underlying health remains truthful.</p></div>
       </Modal>
     </div>
   );

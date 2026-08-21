@@ -134,7 +134,7 @@ export default function AdminClientsPage(): React.JSX.Element {
       <PageHeader eyebrow="Tenancy" title="Clients" description="Organizations and who can access what." actions={<Button onClick={() => setCreateOpen(true)}>Create client</Button>} />
 
       <div className="mb-4">
-        <input
+        <Input
           type="search"
           value={search}
           onChange={(e) => {
@@ -143,7 +143,7 @@ export default function AdminClientsPage(): React.JSX.Element {
           }}
           placeholder="Search clients…"
           aria-label="Search clients"
-          className="w-64 rounded-md border border-border bg-panelAlt px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className="w-64"
         />
       </div>
 

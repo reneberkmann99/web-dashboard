@@ -3,16 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Loader2, PlayCircle, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Loader2, PlayCircle, Server, X } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { MetricCard } from "@/components/ui/metric-card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
+import { ResourceUsage } from "@/components/ui/resource-usage";
 import { timeAgo, humanizeAction } from "@/lib/format";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
-import type { AttentionItem, WorkloadSummary, FleetSummary, RecentFailure, ActiveOperationSummary } from "@/types/domain";
+import type { AttentionItem, WorkloadSummary, FleetSummary, RecentFailure, ActiveOperationSummary, ResourceThresholds } from "@/types/domain";
 
 type OverviewPayload = {
   utilization: {
@@ -34,10 +35,13 @@ type OverviewPayload = {
     offline: boolean;
     staleHeartbeat: boolean;
     containerCount: number;
+    telemetryCurrent: boolean;
+    systemInfo: Record<string, unknown> | null;
   }>;
+  resourceThresholds: ResourceThresholds;
   attention: AttentionItem[];
   workloads: WorkloadSummary[];
-  recentActivity: Array<{ id: string; action: string; humanized: string; actorEmail: string | null; result: string; createdAt: string }>;
+  recentActivity: Array<{ id: string; action: string; humanized: string; actorEmail: string | null; result: string; createdAt: string; targetLabel: string | null }>;
   recentFailures: RecentFailure[];
   activeOperations: ActiveOperationSummary[];
 };
@@ -97,10 +101,11 @@ export default function AdminOverviewPage(): React.JSX.Element {
     );
   }
 
-  const { fleetSummary, nodes, attention, workloads, recentActivity, recentFailures, activeOperations } = query.data;
+  const { fleetSummary, nodes, attention, workloads, recentActivity, recentFailures, activeOperations, resourceThresholds } = query.data;
   const unexpectedAttention = attention.filter((item) => !item.maintenance);
   const maintenanceAttention = attention.filter((item) => item.maintenance);
   const attentionVisible = unexpectedAttention.length > 0;
+  const fleetNominal = fleetSummary.attentionIssues === 0 && fleetSummary.nodesOnline === fleetSummary.nodesTotal;
 
   const renderAttentionCard = (item: AttentionItem): React.JSX.Element => (
     <button
@@ -135,7 +140,24 @@ export default function AdminOverviewPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Fleet" title="Overview" description="Operational state of your fleet — and what requires attention." />
+      <PageHeader
+        eyebrow="Fleet"
+        title="Overview"
+        description={
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-text-muted">Operational state of your fleet — and what requires attention.</span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px] ${
+                fleetNominal ? "border-border bg-surface-raised/60 text-success-foreground" : "border-warning/30 bg-warning/5 text-warning-foreground"
+              }`}
+              title="Fleet-wide status from the last telemetry poll"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${fleetNominal ? "bg-success" : "bg-warning"}`} />
+              {fleetNominal ? "fleet nominal" : `${fleetSummary.attentionIssues} issue${fleetSummary.attentionIssues === 1 ? "" : "s"}`}
+            </span>
+          </div>
+        }
+      />
 
       {/* Fleet summary (§2) — concise counters, never a Grafana clone */}
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
@@ -173,7 +195,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
         <h2 className="mb-2 text-lg font-semibold">Needs attention</h2>
         {!attentionVisible ? (
           <div className="rounded-panel border border-border bg-surface-raised/35 p-4 text-sm text-text-muted">
-            No unexpected active issues. All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and{" "}
+            Nothing needs you. All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and{" "}
             {fleetSummary.workloadsTotal} workload{fleetSummary.workloadsTotal === 1 ? "" : "s"} are operating normally.
           </div>
         ) : (
@@ -221,6 +243,60 @@ export default function AdminOverviewPage(): React.JSX.Element {
         </section>
       )}
 
+      {/* Fleet Resources — real per-node telemetry (CPU/RAM/disk). */}
+      <section aria-label="Fleet resources">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Fleet resources</h2>
+          <Link href="/admin/nodes" className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+            Manage <ArrowRight size={14} />
+          </Link>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {nodes.map((node) => {
+            const sys = (node.systemInfo ?? {}) as Record<string, unknown>;
+            return (
+              <a
+                key={node.id}
+                href={`/admin/nodes/${node.id}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  go({ url: `/admin/nodes/${node.id}`, label: node.name, type: "node", id: node.id });
+                }}
+                className="cursor-pointer rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-surface-raised">
+                      <Server size={13} className="text-accent" />
+                    </span>
+                    <span className="truncate font-medium">{node.name}</span>
+                  </div>
+                  <Badge variant={node.offline ? "danger" : node.staleHeartbeat ? "warning" : "success"}>
+                    {node.offline ? "offline" : node.staleHeartbeat ? "stale" : "online"}
+                  </Badge>
+                </div>
+                <ResourceUsage
+                  cpuPercent={typeof sys.cpuPercent === "number" ? sys.cpuPercent : null}
+                  memPercent={typeof sys.memPercent === "number" ? sys.memPercent : null}
+                  diskPercent={typeof sys.diskPercent === "number" ? sys.diskPercent : null}
+                  diskTotalBytes={typeof sys.diskTotalBytes === "number" ? sys.diskTotalBytes : null}
+                  diskFreeBytes={typeof sys.diskFreeBytes === "number" ? sys.diskFreeBytes : null}
+                  totalMemBytes={typeof sys.totalMemBytes === "number" ? sys.totalMemBytes : null}
+                  cpuCount={typeof sys.cpuCount === "number" ? sys.cpuCount : null}
+                  telemetryCurrent={node.telemetryCurrent && !node.offline && !node.staleHeartbeat}
+                  state={node.offline ? "offline" : node.staleHeartbeat ? "stale" : "current"}
+                  thresholds={resourceThresholds}
+                  compact
+                />
+                <p className="mt-2 font-mono text-[11px] text-text-subtle">
+                  {node.containerCount} containers · heartbeat {timeAgo(node.lastHeartbeatAt)}
+                </p>
+              </a>
+            );
+          })}
+        </div>
+      </section>
+
       {/* Workloads */}
       <section>
         <div className="mb-2 flex items-center justify-between">
@@ -250,7 +326,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
                   <p className="font-medium">{w.name}</p>
                   <AttentionBadge severity={w.health === "down" ? "critical" : w.health === "degraded" ? "warning" : w.health} />
                 </div>
-                <p className="mt-0.5 text-xs text-muted">{w.nodeName}</p>
+                <p className="mt-0.5 font-mono text-[11px] text-text-muted">{w.nodeName}</p>
                 <p className="mt-3 font-mono text-sm">
                   {w.runningContainers}/{w.totalContainers} running
                   {w.intentionallyStoppedContainers > 0 && (
@@ -258,7 +334,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
                   )}
                 </p>
                 {(w.cpuPercent !== null || w.memoryUsage) && (
-                  <p className="mt-1 text-xs text-muted">
+                  <p className="mt-1 font-mono text-[11px] text-text-muted">
                     {w.cpuPercent !== null ? `${w.cpuPercent}% CPU` : ""}
                     {w.cpuPercent !== null && w.memoryUsage ? " · " : ""}
                     {w.memoryUsage ?? ""}
@@ -287,19 +363,22 @@ export default function AdminOverviewPage(): React.JSX.Element {
                 event.preventDefault();
                 go({ url: `/admin/nodes/${node.id}`, label: node.name, type: "node", id: node.id });
               }}
-              className="cursor-pointer rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
+              className="flex cursor-pointer items-center gap-3 rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
             >
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{node.name}</p>
-                <Badge
-                  variant={node.offline ? "danger" : node.staleHeartbeat ? "warning" : "success"}
-                >
-                  {node.offline ? "offline" : node.staleHeartbeat ? "stale" : "online"}
-                </Badge>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[0.625rem] bg-surface-raised">
+                <Server size={16} className="text-accent" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="truncate font-medium">{node.name}</p>
+                  <Badge variant={node.offline ? "danger" : node.staleHeartbeat ? "warning" : "success"}>
+                    {node.offline ? "offline" : node.staleHeartbeat ? "stale" : "online"}
+                  </Badge>
+                </div>
+                <p className="mt-0.5 font-mono text-xs text-text-muted">
+                  {node.containerCount} containers · heartbeat {timeAgo(node.lastHeartbeatAt)}
+                </p>
               </div>
-              <p className="mt-0.5 font-mono text-xs text-text-muted">
-                {node.containerCount} containers · heartbeat {timeAgo(node.lastHeartbeatAt)}
-              </p>
             </a>
           ))}
         </div>
@@ -369,11 +448,12 @@ export default function AdminOverviewPage(): React.JSX.Element {
             <ul className="divide-y divide-border">
               {recentActivity.map((a) => (
                 <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                  <span>
+                  <span className="min-w-0">
                     {a.humanized}
-                    <span className="ml-2 text-xs text-muted">{a.actorEmail ?? "system"}</span>
+                    {a.targetLabel && <span className="ml-1.5 font-mono text-[13px] text-text-muted">{a.targetLabel}</span>}
+                    <span className="ml-2 text-xs text-text-muted">{a.actorEmail ?? "system"}</span>
                   </span>
-                  <span className="shrink-0 text-xs text-muted">{timeAgo(a.createdAt)}</span>
+                  <span className="shrink-0 font-mono text-xs text-text-muted">{timeAgo(a.createdAt)}</span>
                 </li>
               ))}
             </ul>
