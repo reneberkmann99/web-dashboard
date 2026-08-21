@@ -339,11 +339,13 @@ export async function forceCleanupWorkload(projectId: string, containerNames: st
   if (!project) return;
   const deployment = await prisma.deployment.findUnique({ where: { projectId }, select: { id: true } });
   if (deployment) {
-    await prisma.deploymentRelease.deleteMany({ where: { deploymentId: deployment.id } });
-    await prisma.deploymentOperation.deleteMany({ where: { deploymentId: deployment.id } });
-    await prisma.deploymentRevision.deleteMany({ where: { deploymentId: deployment.id } });
-    await prisma.deployment.delete({ where: { id: deployment.id } });
+    // Raw SQL mirrors the psql delete order proven against the scratch DB
+    // (Prisma client deleteMany left FK-referencing rows behind here).
+    await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentRelease" WHERE "deploymentId" = $1`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentOperation" WHERE "deploymentId" = $1`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentRevision" WHERE "deploymentId" = $1`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "Deployment" WHERE "id" = $1`, deployment.id);
   }
-  await prisma.container.deleteMany({ where: { projectId } });
-  await prisma.project.delete({ where: { id: projectId } });
+  await prisma.$executeRawUnsafe(`DELETE FROM "Container" WHERE "projectId" = $1`, projectId);
+  await prisma.$executeRawUnsafe(`DELETE FROM "Project" WHERE "id" = $1`, projectId);
 }
