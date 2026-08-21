@@ -306,7 +306,9 @@ export async function adminFetch<T = unknown>(
   return json as T;
 }
 
-/** Delete a workload via the deletion-plan API (containers removed, volumes/networks preserved). */
+/** Delete a workload via the deletion-plan API (containers removed, volumes/networks preserved).
+ *  NOTE: the backend REFUSES managed workloads (deployment exists) — use
+ *  forceCleanupWorkload for those. This works for unmanaged workloads only. */
 export async function deleteWorkloadViaApi(page: Page, csrf: string, projectId: string): Promise<void> {
   const plan = await api<{ managed: boolean; namedVolumesPreserved: boolean; networksPreserved: boolean }>(
     page,
@@ -316,4 +318,32 @@ export async function deleteWorkloadViaApi(page: Page, csrf: string, projectId: 
   expect(plan.namedVolumesPreserved).toBe(true);
   expect(plan.networksPreserved).toBe(true);
   await api(page, `/api/admin/workloads/${projectId}`, { method: "DELETE", csrf, expectStatus: 200 });
+}
+
+/**
+ * Force-remove a disposable E2E fixture: docker containers by EXACT name +
+ * DB rows in FK order. Managed workloads (deployment exists) cannot be
+ * deleted through the API by design (codified in workload-lifecycle tests),
+ * so E2E fixtures are removed directly from the SCRATCH database — never
+ * from any production store.
+ */
+export async function forceCleanupWorkload(projectId: string, containerNames: string[]): Promise<void> {
+  for (const name of containerNames) {
+    try {
+      docker(["rm", "-f", name]);
+    } catch {
+      /* already gone */
+    }
+  }
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return;
+  const deployment = await prisma.deployment.findUnique({ where: { projectId }, select: { id: true } });
+  if (deployment) {
+    await prisma.deploymentRelease.deleteMany({ where: { deploymentId: deployment.id } });
+    await prisma.deploymentOperation.deleteMany({ where: { deploymentId: deployment.id } });
+    await prisma.deploymentRevision.deleteMany({ where: { deploymentId: deployment.id } });
+    await prisma.deployment.delete({ where: { id: deployment.id } });
+  }
+  await prisma.container.deleteMany({ where: { projectId } });
+  await prisma.project.delete({ where: { id: projectId } });
 }

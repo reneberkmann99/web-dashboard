@@ -14,8 +14,7 @@ import {
   adminUserId,
   e2eNodeId,
   injectSession,
-  newAdminSession,
-  adminFetch,
+  forceCleanupWorkload,
   docker,
   dockerInspect,
   containerState,
@@ -147,13 +146,10 @@ test.describe.serial("E2E-A form-based creation + edit + redeploy", () => {
   });
 
   test.afterAll(async () => {
-    // Cleanup: delete the workload via the deletion-plan API, then verify the
-    // container is gone and nothing unrelated changed.
+    // Cleanup: managed workloads cannot be deleted via the API (by design) —
+    // force-remove the disposable fixture from the scratch DB + docker.
     if (projectId) {
-      const { token, csrf } = await newAdminSession();
-      const plan = await adminFetch<{ namedVolumesPreserved: boolean }>(token, csrf, `/api/admin/workloads/${projectId}/deletion-plan`);
-      expect(plan.namedVolumesPreserved).toBe(true);
-      await adminFetch(token, csrf, `/api/admin/workloads/${projectId}`, { method: "DELETE", expectStatus: 200 });
+      await forceCleanupWorkload(projectId, [expectedContainer]);
       const after = snapshotInventory();
       assertUnrelatedUntouched(before, after, [expectedContainer, slug, `${slug}_default`]);
       expect(docker(["ps", "-a", "--format", "{{.Names}}"])).not.toContain(expectedContainer);

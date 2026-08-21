@@ -17,8 +17,7 @@ import {
   adminUserId,
   e2eNodeId,
   injectSession,
-  newAdminSession,
-  adminFetch,
+  forceCleanupWorkload,
   docker,
   dockerInspect,
   containerState,
@@ -126,13 +125,11 @@ test.describe.serial("E2E-B manual adoption", () => {
   });
 
   test.afterAll(async () => {
-    // Cleanup by exact name: remove the workload (deletion-plan API) and the
-    // standalone fixture container. Never wildcard.
+    // Cleanup by exact name: force-remove the adopted workload fixture
+    // (managed workloads cannot be API-deleted by design) and the standalone
+    // fixture container. Never wildcard.
     if (projectId) {
-      const { token, csrf } = await newAdminSession();
-      const plan = await adminFetch<{ namedVolumesPreserved: boolean }>(token, csrf, `/api/admin/workloads/${projectId}/deletion-plan`);
-      expect(plan.namedVolumesPreserved).toBe(true);
-      await adminFetch(token, csrf, `/api/admin/workloads/${projectId}`, { method: "DELETE", expectStatus: 200 });
+      await forceCleanupWorkload(projectId, [containerName]);
     }
     if (docker(["ps", "-a", "--format", "{{.Names}}"]).split("\n").includes(containerName)) {
       docker(["rm", "-f", containerName]);

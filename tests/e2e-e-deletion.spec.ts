@@ -20,14 +20,15 @@ import {
   adminUserId,
   e2eNodeId,
   injectSession,
+  forceCleanupWorkload,
   docker,
+  dockerInspect,
   containerState,
   volumeNames,
   snapshotInventory,
   assertUnrelatedUntouched,
   createDeploymentViaApi,
   deployViaApi,
-  deleteWorkloadViaApi,
   suffix,
   type Inventory
 } from "./e2e/helpers";
@@ -109,18 +110,52 @@ test.describe.serial("E2E-E deletion lifecycle", () => {
     await context.close();
   });
 
-  test("workload delete: containers removed, volumes preserved, unrelated untouched", async ({ browser }) => {
+  test("workload delete: managed refused; unmanaged delete removes containers, volumes preserved", async ({ browser }) => {
     const context = await browser.newContext();
     const csrf = await injectSession(context, adminId);
     const page = await context.newPage();
 
-    await deleteWorkloadViaApi(page, csrf, projectId);
+    // 1. Managed workload: the deletion plan is reviewable, but the DELETE is
+    // refused by design ("remove it from Noderaft management first").
+    const plan = await apiJson(page, csrf, `/api/admin/workloads/${projectId}/deletion-plan`, "GET");
+    expect((plan as { managed: boolean }).managed).toBe(true);
+    const refused = await page.request.fetch(`${BASE_URL}/api/admin/workloads/${projectId}`, {
+      method: "DELETE",
+      headers: { "x-csrf-token": csrf }
+    });
+    expect(refused.status()).toBe(409);
 
-    expect(docker(["ps", "-a", "--format", "{{.Names}}"])).not.toContain(appContainer);
-    // Persistent data is a SEPARATE opt-in — the workload delete preserves it.
+    // 2. Unmanaged workload fixture: a real disposable container linked to a
+    // project WITHOUT a deployment → the plan is reviewable and the delete
+    // removes the container through the agent.
+    const unmanagedName = `noderaft-e2e-unmanaged-${s}`;
+    docker(["run", "-d", "--name", unmanagedName, "nginx:1.27-alpine"]);
+    const cid = String((dockerInspect(unmanagedName).Id as string) ?? "");
+    const proj = await prisma.project.create({
+      data: { name: `E2E Unmanaged ${s}`, slug: `e2e-unmanaged-${s}`, source: "MANUAL", nodeId, isActive: true }
+    });
+    await prisma.container.create({
+      data: {
+        nodeId,
+        dockerContainerId: cid,
+        dockerName: unmanagedName,
+        image: "nginx:1.27-alpine",
+        projectId: proj.id,
+        lastKnownStatus: "running",
+        isActive: true
+      }
+    });
+
+    const unmanagedPlan = await apiJson(page, csrf, `/api/admin/workloads/${proj.id}/deletion-plan`, "GET");
+    expect((unmanagedPlan as { managed: boolean }).managed).toBe(false);
+    await apiJson(page, csrf, `/api/admin/workloads/${proj.id}`, "DELETE");
+    expect(docker(["ps", "-a", "--format", "{{.Names}}"])).not.toContain(unmanagedName);
+    expect(await prisma.project.findUnique({ where: { id: proj.id } })).toBeNull();
+
+    // The named volume of the (still-managed) workload is untouched by all of this.
     expect(volumeNames()).toContain(namedVolume);
     const after = snapshotInventory();
-    assertUnrelatedUntouched(before, after, [appContainer, sidecarContainer, namedVolume, composeProject, `${composeProject}_default`]);
+    assertUnrelatedUntouched(before, after, [appContainer, sidecarContainer, namedVolume, composeProject, `${composeProject}_default`, unmanagedName]);
     await context.close();
   });
 
@@ -166,6 +201,10 @@ test.describe.serial("E2E-E deletion lifecycle", () => {
   });
 
   test.afterAll(async () => {
+    // Force-remove the managed workload fixture (cannot be API-deleted).
+    if (projectId) {
+      await forceCleanupWorkload(projectId, [appContainer, sidecarContainer]);
+    }
     // Remove the preserved named volume by exact name (our fixture).
     if (volumeNames().includes(namedVolume)) {
       docker(["volume", "rm", namedVolume]);

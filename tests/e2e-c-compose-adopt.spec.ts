@@ -19,8 +19,7 @@ import {
   adminUserId,
   e2eNodeId,
   injectSession,
-  newAdminSession,
-  adminFetch,
+  forceCleanupWorkload,
   docker,
   dockerInspect,
   containerState,
@@ -157,12 +156,12 @@ test.describe.serial("E2E-C compose adoption", () => {
   });
 
   test.afterAll(async () => {
+    // Force-remove the adopted compose-stack fixture (managed workloads
+    // cannot be API-deleted by design), then tear down the stack by exact
+    // project name (NO -v, NO wildcards).
     if (projectId) {
-      const { token, csrf } = await newAdminSession();
-      await adminFetch(token, csrf, `/api/admin/workloads/${projectId}/deletion-plan`);
-      await adminFetch(token, csrf, `/api/admin/workloads/${projectId}`, { method: "DELETE", expectStatus: 200 });
+      await forceCleanupWorkload(projectId, [webContainer, workerContainer]);
     }
-    // Tear down the stack by exact project name (NO -v, NO wildcards).
     docker(["compose", "-p", projectName, "-f", path.join(stackDir, "compose.yml"), "down"]);
     const after = snapshotInventory();
     assertUnrelatedUntouched(before, after, [webContainer, workerContainer, networkName]);

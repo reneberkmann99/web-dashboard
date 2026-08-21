@@ -21,8 +21,7 @@ import {
   adminUserId,
   e2eNodeId,
   injectSession,
-  newAdminSession,
-  adminFetch,
+  forceCleanupWorkload,
   docker,
   snapshotInventory,
   assertUnrelatedUntouched,
@@ -202,13 +201,10 @@ test.describe.serial("E2E-D client permissions", () => {
   });
 
   test.afterAll(async () => {
-    const { token, csrf } = await newAdminSession();
-    for (const id of [projectId, extraProjectId]) {
-      if (!id) continue;
-      const plan = await adminFetch<{ namedVolumesPreserved: boolean }>(token, csrf, `/api/admin/workloads/${id}/deletion-plan`);
-      expect(plan.namedVolumesPreserved).toBe(true);
-      await adminFetch(token, csrf, `/api/admin/workloads/${id}`, { method: "DELETE", expectStatus: 200 });
-    }
+    // Managed workloads cannot be API-deleted (by design) — force-remove the
+    // disposable fixtures from the scratch DB + docker.
+    if (projectId) await forceCleanupWorkload(projectId, [expectedContainer]);
+    if (extraProjectId) await forceCleanupWorkload(extraProjectId, []);
 
     await prisma.user.deleteMany({ where: { clientAccountId: clientId } });
     await prisma.clientNodeAccess.deleteMany({ where: { clientAccountId: clientId } });
