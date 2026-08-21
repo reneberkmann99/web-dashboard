@@ -26,6 +26,7 @@ export async function GET(): Promise<Response> {
         apiBaseUrl: true,
         status: true,
         isActive: true,
+        composeSupported: true,
         agentVersion: true,
         dockerVersion: true,
         lastHeartbeatAt: true,

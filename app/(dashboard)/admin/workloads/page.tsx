@@ -162,10 +162,15 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         eyebrow="Fleet"
         title="Workloads"
         description="Logical services running across your infrastructure."
-        actions={<Button variant="secondary" onClick={() => router.push("/admin/compose")}>
-          <Compass size={14} className="mr-2" />
-          Discover Compose projects
-        </Button>}
+        actions={<>
+          <Button variant="secondary" onClick={() => router.push("/admin/compose")}>
+            <Compass size={14} className="mr-2" />
+            Discover Compose projects
+          </Button>
+          <Button size="sm" onClick={() => router.push("/admin/workloads/new")}>
+            New workload
+          </Button>
+        </>}
       />
 
       <DataTable
