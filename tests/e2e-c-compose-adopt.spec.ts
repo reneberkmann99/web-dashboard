@@ -83,21 +83,31 @@ test.describe.serial("E2E-C compose adoption", () => {
     // --- discover ---
     await page.goto(`${BASE_URL}/admin/compose`);
     await expect(page.getByRole("heading", { name: /Discover/i })).toBeVisible({ timeout: 30_000 });
-    await page.getByText(projectName, { exact: false }).first().waitFor({ timeout: 60_000 });
+    const fixtureRow = page.getByRole("row", { name: new RegExp(projectName) });
+    await fixtureRow.waitFor({ timeout: 60_000 });
 
-    // --- adopt via the wizard ---
-    await page.getByRole("button", { name: "Review & adopt" }).first().click();
+    // --- adopt via the wizard (target OUR row, never a real project) ---
+    await fixtureRow.getByRole("button", { name: "Review & adopt" }).click();
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 15_000 });
     await page.getByLabel("Workload name").fill(workloadName);
-    await page.getByRole("button", { name: /adopt/i }).last().click();
+    // Wizard: Step 1 (name) → Next → Step 2 (owner) → Next → Step 3 → Adopt.
+    await page.getByRole("button", { name: "Next" }).click();
+    await page.getByRole("button", { name: "Next" }).click();
+    await page.getByRole("button", { name: "Adopt workload" }).click();
 
-    // Workload exists + managed definition was captured (Phase B).
+    // Workload exists + managed definition was captured (Phase B). The adopt
+    // POST authors the project first, then inspects + authors the definition
+    // in the same request — poll for the DEPLOYMENT (the definition step) so
+    // we don't race the in-flight inspection.
     await expect
       .poll(() => prisma.project.count({ where: { name: workloadName } }), { timeout: 60_000 })
       .toBeGreaterThan(0);
     const project = await prisma.project.findFirstOrThrow({ where: { name: workloadName } });
     projectId = project.id;
-    const deployment = await prisma.deployment.findUniqueOrThrow({ where: { projectId } });
+    await expect
+      .poll(() => prisma.deployment.count({ where: { projectId } }), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    const deployment = await prisma.deployment.findFirstOrThrow({ where: { projectId } });
     deploymentId = deployment.id;
     expect(deployment.runtimeState).toBe("CONVERGED");
     const revision = await prisma.deploymentRevision.findFirstOrThrow({

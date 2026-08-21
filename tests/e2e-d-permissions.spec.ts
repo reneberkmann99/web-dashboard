@@ -61,7 +61,7 @@ test.describe.serial("E2E-D client permissions", () => {
   let adminUserId2 = "";
   let projectId = "";
   let deploymentId = "";
-  let containerRowId = "";
+  let grantId = "";
   let extraProjectId = "";
   let before: Inventory;
 
@@ -93,14 +93,43 @@ test.describe.serial("E2E-D client permissions", () => {
       name: workloadName,
       nodeId,
       composeProject,
+      clientAccountId: clientId,
       compose: "services:\n  app:\n    image: nginx:1.27-alpine\n"
     });
     projectId = wl.projectId;
     deploymentId = wl.deploymentId;
     const result = await deployViaApi(page, csrf, wl);
     expect(result.succeeded).toBe(true);
-    const containerRow = await prisma.container.findFirstOrThrow({ where: { projectId } });
-    containerRowId = containerRow.id;
+
+    // Runtime access is GRANT-based, not ownership-based: a client operator
+    // can start/stop/restart only via a project-level AccessGrant. Create it
+    // for the client so the operator (and admin) roles can act on containers.
+    const grant = await prisma.accessGrant.create({
+      data: {
+        clientAccountId: clientId,
+        nodeId,
+        projectId,
+        allowedActions: ["start", "stop", "restart"],
+        isActive: true
+      }
+    });
+    // The client container action route resolves by GRANT id, not Container id.
+    grantId = grant.id;
+    // Container inventory is discovered lazily via the agent sweep (throttled
+    // reconcile triggered by the containers/overview APIs). Poll the containers
+    // API repeatedly — each call drives a fresh snapshot/reconcile — until the
+    // deployed container is recorded and associated with the project.
+    const deadline = Date.now() + 90_000;
+    let containerRow: { id: string } | null = null;
+    while (Date.now() < deadline) {
+      await page.request.fetch(`${BASE_URL}/api/admin/containers`, {
+        headers: { "x-csrf-token": csrf }
+      });
+      containerRow = await prisma.container.findFirst({ where: { projectId } });
+      if (containerRow) break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    expect(containerRow).not.toBeNull();
     await adminContext.close();
   });
 
@@ -118,7 +147,7 @@ test.describe.serial("E2E-D client permissions", () => {
     await expectStatus(page, csrf, `/api/client/deployments/${deploymentId}/plan`, "POST", 403, {});
     await expectStatus(page, csrf, `/api/client/deployments/${deploymentId}/deploy`, "POST", 403, {});
     await expectStatus(page, csrf, `/api/client/deployments/${deploymentId}/secrets`, "GET", 403);
-    await expectStatus(page, csrf, `/api/client/containers/${containerRowId}/action`, "POST", 403, { action: "stop" });
+    await expectStatus(page, csrf, `/api/client/containers/${grantId}/action`, "POST", 403, { action: "stop" });
 
     // UI — sees the workload, but no create affordance is effective.
     await page.goto(`${BASE_URL}/client/workloads`);
@@ -132,9 +161,13 @@ test.describe.serial("E2E-D client permissions", () => {
     const csrf = await injectSession(context, operatorId);
     const page = await context.newPage();
 
-    // API — runtime ops allowed.
-    await expectStatus(page, csrf, `/api/client/containers/${containerRowId}/action`, "POST", 200, { action: "stop" });
-    await expectStatus(page, csrf, `/api/client/containers/${containerRowId}/action`, "POST", 200, { action: "start" });
+    // API — runtime ops allowed (202 Accepted — operation queued). Wait for
+    // each op to reach a terminal state so the next action isn't blocked by
+    // the "one active operation per container" guard.
+    const stopOp = await apiJson(page, csrf, `/api/client/containers/${grantId}/action`, "POST", { action: "stop" });
+    await waitForContainerOp((stopOp as { operationId: string }).operationId);
+    const startOp = await apiJson(page, csrf, `/api/client/containers/${grantId}/action`, "POST", { action: "start" });
+    await waitForContainerOp((startOp as { operationId: string }).operationId);
     // API — config/deploy/secrets forbidden.
     await expectStatus(page, csrf, "/api/client/deployments", "POST", 403, { nodeId, name: "x", composeProjectName: "x", compose: "services:\n  app:\n    image: nginx:stable\n" });
     await expectStatus(page, csrf, `/api/client/deployments/${deploymentId}/revisions`, "POST", 403, { compose: "services:\n  app:\n    image: nginx:stable\n", environment: {}, secretReferences: [], acknowledgedFindings: [] });
@@ -164,11 +197,10 @@ test.describe.serial("E2E-D client permissions", () => {
     });
     expect((created as { projectId: string }).projectId).toBeTruthy();
     extraProjectId = (created as { projectId: string }).projectId;
-    // Cleanup the extra workload right away (deletion-plan API).
-    const plan = await apiJson(page, csrf, `/api/admin/workloads/${extraProjectId}/deletion-plan`, "GET");
-    expect((plan as { namedVolumesPreserved: boolean }).namedVolumesPreserved).toBe(true);
-    // NOTE: client admin cannot delete workloads — deletion is ADMIN-only, so
-    // this extra workload is removed in afterAll via the admin session.
+    // Client admin CANNOT delete workloads — deletion is ADMIN-only. Assert
+    // the forbidden status directly rather than calling the ADMIN endpoint
+    // with a client session.
+    await expectStatus(page, csrf, `/api/admin/workloads/${extraProjectId}/deletion-plan`, "GET", 403);
 
     // API — new revision on the owned workload.
     const rev = await apiJson(page, csrf, `/api/client/deployments/${deploymentId}/revisions`, "POST", {
@@ -203,7 +235,7 @@ test.describe.serial("E2E-D client permissions", () => {
   test.afterAll(async () => {
     // Managed workloads cannot be API-deleted (by design) — force-remove the
     // disposable fixtures from the scratch DB + docker.
-    if (projectId) await forceCleanupWorkload(projectId, [expectedContainer]);
+    if (projectId) await forceCleanupWorkload(projectId, [expectedContainer], [`${composeProject}_default`]);
     if (extraProjectId) await forceCleanupWorkload(extraProjectId, []);
 
     await prisma.user.deleteMany({ where: { clientAccountId: clientId } });
@@ -236,6 +268,10 @@ async function apiJson(
   }
   if (res.status() >= 400) {
     throw new Error(`api ${method} ${path} -> ${res.status()}: ${text.slice(0, 300)}`);
+  }
+  // Unwrap the standard { ok, data } envelope.
+  if (json && typeof json === "object" && (json as { ok?: boolean }).ok === true && "data" in (json as object)) {
+    return (json as { data: unknown }).data;
   }
   return json;
 }
@@ -271,4 +307,17 @@ async function waitForOp(operationId: string, timeoutMs: number): Promise<void> 
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error(`operation ${operationId} did not finish`);
+}
+
+async function waitForContainerOp(operationId: string, timeoutMs = 120_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const op = await prisma.operation.findUnique({ where: { id: operationId }, select: { state: true } });
+    if (op && ["SUCCEEDED", "FAILED", "CANCELLED"].includes(op.state)) {
+      expect(op.state).toBe("SUCCEEDED");
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error(`container op ${operationId} did not finish`);
 }

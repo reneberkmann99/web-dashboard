@@ -322,17 +322,33 @@ export async function deleteWorkloadViaApi(page: Page, csrf: string, projectId: 
 
 /**
  * Force-remove a disposable E2E fixture: docker containers by EXACT name +
- * DB rows in FK order. Managed workloads (deployment exists) cannot be
- * deleted through the API by design (codified in workload-lifecycle tests),
- * so E2E fixtures are removed directly from the SCRATCH database — never
- * from any production store.
+ * DB rows in FK order, then any compose-generated networks by EXACT name
+ * (e.g. `${composeProject}_default`) once no container is attached to them.
+ * Managed workloads (deployment exists) cannot be deleted through the API
+ * by design (codified in workload-lifecycle tests), so E2E fixtures are
+ * removed directly from the SCRATCH database — never from any production
+ * store. Leaving fixture networks behind exhausts Docker's default IPAM
+ * pools after repeated runs ("all predefined address pools have been fully
+ * subnetted"), which then fails unrelated deploys — always pass
+ * `networkNames` for any fixture that created its own compose network.
  */
-export async function forceCleanupWorkload(projectId: string, containerNames: string[]): Promise<void> {
+export async function forceCleanupWorkload(
+  projectId: string,
+  containerNames: string[],
+  networkNames: string[] = []
+): Promise<void> {
   for (const name of containerNames) {
     try {
       docker(["rm", "-f", name]);
     } catch {
       /* already gone */
+    }
+  }
+  for (const name of networkNames) {
+    try {
+      docker(["network", "rm", name]);
+    } catch {
+      /* already gone, or still in use by an unrelated fixture — never force */
     }
   }
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
@@ -341,8 +357,16 @@ export async function forceCleanupWorkload(projectId: string, containerNames: st
   if (deployment) {
     // Raw SQL mirrors the psql delete order proven against the scratch DB
     // (Prisma client deleteMany left FK-referencing rows behind here).
+    // FK order: secrets (versions→secrets) → releases (images/secrets→releases)
+    // → operations → revision findings/acks → revisions → deployment.
+    await prisma.$executeRawUnsafe(`DELETE FROM "SecretVersion" WHERE "secretId" IN (SELECT id FROM "Secret" WHERE "deploymentId" = $1)`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "Secret" WHERE "deploymentId" = $1`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentReleaseImage" WHERE "releaseId" IN (SELECT id FROM "DeploymentRelease" WHERE "deploymentId" = $1)`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentReleaseSecret" WHERE "releaseId" IN (SELECT id FROM "DeploymentRelease" WHERE "deploymentId" = $1)`, deployment.id);
     await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentRelease" WHERE "deploymentId" = $1`, deployment.id);
     await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentOperation" WHERE "deploymentId" = $1`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentRevisionSecurityFinding" WHERE "revisionId" IN (SELECT id FROM "DeploymentRevision" WHERE "deploymentId" = $1)`, deployment.id);
+    await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentSecurityAcknowledgement" WHERE "revisionId" IN (SELECT id FROM "DeploymentRevision" WHERE "deploymentId" = $1)`, deployment.id);
     await prisma.$executeRawUnsafe(`DELETE FROM "DeploymentRevision" WHERE "deploymentId" = $1`, deployment.id);
     await prisma.$executeRawUnsafe(`DELETE FROM "Deployment" WHERE "id" = $1`, deployment.id);
   }

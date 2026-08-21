@@ -175,16 +175,22 @@ test.describe.serial("E2E-E deletion lifecycle", () => {
     const csrf = await injectSession(context, adminId);
     const page = await context.newPage();
 
-    // Deactivate → login refused.
+    // Login probes run in an isolated cookie jar so a successful login
+    // never overwrites the admin session cookie shared by `page` (which
+    // would poison the CSRF token pairing for subsequent admin calls).
+    const loginProbe = await (await import("@playwright/test")).request.newContext({ baseURL: BASE_URL });
+
+    // Deactivate → login refused (403 ACCOUNT_DISABLED — distinct from a bad
+    // password's 401 INVALID_CREDENTIALS).
     await apiJson(page, csrf, `/api/admin/users/${user.id}`, "PATCH", { isActive: false });
-    const login1 = await page.request.post(`${BASE_URL}/api/auth/login`, {
+    const login1 = await loginProbe.post(`${BASE_URL}/api/auth/login`, {
       data: { email: user.email, password: "E2eUserPass!2026" }
     });
-    expect(login1.status()).toBe(401);
+    expect(login1.status()).toBe(403);
 
     // Reactivate → login works.
     await apiJson(page, csrf, `/api/admin/users/${user.id}`, "PATCH", { isActive: true });
-    const login2 = await page.request.post(`${BASE_URL}/api/auth/login`, {
+    const login2 = await loginProbe.post(`${BASE_URL}/api/auth/login`, {
       data: { email: user.email, password: "E2eUserPass!2026" }
     });
     expect(login2.status()).toBe(200);
@@ -193,17 +199,18 @@ test.describe.serial("E2E-E deletion lifecycle", () => {
     await apiJson(page, csrf, `/api/admin/users/${user.id}`, "DELETE");
     const gone = await prisma.user.findUnique({ where: { id: user.id } });
     expect(gone).toBeNull();
-    const login3 = await page.request.post(`${BASE_URL}/api/auth/login`, {
+    const login3 = await loginProbe.post(`${BASE_URL}/api/auth/login`, {
       data: { email: user.email, password: "E2eUserPass!2026" }
     });
     expect(login3.status()).toBe(401);
+    await loginProbe.dispose();
     await context.close();
   });
 
   test.afterAll(async () => {
     // Force-remove the managed workload fixture (cannot be API-deleted).
     if (projectId) {
-      await forceCleanupWorkload(projectId, [appContainer, sidecarContainer]);
+      await forceCleanupWorkload(projectId, [appContainer, sidecarContainer], [`${composeProject}_default`]);
     }
     // Remove the preserved named volume by exact name (our fixture).
     if (volumeNames().includes(namedVolume)) {
@@ -235,6 +242,10 @@ async function apiJson(
   }
   if (res.status() >= 400) {
     throw new Error(`api ${method} ${path} -> ${res.status()}: ${text.slice(0, 300)}`);
+  }
+  // Unwrap the standard { ok, data } envelope.
+  if (json && typeof json === "object" && (json as { ok?: boolean }).ok === true && "data" in (json as object)) {
+    return (json as { data: unknown }).data;
   }
   return json;
 }

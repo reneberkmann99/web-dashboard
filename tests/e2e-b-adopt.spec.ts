@@ -37,6 +37,7 @@ test.describe.serial("E2E-B manual adoption", () => {
   let startedAtBefore = "";
   let projectId = "";
   let deploymentId = "";
+  let composeNet = "";
   let before: Inventory;
 
   test.beforeAll(async () => {
@@ -89,6 +90,9 @@ test.describe.serial("E2E-B manual adoption", () => {
     projectId = containerRow.projectId as string;
     const deployment = await prisma.deployment.findUniqueOrThrow({ where: { projectId } });
     deploymentId = deployment.id;
+    // The first deploy recreates the container under compose management, which
+    // also creates the project's default network <composeProjectName>_default.
+    composeNet = `${deployment.composeProjectName}_default`;
     expect(deployment.runtimeState).toBe("CONVERGED");
 
     // --- verify NO adoption-time recreation ---
@@ -131,22 +135,29 @@ test.describe.serial("E2E-B manual adoption", () => {
     const env = (inspect.Config as { Env?: string[] }).Env ?? [];
     expect(env).toContain("E2E_ADOPTED=yes");
     const afterDeploy = snapshotInventory();
-    assertUnrelatedUntouched(before, afterDeploy, [containerName]);
+    assertUnrelatedUntouched(before, afterDeploy, [containerName, composeNet]);
     await context.close();
   });
 
   test.afterAll(async () => {
     // Cleanup by exact name: force-remove the adopted workload fixture
-    // (managed workloads cannot be API-deleted by design) and the standalone
-    // fixture container. Never wildcard.
+    // (managed workloads cannot be API-deleted by design), the standalone
+    // fixture container, and the compose default network. Never wildcard.
     if (projectId) {
       await forceCleanupWorkload(projectId, [containerName]);
     }
     if (docker(["ps", "-a", "--format", "{{.Names}}"]).split("\n").includes(containerName)) {
       docker(["rm", "-f", containerName]);
     }
+    if (composeNet && docker(["network", "ls", "--format", "{{.Name}}"]).split("\n").includes(composeNet)) {
+      try {
+        docker(["network", "rm", composeNet]);
+      } catch {
+        /* already gone */
+      }
+    }
     const after = snapshotInventory();
-    assertUnrelatedUntouched(before, after, [containerName]);
+    assertUnrelatedUntouched(before, after, [containerName, composeNet]);
   });
 });
 

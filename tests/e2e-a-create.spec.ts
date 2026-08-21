@@ -149,7 +149,7 @@ test.describe.serial("E2E-A form-based creation + edit + redeploy", () => {
     // Cleanup: managed workloads cannot be deleted via the API (by design) —
     // force-remove the disposable fixture from the scratch DB + docker.
     if (projectId) {
-      await forceCleanupWorkload(projectId, [expectedContainer]);
+      await forceCleanupWorkload(projectId, [expectedContainer], [`${slug}_default`]);
       const after = snapshotInventory();
       assertUnrelatedUntouched(before, after, [expectedContainer, slug, `${slug}_default`]);
       expect(docker(["ps", "-a", "--format", "{{.Names}}"])).not.toContain(expectedContainer);
