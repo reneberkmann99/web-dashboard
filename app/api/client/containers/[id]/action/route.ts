@@ -1,4 +1,5 @@
-import { requireApiRole } from "@/server/auth/guards";
+import { requireApiRole, requireCapability } from "@/server/auth/guards";
+import type { Capability } from "@/server/auth/policy";
 import { resolveActionTarget } from "@/server/services/containers";
 import { requestOperation, OperationConflictError } from "@/server/services/operations";
 import { fail, fromError, ok } from "@/server/http";
@@ -15,6 +16,11 @@ export async function POST(
 
     const body = containerActionSchema.parse(await request.json());
     const sourceIp = getSourceIpFromRequest(request);
+
+    // Capability gate BEFORE grant resolution: a grant may permit an action on
+    // a container, but the caller's ROLE must also permit it. CLIENT_VIEWER has
+    // no runtime capabilities and is refused here even for granted containers.
+    requireCapability(session, `container.${body.action}` as Capability);
 
     const target = await resolveActionTarget(session, id, body.action);
     if (!target) {

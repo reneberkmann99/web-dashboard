@@ -10,17 +10,41 @@ import type { AuthSession } from "@/server/auth/session";
  * explicit `can(...)` check, never by a bare `role === "X"` comparison
  * scattered through route handlers.
  *
- * Capability reference (see also the brief):
+ * Capability reference:
  *   platform.admin            — full platform administration (users, clients, nodes, audit)
  *   client.manage             — manage a client account (its users/projects/grants)
  *   user.manage               — manage users (platform-wide for ADMIN, own client for CLIENT_ADMIN)
  *   node.manage               — register/configure nodes (ADMIN only by construction)
- *   project.view              — see the workloads of the caller's client
- *   container.view            — see container inventory of the caller's client
+ *
+ *   workload.view             — see workloads (and their configuration/history)
+ *   workload.create           — create new workloads
+ *   workload.edit             — change a workload's configuration (new revisions)
+ *   workload.deploy           — apply configuration to the runtime (deploy/rollback)
+ *   workload.adopt            — bring existing Docker resources under management
+ *   workload.delete           — deactivate / unmanage / delete a workload
+ *
+ *   container.view            — see container inventory
  *   container.view_logs       — read container logs
+ *   container.edit            — change a container's configuration (managed: via workload)
  *   container.start           — start a granted container
  *   container.stop            — stop a granted container
  *   container.restart         — restart a granted container
+ *   container.delete          — remove a standalone container
+ *
+ *   secrets.manage            — create/rotate deployment secrets
+ *
+ * Legacy aliases (`project.view`, `project.create`, `deployment.view`,
+ * `deployment.manage`, `deployment.deploy`) are retained so existing route
+ * handlers keep compiling; they resolve to the granular capabilities above.
+ *
+ * Role intent:
+ *   ADMIN           — everything.
+ *   CLIENT_ADMIN    — operator rights + configuration editing, deploying,
+ *                     secrets, and user management inside their own client.
+ *   CLIENT_OPERATOR — view + permitted RUNTIME actions (start/stop/restart,
+ *                     logs). Explicitly NOT allowed to change configuration,
+ *                     deploy, or manage secrets.
+ *   CLIENT_VIEWER   — read only.
  *
  * Node administration is deliberately NOT granted to any client role.
  */
@@ -30,16 +54,59 @@ export type Capability =
   | "client.manage"
   | "user.manage"
   | "node.manage"
-  | "project.view"
-  | "project.create"
+  // Workload lifecycle
+  | "workload.view"
+  | "workload.create"
+  | "workload.edit"
+  | "workload.deploy"
+  | "workload.adopt"
+  | "workload.delete"
+  // Container lifecycle
   | "container.view"
   | "container.view_logs"
+  | "container.edit"
   | "container.start"
   | "container.stop"
   | "container.restart"
+  | "container.delete"
+  // Secrets
+  | "secrets.manage"
+  // Legacy aliases (kept for existing call sites)
+  | "project.view"
+  | "project.create"
   | "deployment.view"
   | "deployment.manage"
   | "deployment.deploy";
+
+/** Read-only capabilities every client role has. */
+const VIEWER_CAPABILITIES: Capability[] = [
+  "workload.view",
+  "project.view",
+  "container.view",
+  "container.view_logs",
+  "deployment.view"
+];
+
+/** Runtime actions an operator may perform without editing configuration. */
+const OPERATOR_RUNTIME_CAPABILITIES: Capability[] = [
+  "container.start",
+  "container.stop",
+  "container.restart"
+];
+
+/** Configuration authoring/deploy rights. */
+const EDITOR_CAPABILITIES: Capability[] = [
+  "workload.create",
+  "workload.edit",
+  "workload.deploy",
+  "workload.delete",
+  "container.edit",
+  "container.delete",
+  "secrets.manage",
+  "project.create",
+  "deployment.manage",
+  "deployment.deploy"
+];
 
 const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   ADMIN: [
@@ -47,62 +114,24 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "client.manage",
     "user.manage",
     "node.manage",
-    "project.view",
-    "project.create",
-    "container.view",
-    "container.view_logs",
-    "container.start",
-    "container.stop",
-    "container.restart",
-    "deployment.view",
-    "deployment.manage",
-    "deployment.deploy"
+    "workload.adopt",
+    ...VIEWER_CAPABILITIES,
+    ...OPERATOR_RUNTIME_CAPABILITIES,
+    ...EDITOR_CAPABILITIES
   ],
-  // Deprecated legacy value retained for migration safety; treated as operator.
-  CLIENT: [
-    "project.view",
-    "project.create",
-    "container.view",
-    "container.view_logs",
-    "container.start",
-    "container.stop",
-    "container.restart",
-    "deployment.view",
-    "deployment.manage",
-    "deployment.deploy"
-  ],
+  // Deprecated legacy value retained for migration safety; treated as a
+  // client admin (its historical grant set).
+  CLIENT: [...VIEWER_CAPABILITIES, ...OPERATOR_RUNTIME_CAPABILITIES, ...EDITOR_CAPABILITIES],
   CLIENT_ADMIN: [
     "client.manage",
     "user.manage",
-    "project.view",
-    "project.create",
-    "container.view",
-    "container.view_logs",
-    "container.start",
-    "container.stop",
-    "container.restart",
-    "deployment.view",
-    "deployment.manage",
-    "deployment.deploy"
+    ...VIEWER_CAPABILITIES,
+    ...OPERATOR_RUNTIME_CAPABILITIES,
+    ...EDITOR_CAPABILITIES
   ],
-  CLIENT_OPERATOR: [
-    "project.view",
-    "project.create",
-    "container.view",
-    "container.view_logs",
-    "container.start",
-    "container.stop",
-    "container.restart",
-    "deployment.view",
-    "deployment.manage",
-    "deployment.deploy"
-  ],
-  CLIENT_VIEWER: [
-    "project.view",
-    "container.view",
-    "container.view_logs",
-    "deployment.view"
-  ]
+  // Operator: runtime actions only — no configuration edit, no deploy, no secrets.
+  CLIENT_OPERATOR: [...VIEWER_CAPABILITIES, ...OPERATOR_RUNTIME_CAPABILITIES],
+  CLIENT_VIEWER: [...VIEWER_CAPABILITIES]
 };
 
 export function capabilitiesForRole(role: Role): Capability[] {

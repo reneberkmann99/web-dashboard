@@ -111,15 +111,19 @@ describe("tenant isolation — negative tests", () => {
     const visible = await resolveVisibleContainersForSession(viewer);
     expect(Array.from(visible.values()).some((r) => r.dockerContainerId === world.web.dockerContainerId)).toBe(true);
 
-    // …but cannot start it: the project grant for client A allows start, yet
-    // resolveActionTarget is grant-based only — the VIEWER role gate happens
-    // in the route via policy.ts (can(session, "container.start") == false).
-    // Here we assert the grant-level plumbing works (target resolves), and
-    // the policy test in authorization.test.ts proves the viewer gate.
+    // …but cannot act on it. The project grant for client A DOES allow start,
+    // so this proves the ROLE capability gate is enforced independently of the
+    // grant: resolveActionTarget refuses a viewer outright.
     const projectGrant = await prisma.accessGrant.findFirstOrThrow({
       where: { clientAccountId: world.clientA.id, projectId: world.projectA.id }
     });
-    const target = await resolveActionTarget(viewer, projectGrant.id, "start");
-    expect(target).not.toBeNull();
+    for (const action of ["start", "stop", "restart"] as const) {
+      expect(await resolveActionTarget(viewer, projectGrant.id, action)).toBeNull();
+    }
+
+    // An operator on the same grant IS allowed — the refusal above is about the
+    // role, not a broken grant.
+    const operator = sessionFor(world.clientAOperator);
+    expect(await resolveActionTarget(operator, projectGrant.id, "start")).not.toBeNull();
   });
 });

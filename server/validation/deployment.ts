@@ -108,3 +108,14 @@ export const rollbackSchema = z.object({
   revisionId: z.string().cuid().optional(),
   planHash: z.string().min(16).max(128)
 });
+
+/**
+ * Compose service name as it appears in a URL path segment. Deliberately
+ * stricter than Compose itself (no slashes, no traversal) so a service name can
+ * never be used to escape the route.
+ */
+export const serviceNameParamSchema = z
+  .string()
+  .min(1)
+  .max(120)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, "Invalid service name");

@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { WorkloadFormEditor } from "./form/workload-form";
 import { StructuredDiffView } from "./form/structured-diff-view";
 import { useUnsavedGuard } from "./form/use-unsaved-guard";
+import { RemoveServiceDialog } from "./form/remove-service-dialog";
 import { parseComposeToForm } from "@/lib/compose-form/parse";
 import { serializeForm } from "@/lib/compose-form/serialize";
 import { validateComposeForm, hasBlockingIssues } from "@/lib/compose-form/validate";
@@ -105,6 +106,7 @@ export function DeploymentEditor({
     | { mode: "rotate"; key: string; secretId: string; value: string }
     | null
   >(null);
+  const [removingService, setRemovingService] = useState<string | null>(null);
 
   const { guardedNavigate, dialog: unsavedDialog } = useUnsavedGuard(dirty && step === "edit");
 
@@ -258,6 +260,36 @@ export function DeploymentEditor({
       toast.error(deploymentErrorMessage(e));
     }
   };
+
+  const removeServiceMutation = useMutation({
+    mutationFn: async (serviceName: string) => {
+      const res = await apiFetch<{ status: string; revisionId: string; revisionNumber: number }>(
+        `${apiBase}/${deploymentId}/services/${encodeURIComponent(serviceName)}`,
+        { method: "DELETE" }
+      );
+      return res;
+    },
+    onSuccess: (res) => {
+      setRemovingService(null);
+      toast.success(
+        `Service removed — saved as revision ${res.revisionNumber}. Review the plan and deploy to apply it.`
+      );
+      void queryClient.invalidateQueries({ queryKey: ["deployment-releases"] });
+      void queryClient.invalidateQueries({ queryKey: ["deployment-revision"] });
+      void queryClient.invalidateQueries({ queryKey: ["deployment-latest-revision"] });
+      // Reload the editor from the new revision.
+      setCompose(null);
+      setForm(null);
+      setBaseCompose(null);
+      setSavedRevision(null);
+      setValidation(null);
+      setStep("edit");
+    },
+    onError: (e) => {
+      setRemovingService(null);
+      toast.error(deploymentErrorMessage(e));
+    }
+  });
 
   const deploy = useMutation({
     mutationFn: async () => {
@@ -434,20 +466,7 @@ export function DeploymentEditor({
                   }
                   setSecretDialog({ mode: "rotate", key, secretId: secret.id, value: "" });
                 }}
-                onRemoveService={
-                  editingDisabled
-                    ? undefined
-                    : (serviceName) => {
-                        const next: ComposeForm = {
-                          ...form,
-                          services: form.services.filter((s) => s.name.trim() !== serviceName)
-                        };
-                        applyForm(next);
-                        toast.success(
-                          `Service "${serviceName}" removed from the definition. Save a revision, review the plan, then deploy to remove its container. Named volumes are preserved.`
-                        );
-                      }
-                }
+                onRemoveService={editingDisabled ? undefined : (serviceName) => setRemovingService(serviceName)}
               />
             )}
 
@@ -663,6 +682,18 @@ export function DeploymentEditor({
       {/* DONE */}
       {step === "done" && op && (
         <OperationResultView op={op} onRollback={() => router.push(rollbackHref)} onDone={() => router.push(backHref)} />
+      )}
+
+      {removingService && (
+        <RemoveServiceDialog
+          open
+          onClose={() => setRemovingService(null)}
+          onConfirm={() => removeServiceMutation.mutate(removingService)}
+          busy={removeServiceMutation.isPending}
+          apiBase={apiBase}
+          deploymentId={deploymentId}
+          serviceName={removingService}
+        />
       )}
 
       {secretDialog && (

@@ -13,6 +13,7 @@ import { Node, Prisma, Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import { type AuthSession } from "@/server/auth/session";
+import { can, type Capability } from "@/server/auth/policy";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { recordNodePoll } from "@/server/services/node-heartbeat";
 import { getAttentionMap, syncAttentionIfDue } from "@/server/services/attention";
@@ -364,12 +365,22 @@ export async function getContainerLogs(
 /**
  * Check that the session may perform `action` on the container referenced by
  * grantId, and return the resolved node + docker id if allowed.
+ *
+ * TWO independent gates, both server-side:
+ *  1. ROLE capability — `container.start|stop|restart`. CLIENT_VIEWER has none
+ *     of these, so a viewer is refused even for a container whose grant
+ *     permits the action. (Defense in depth: routes also gate, but this is the
+ *     authoritative check every caller passes through.)
+ *  2. GRANT scope — the specific grant must allow the action.
  */
 export async function resolveActionTarget(
   session: AuthSession,
   grantId: string,
   action: "start" | "stop" | "restart"
 ): Promise<{ nodeId: string; dockerContainerId: string; allowedActions: string[] } | null> {
+  if (!can(session, `container.${action}` as Capability)) {
+    return null;
+  }
   const { grant } = await getContainerByGrant(session, grantId);
   if (!grant) {
     return null;

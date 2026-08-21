@@ -12,26 +12,63 @@ beforeAll(async () => {
 });
 
 describe("deployment authorization", () => {
-  it("capability matrix: client operator/admin roles get deployment.manage/deploy (Phase 7 self-service); viewer stays read-only", () => {
+  it("capability matrix: CLIENT_ADMIN may author/deploy; CLIENT_OPERATOR is runtime-only; viewer is read-only", () => {
     const admin = capabilitiesForRole(Role.ADMIN);
     expect(admin).toContain("deployment.view");
     expect(admin).toContain("deployment.manage");
     expect(admin).toContain("deployment.deploy");
+    expect(admin).toContain("workload.adopt");
 
-    for (const role of [Role.CLIENT_ADMIN, Role.CLIENT_OPERATOR, Role.CLIENT]) {
+    // Configuration authoring roles.
+    for (const role of [Role.CLIENT_ADMIN, Role.CLIENT]) {
       const caps = capabilitiesForRole(role);
       expect(caps).toContain("deployment.view");
       expect(caps).toContain("deployment.manage");
       expect(caps).toContain("deployment.deploy");
       expect(caps).toContain("project.create");
+      expect(caps).toContain("workload.edit");
+      expect(caps).toContain("workload.deploy");
+      expect(caps).toContain("secrets.manage");
     }
+
+    // Operator: sees everything it is granted and may act on the RUNTIME, but
+    // may never change configuration, deploy, or manage secrets.
+    const operator = capabilitiesForRole(Role.CLIENT_OPERATOR);
+    expect(operator).toContain("workload.view");
+    expect(operator).toContain("deployment.view");
+    expect(operator).toContain("container.start");
+    expect(operator).toContain("container.stop");
+    expect(operator).toContain("container.restart");
+    expect(operator).toContain("container.view_logs");
+    expect(operator).not.toContain("workload.edit");
+    expect(operator).not.toContain("workload.deploy");
+    expect(operator).not.toContain("workload.create");
+    expect(operator).not.toContain("workload.delete");
+    expect(operator).not.toContain("secrets.manage");
+    expect(operator).not.toContain("deployment.manage");
+    expect(operator).not.toContain("deployment.deploy");
+    expect(operator).not.toContain("container.delete");
 
     // Viewer remains strictly read-only.
     const viewer = capabilitiesForRole(Role.CLIENT_VIEWER);
     expect(viewer).toContain("deployment.view");
+    expect(viewer).toContain("workload.view");
     expect(viewer).not.toContain("deployment.manage");
     expect(viewer).not.toContain("deployment.deploy");
     expect(viewer).not.toContain("project.create");
+    expect(viewer).not.toContain("container.start");
+    expect(viewer).not.toContain("container.stop");
+    expect(viewer).not.toContain("container.restart");
+    expect(viewer).not.toContain("secrets.manage");
+  });
+
+  it("no client role can adopt Docker resources or administer nodes/platform", () => {
+    for (const role of [Role.CLIENT_ADMIN, Role.CLIENT_OPERATOR, Role.CLIENT_VIEWER, Role.CLIENT]) {
+      const caps = capabilitiesForRole(role);
+      expect(caps).not.toContain("workload.adopt");
+      expect(caps).not.toContain("node.manage");
+      expect(caps).not.toContain("platform.admin");
+    }
   });
 
   async function managedWorkloadFor(clientId: string, nodeId: string) {
