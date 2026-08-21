@@ -33,7 +33,6 @@ test.describe.serial("E2E-B manual adoption", () => {
   let nodeId = "";
   const s = suffix();
   const containerName = `noderaft-e2e-adopt-${s}`;
-  const workloadName = `E2E Adopt ${s}`;
   let containerIdBefore = "";
   let startedAtBefore = "";
   let projectId = "";
@@ -71,12 +70,23 @@ test.describe.serial("E2E-B manual adoption", () => {
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: /adopt|manage with noderaft/i }).last().click();
 
-    // Adoption completes → workload exists.
+    // Adoption completes → the container row is upserted and linked to a
+    // freshly created workload (the adoption dialog names the workload after
+    // the container, not after any pre-chosen name).
     await expect
-      .poll(() => prisma.project.count({ where: { name: workloadName } }), { timeout: 30_000 })
-      .toBeGreaterThan(0);
-    const project = await prisma.project.findFirstOrThrow({ where: { name: workloadName } });
-    projectId = project.id;
+      .poll(
+        async () => {
+          const row = await prisma.container.findFirst({
+            where: { nodeId, dockerName: containerName },
+            select: { projectId: true }
+          });
+          return row?.projectId ?? null;
+        },
+        { timeout: 30_000 }
+      )
+      .not.toBeNull();
+    const containerRow = await prisma.container.findFirstOrThrow({ where: { nodeId, dockerName: containerName } });
+    projectId = containerRow.projectId as string;
     const deployment = await prisma.deployment.findUniqueOrThrow({ where: { projectId } });
     deploymentId = deployment.id;
     expect(deployment.runtimeState).toBe("CONVERGED");
