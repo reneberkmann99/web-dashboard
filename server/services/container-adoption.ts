@@ -583,11 +583,25 @@ export async function adoptContainer(input: {
     return { status: "blocked", blockers: [{ field: "adopt", verdict: "BLOCKER", detail: created.status }] };
   }
 
-  // Associate the inventory row with the new workload.
+  // Associate the inventory row with the new workload. The row may not exist
+  // yet when an operator adopts a container the inventory has not persisted —
+  // UPSERT instead of failing on a missing row.
   const serviceName = Object.keys((parseYaml(preview.compose) as { services: Record<string, unknown> }).services)[0];
-  await prisma.container.update({
+  const adoptedImage =
+    ((parseYaml(preview.compose) as { services: Record<string, { image?: string }> }).services[serviceName]?.image) ?? null;
+  await prisma.container.upsert({
     where: { nodeId_dockerContainerId: { nodeId: input.nodeId, dockerContainerId: input.dockerContainerId } },
-    data: {
+    create: {
+      nodeId: input.nodeId,
+      dockerContainerId: input.dockerContainerId,
+      dockerName: preview.dockerName,
+      image: adoptedImage,
+      projectId: created.projectId,
+      composeProject: composeProjectName,
+      composeService: serviceName,
+      isActive: true
+    },
+    update: {
       projectId: created.projectId,
       composeProject: composeProjectName,
       composeService: serviceName,

@@ -145,6 +145,18 @@ export class RootlessDockerAdapter implements DockerAdapter {
     }
   }
 
+  /**
+   * Full `docker inspect` document — required by manual container adoption
+   * (the control plane synthesizes a compose definition from the live
+   * container). Returns the raw daemon document (first element of the
+   * inspect array) or null when the container does not exist.
+   */
+  async inspectContainerFull(containerId: string): Promise<unknown> {
+    const { stdout } = await this.runDocker(["inspect", containerId]);
+    const parsed = JSON.parse(stdout.trim()) as unknown[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : null;
+  }
+
   private async inspectDetails(containerId: string): Promise<NonNullable<RuntimeContainer["details"]>> {
     try {
       const { stdout } = await this.runDocker([

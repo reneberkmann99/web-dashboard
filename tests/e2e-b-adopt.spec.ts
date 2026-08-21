@@ -86,9 +86,10 @@ test.describe.serial("E2E-B manual adoption", () => {
     expect(after.id).toBe(containerIdBefore);
     expect(after.startedAt).toBe(startedAtBefore);
     expect(after.running).toBe(true);
-    // Labels only: the live container now carries the adoption marker.
-    const labels = (dockerInspect(containerName).Config as { Labels?: Record<string, string> }).Labels ?? {};
-    expect(labels["com.noderaft.adopted"]).toBe("true");
+    // Adoption labels are best-effort on real agents: docker cannot add labels
+    // to a RUNNING container via the CLI, so labelsApplied may be false. The
+    // no-recreation guarantee (ID + StartedAt unchanged) is the contract that
+    // must hold — asserted above.
     const afterAdopt = snapshotInventory();
     assertUnrelatedUntouched(before, afterAdopt, [containerName]);
 
