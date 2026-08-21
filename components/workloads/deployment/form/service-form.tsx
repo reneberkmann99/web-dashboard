@@ -392,8 +392,9 @@ export function ServiceFormEditor({
                       removeLabel={`Remove environment variable ${e.key || i + 1}`}
                       onRemove={() => patch({ environment: service.environment.filter((x) => x.id !== e.id) })}
                     >
-                      <Field label="Key" className="min-w-[12rem] flex-1">
+                      <Field label="Key" htmlFor={`${idBase}-env-${i}-key`} className="min-w-[12rem] flex-1">
                         <Input
+                          id={`${idBase}-env-${i}-key`}
                           value={e.key}
                           aria-invalid={Boolean(err)}
                           disabled={readOnly}
@@ -402,7 +403,7 @@ export function ServiceFormEditor({
                           }
                         />
                       </Field>
-                      <Field label={e.isSecret ? "Secret reference" : "Value"} className="min-w-[14rem] flex-[2]">
+                      <Field label={e.isSecret ? "Secret reference" : "Value"} htmlFor={`${idBase}-env-${i}-value`} className="min-w-[14rem] flex-[2]">
                         {e.isSecret ? (
                           <div className="flex h-control items-center gap-2 rounded-control border border-border bg-surface-hull px-3">
                             <Badge variant="info">secret</Badge>
@@ -410,6 +411,7 @@ export function ServiceFormEditor({
                           </div>
                         ) : (
                           <Input
+                            id={`${idBase}-env-${i}-value`}
                             value={e.value}
                             disabled={readOnly}
                             onChange={(ev) =>
