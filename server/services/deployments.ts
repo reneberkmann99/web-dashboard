@@ -261,6 +261,10 @@ export async function createDeployment(input: {
   acknowledgedFindings: string[];
   deployNote?: string | null;
   policy?: "ADMIN" | "CLIENT";
+  /** When adopting into an ALREADY-EXISTING project (compose adoption), the
+   *  target project row is reused instead of creating a new one, and the
+   *  (nodeId, composeProject) uniqueness check skips that same row. */
+  adoptExistingProjectId?: string;
   actor: AuthSession;
   sourceIp?: string | null;
 }): Promise<CreateDeploymentResult> {
@@ -297,13 +301,19 @@ export async function createDeployment(input: {
     secretReferences: input.secretReferences
   });
 
-  // composeProjectName must be unique per node (Project @@unique([nodeId, composeProject])).
+  // composeProjectName must be unique per node (Project @@unique([nodeId, composeProject])),
+  // EXCEPT when adopting into an already-existing project: the target project
+  // IS that row, so the managed definition is authored onto it instead.
   const existingProject = await prisma.project.findFirst({
     where: { nodeId: input.nodeId, composeProject: input.composeProjectName },
-    select: { name: true }
+    select: { id: true, name: true }
   });
-  if (existingProject) {
+  if (existingProject && existingProject.id !== input.adoptExistingProjectId) {
     return { status: "compose_project_taken", existingName: existingProject.name };
+  }
+  const adoptingExisting = Boolean(input.adoptExistingProjectId && existingProject);
+  if (input.adoptExistingProjectId && !existingProject) {
+    return { status: "invalid", findings: [], composeErrors: ["Adoption target project not found on this node"] };
   }
 
   const slug = input.slug?.trim()
@@ -314,18 +324,27 @@ export async function createDeployment(input: {
   const envSnapshot = sortObjectEntries(input.environment);
 
   const result = await prisma.$transaction(async (tx) => {
-    const project = await tx.project.create({
-      data: {
-        name: input.name,
-        slug,
-        description: input.description ?? null,
-        source: ProjectSource.COMPOSE,
-        composeProject: input.composeProjectName,
-        clientAccountId: input.clientAccountId,
-        nodeId: input.nodeId,
-        isActive: true
-      }
-    });
+    const project = adoptingExisting && existingProject
+      ? await tx.project.update({
+          where: { id: existingProject.id },
+          data: {
+            name: input.name,
+            description: input.description ?? null,
+            clientAccountId: input.clientAccountId
+          }
+        })
+      : await tx.project.create({
+          data: {
+            name: input.name,
+            slug,
+            description: input.description ?? null,
+            source: ProjectSource.COMPOSE,
+            composeProject: input.composeProjectName,
+            clientAccountId: input.clientAccountId,
+            nodeId: input.nodeId,
+            isActive: true
+          }
+        });
 
     const deployment = await tx.deployment.create({
       data: {

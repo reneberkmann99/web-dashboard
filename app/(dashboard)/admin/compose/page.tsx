@@ -51,7 +51,13 @@ type DetailPayload = {
     workloadName: string | null;
   };
 };
-type AdoptPayload = { id: string };
+type AdoptPayload = {
+  id: string;
+  definition?:
+    | { status: "definition_created"; deploymentId: string; projectId: string; revisionId: string; serviceNames: string[] }
+    | { status: "node_offline" | "no_containers" | "compose_unavailable" | "synthesis_failed" | "invalid"; detail?: string }
+    | { status: "ack_required"; highRiskFindings?: Array<{ message: string }> };
+};
 
 function healthVariant(h: string): "success" | "warning" | "danger" | "default" {
   return h === "healthy" ? "success" : h === "degraded" ? "warning" : h === "down" ? "danger" : "default";
@@ -91,7 +97,18 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
         })
       }),
     onSuccess: (data) => {
-      toast.success("Workload adopted");
+      const definition = data.definition;
+      if (definition && definition.status === "definition_created") {
+        toast.success(`Workload adopted — ${definition.serviceNames.length} service(s) captured in the managed definition.`);
+      } else if (definition && definition.status === "ack_required") {
+        toast.success("Workload adopted — definition needs review (high-risk settings). Open the workload to acknowledge and create it.");
+      } else if (definition && definition.status === "synthesis_failed") {
+        toast.success(`Workload adopted — definition not captured (${definition.detail ?? "inspection failed"}). Open the workload to manage it.`);
+      } else if (definition && (definition.status === "node_offline" || definition.status === "compose_unavailable")) {
+        toast.success("Workload adopted — managed definition pending (node/Compose unavailable).");
+      } else {
+        toast.success("Workload adopted");
+      }
       setWizardOpen(false);
       setSelected(null);
       queryClient.invalidateQueries({ queryKey: ["compose-discovery"] });
