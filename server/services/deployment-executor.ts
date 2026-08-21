@@ -288,6 +288,33 @@ export async function executeDeploymentOperation(operationId: string): Promise<v
   await setPhase(operationId, DeploymentOperationPhase.APPLYING);
   const secrets = await decryptFrozenSecrets(frozenSecrets);
   let applyError: string | null = null;
+
+  // First deploy of an ADOPTED standalone container: the running container was
+  // created by `docker run` and has no `com.docker.compose.*` ownership labels
+  // (Docker cannot add labels to a running container, so compose can never
+  // reconcile it in place — `docker compose up -d` would fail with a name
+  // conflict on the pinned container_name). The brief permits recreation on
+  // later edits/deploys: remove the stale standalone container by EXACT
+  // identity (never a wildcard) so compose recreates it under management.
+  if (deployment.currentReleaseId === null) {
+    const adopted = await prisma.container.findMany({
+      where: { projectId: deployment.projectId, isActive: true },
+      select: { dockerContainerId: true }
+    });
+    for (const c of adopted) {
+      try {
+        const { inspect } = await nodeAgentClient.inspectContainerFull(node, c.dockerContainerId);
+        const labels = inspect?.Config?.Labels ?? {};
+        const composeOwned = "com.docker.compose.project" in labels;
+        if (!composeOwned) {
+          await nodeAgentClient.removeContainer(node, c.dockerContainerId);
+        }
+      } catch {
+        // If we cannot determine ownership, do NOT remove — fail-safe.
+      }
+    }
+  }
+
   const applied = await nodeAgentClient.applyDeployment(node, {
     deploymentId: deployment.id,
     operationId,

@@ -162,8 +162,12 @@ describe("adoption compose synthesis", () => {
     expect(svc.labels).toEqual({ "com.example.owner": "platform" });
 
     // External network + external volume declarations (never deletable).
-    expect(root.networks).toEqual({ bridge: { external: true }, "shared-net": { external: true } });
+    // Docker's built-in `bridge` network is deliberately NOT declared (compose
+    // rejects network-scoped aliases on built-ins); only user-defined networks
+    // are reproduced as external.
+    expect(root.networks).toEqual({ "shared-net": { external: true } });
     expect(root.volumes).toEqual({ "nginx-data": { external: true } });
+    expect(svc.networks).toEqual({ "shared-net": { aliases: ["web-alias"] } });
 
     // Verdicts: bind mounts + plaintext env are WARNINGs, not blockers.
     const bind = fields.find((f) => f.field === "volumes");

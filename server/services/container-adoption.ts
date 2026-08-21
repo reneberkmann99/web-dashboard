@@ -293,9 +293,20 @@ export function synthesizeComposeFromInspect(
     (svc as Record<string, unknown>).network_mode = "none";
   } else {
     const attached = inspect.NetworkSettings?.Networks ?? {};
-    const netNames = Object.keys(attached);
+    // Docker's built-in networks (bridge/host/none) cannot be declared as
+    // external user-defined networks in compose (compose rejects
+    // network-scoped aliases on them, and `docker compose up` cannot attach
+    // the default bridge as a managed network). Only reproduce USER-DEFINED
+    // networks; the recreated container joins the compose default network
+    // when the original was only on the default bridge.
+    const BUILTIN_NETWORKS = new Set(["bridge", "host", "none"]);
+    const netNames = Object.keys(attached).filter((n) => !BUILTIN_NETWORKS.has(n));
     if (netNames.length === 0) {
-      fields.push({ field: "networks", verdict: "PASS", detail: "No explicit networks (compose default network)." });
+      fields.push({
+        field: "networks",
+        verdict: "PASS",
+        detail: "No user-defined networks — recreated container joins the compose default network."
+      });
     } else {
       for (const netName of netNames) {
         const netInfo = attached[netName];

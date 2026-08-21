@@ -24,7 +24,9 @@ const agent = vi.hoisted(() => ({
   applyDeployment: vi.fn(),
   verifyDeployment: vi.fn(),
   abortDeployment: vi.fn(),
-  getDeploymentState: vi.fn()
+  getDeploymentState: vi.fn(),
+  inspectContainerFull: vi.fn(),
+  removeContainer: vi.fn()
 }));
 
 vi.mock("@/server/services/node-agent/client", () => ({ nodeAgentClient: agent }));
@@ -38,6 +40,10 @@ function stubSuccess() {
   agent.applyDeployment.mockResolvedValue({ ok: true, applied: true });
   agent.verifyDeployment.mockResolvedValue({ verdict: "CONVERGED_HEALTHY", services: [{ name: "web", status: "running", health: null, restartCount: 0 }] });
   agent.abortDeployment.mockResolvedValue(true);
+  // Adoption stale-container reconcile path: default to "not adopted" (no
+  // inspect result) and successful removal.
+  agent.inspectContainerFull.mockResolvedValue({ nodeOnline: true, inspect: null });
+  agent.removeContainer.mockResolvedValue(true);
 }
 
 beforeEach(() => {
@@ -476,5 +482,73 @@ describe("managed deployment executor", () => {
     expect(release.images[0].imageId).toBe("sha256:runtime-image-id");
     expect(release.images[0].repoDigest).toBe("nginx@sha256:runtime-digest");
     expect(release.images[0].imageRef).toBe("nginx:stable");
+  });
+
+  it("removes a stale adopted standalone container (no compose labels) before first apply, never a compose-owned one", async () => {
+    const throwaway = await seedWorld();
+    const { world, deployment, revision } = await makeManaged(sessionFor(throwaway.adminA));
+    const nodeId = world.node1.id;
+
+    // Link a standalone-adopted container (no compose ownership labels) to the
+    // project, plus a compose-owned container that must be left alone.
+    await prisma.container.create({
+      data: {
+        nodeId,
+        projectId: deployment.projectId,
+        dockerContainerId: "adopted-standalone-000",
+        dockerName: "adopted-standalone",
+        image: "nginx:1.27-alpine",
+        lastKnownStatus: "running",
+        isActive: true
+      }
+    });
+    await prisma.container.create({
+      data: {
+        nodeId,
+        projectId: deployment.projectId,
+        dockerContainerId: "compose-owned-000",
+        dockerName: "compose-owned",
+        image: "nginx:1.27-alpine",
+        lastKnownStatus: "running",
+        isActive: true
+      }
+    });
+
+    agent.inspectContainerFull.mockImplementation(async (_node: unknown, id: string) => {
+      if (id === "compose-owned-000") {
+        return { nodeOnline: true, inspect: { Config: { Labels: { "com.docker.compose.project": "ecp" } } } as never };
+      }
+      return { nodeOnline: true, inspect: { Config: { Labels: {} } } as never };
+    });
+
+    const planHash = (await recomputePlanHash(deployment.id, revision.id))!;
+    const result = await requestDeploymentOperation({ deploymentId: deployment.id, type: "DEPLOY", revisionId: revision.id, planHash, actor: sessionFor(world.adminA) });
+    await waitForTerminal((result as { operationId: string }).operationId);
+
+    expect(agent.removeContainer).toHaveBeenCalledWith(expect.objectContaining({ id: nodeId }), "adopted-standalone-000");
+    expect(agent.removeContainer).not.toHaveBeenCalledWith(expect.objectContaining({ id: nodeId }), "compose-owned-000");
+    expect(agent.applyDeployment).toHaveBeenCalled();
+  });
+
+  it("does NOT remove containers once a current release already exists", async () => {
+    const world = await seedWorld();
+    const { deployment, revision } = await makeManaged(sessionFor(world.adminA));
+    // Simulate a prior successful release so currentReleaseId is non-null.
+    await prisma.deployment.update({ where: { id: deployment.id }, data: { currentReleaseId: "unused-release-id" } });
+    await prisma.container.create({
+      data: {
+        nodeId: world.node1.id,
+        projectId: deployment.projectId,
+        dockerContainerId: "adopted-standalone-000",
+        dockerName: "adopted-standalone",
+        image: "nginx:1.27-alpine",
+        lastKnownStatus: "running",
+        isActive: true
+      }
+    });
+    const planHash = (await recomputePlanHash(deployment.id, revision.id))!;
+    const result = await requestDeploymentOperation({ deploymentId: deployment.id, type: "DEPLOY", revisionId: revision.id, planHash, actor: sessionFor(world.adminA) });
+    await waitForTerminal((result as { operationId: string }).operationId);
+    expect(agent.removeContainer).not.toHaveBeenCalled();
   });
 });
