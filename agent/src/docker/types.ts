@@ -76,6 +76,10 @@ export interface DockerAdapter {
   inspectNetworks?(names: string[]): Promise<NetworkInfo[]>;
   /** Batch-inspect specific named volumes by name (bounded by caller). */
   inspectVolumes?(names: string[]): Promise<VolumeInfo[]>;
+  /** Full `docker inspect` of one container as raw JSON (adoption preflight). */
+  inspectContainerFull?(containerId: string): Promise<unknown>;
+  /** Add labels to a live container without restarting it (adoption). */
+  updateContainerLabels?(containerId: string, labels: Record<string, string>): Promise<void>;
 }
 
 export type StorageSummaryEntry = {

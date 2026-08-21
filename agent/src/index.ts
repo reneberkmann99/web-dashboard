@@ -789,6 +789,52 @@ app.delete("/containers/:id", async (req: Request, res: Response) => {
 });
 
 /**
+ * Full `docker inspect` of one container as raw JSON. Read-only; used by the
+ * control-plane adoption preflight to reconstruct a compose definition.
+ */
+app.get("/containers/:id/inspect", async (req: Request, res: Response) => {
+  try {
+    const containerId = containerIdSchema.parse(req.params.id);
+    if (!adapter.inspectContainerFull) {
+      res.status(501).json({ nodeOnline: true, error: "Not supported by this adapter" });
+      return;
+    }
+    const inspect = await adapter.inspectContainerFull(containerId);
+    res.json({ nodeOnline: true, inspect });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ nodeOnline: true, error: "Invalid container id" });
+    } else {
+      res.status(502).json({ nodeOnline: true, error: "Failed to inspect container" });
+    }
+  }
+});
+
+/**
+ * Add labels to a live container WITHOUT stopping or restarting it. Used by
+ * adoption so the first compose-managed deploy can reconcile the existing
+ * container in place. Labels are only ever added — never removed here.
+ */
+app.post("/containers/:id/labels", async (req: Request, res: Response) => {
+  try {
+    const containerId = containerIdSchema.parse(req.params.id);
+    if (!adapter.updateContainerLabels) {
+      res.status(501).json({ nodeOnline: true, success: false, error: "Not supported by this adapter" });
+      return;
+    }
+    const body = z.object({ labels: z.record(z.string(), z.string()) }).parse((req.body ?? {}) as Record<string, unknown>);
+    await adapter.updateContainerLabels(containerId, body.labels);
+    res.json({ nodeOnline: true, success: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ nodeOnline: true, success: false, error: "Invalid labels payload" });
+    } else {
+      res.status(502).json({ nodeOnline: true, success: false, error: "Failed to update container labels" });
+    }
+  }
+});
+
+/**
  * TLS certificate enrollment (Phase 6B.1). The agent generates its key + CSR
  * LOCALLY and sends only the CSR, authenticated by a short-lived one-time
  * enrollment token. The control plane assigns the identity and returns the

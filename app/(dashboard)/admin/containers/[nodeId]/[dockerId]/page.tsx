@@ -14,6 +14,7 @@ import { shortId, timeAgo } from "@/lib/format";
 import type { AttentionItem, ContainerView, OperationView, OperationState } from "@/types/domain";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { PageHeader } from "@/components/ui/page-header";
+import { AdoptionDialog } from "@/components/workloads/adoption/adoption-dialog";
 import { ContextBackLink } from "@/components/navigation/context-back-link";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation } from "@/components/navigation/navigation-context";
@@ -49,6 +50,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<"start" | "stop" | "restart" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [adoptOpen, setAdoptOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const detail = useQuery({
@@ -170,6 +172,11 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
           >
             {container.status}
           </Badge>
+          {!isManaged && (
+            <Button size="sm" variant="secondary" onClick={() => setAdoptOpen(true)}>
+              Manage with Noderaft
+            </Button>
+          )}
           {!nodeOnline && <Badge variant="danger">Node unreachable</Badge>}
         </>}
       />
@@ -382,6 +389,10 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
         confirmLabel="Delete container"
         danger
       />
+
+      {adoptOpen && (
+        <AdoptionDialog nodeId={nodeId} dockerId={dockerId} onClose={() => setAdoptOpen(false)} />
+      )}
     </div>
   );
 }

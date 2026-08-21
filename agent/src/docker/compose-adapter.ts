@@ -191,6 +191,45 @@ export class DockerComposeAdapter {
     return result;
   }
 
+  /**
+   * Full `docker inspect` of ONE container as raw JSON. Used by the adoption
+   * preflight to reconstruct a compose definition that matches the running
+   * container — read-only.
+   */
+  async inspectContainerFull(containerId: string): Promise<unknown> {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/.test(containerId)) {
+      throw new Error("Invalid container id");
+    }
+    const { code, stdout, stderr } = await this.runDocker(["inspect", containerId, "--format", "{{json .}}"], {});
+    if (code !== 0) {
+      throw new Error(stderr.trim() || "docker inspect failed");
+    }
+    return JSON.parse(stdout) as unknown;
+  }
+
+  /**
+   * Add labels to an EXISTING container without stopping or restarting it
+   * (`docker container update --label-add`). Used by adoption to mark the
+   * live container as belonging to the new compose project so that the FIRST
+   * compose-managed deploy can reconcile it in place. Non-destructive: no
+   * stop/restart/remove, and labels only ever get added.
+   */
+  async updateContainerLabels(containerId: string, labels: Record<string, string>): Promise<void> {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/.test(containerId)) {
+      throw new Error("Invalid container id");
+    }
+    const args = ["container", "update"];
+    for (const [k, v] of Object.entries(labels)) {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(k)) continue;
+      args.push("--label-add", `${k}=${v.slice(0, 500)}`);
+    }
+    if (args.length === 2) return;
+    const { code, stderr } = await this.runDocker(args, {});
+    if (code !== 0) {
+      throw new Error(stderr.trim() || "docker container update failed");
+    }
+  }
+
   /** Plain `docker` invocation (argument array, never a shell). Read-only uses only. */
   private runDocker(args: string[], env: Record<string, string>): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {

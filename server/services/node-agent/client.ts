@@ -3,8 +3,12 @@ import crypto from "node:crypto";
 import { decryptSecret } from "@/server/security/crypto";
 import { signRequest, sha256Hex } from "@/server/security/agent-signing";
 import { secureFetch, SecureTransportError } from "@/server/services/node-agent/secure-transport";
+import { z } from "zod";
 import {
   containerDetailResponseSchema,
+  containerInspectSchema,
+  containerInspectResponseSchema,
+  containerLabelsResponseSchema,
   containerLogsResponseSchema,
   containerActionResponseSchema,
   listContainersResponseSchema,
@@ -150,6 +154,32 @@ export class NodeAgentClient {
     }
 
     return parsed.data;
+  }
+
+  /** Full `docker inspect` document (adoption preflight). Null when unavailable. */
+  async inspectContainerFull(
+    node: Node,
+    containerId: string
+  ): Promise<{ nodeOnline: boolean; inspect: z.infer<typeof containerInspectSchema> | null }> {
+    const result = await this.call<unknown>(node, `/containers/${encodeURIComponent(containerId)}/inspect`);
+    if (!result.ok || !result.data) {
+      return { nodeOnline: false, inspect: null };
+    }
+    const parsed = containerInspectResponseSchema.safeParse(result.data);
+    if (!parsed.success || !parsed.data.inspect) {
+      return { nodeOnline: false, inspect: null };
+    }
+    return { nodeOnline: parsed.data.nodeOnline, inspect: parsed.data.inspect };
+  }
+
+  /** Add compose labels to a live container without restarting it (adoption). */
+  async labelContainer(node: Node, containerId: string, labels: Record<string, string>): Promise<boolean> {
+    const result = await this.call<unknown>(node, `/containers/${encodeURIComponent(containerId)}/labels`, "POST", {
+      labels
+    });
+    if (!result.ok || !result.data) return false;
+    const parsed = containerLabelsResponseSchema.safeParse(result.data);
+    return parsed.success && parsed.data.success === true;
   }
 
   async getLogs(node: Node, containerId: string, tail = 200): Promise<{ nodeOnline: boolean; logs: string[] }> {
