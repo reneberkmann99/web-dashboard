@@ -77,9 +77,19 @@ export function fromError(error: unknown): NextResponse {
       error.message.startsWith("WEBHOOK_") ||
       error.message === "INVALID_AUTH_HEADER" ||
       error.message === "INVALID_SIGNING_SECRET" ||
-      error.message === "HOSTPANEL_PUBLIC_BASE_URL_MUST_BE_HTTPS"
+      error.message === "HOSTPANEL_PUBLIC_BASE_URL_MUST_BE_HTTPS" ||
+      error.message === "URL_REQUIRED" ||
+      error.message === "EMAIL_RECIPIENTS_REQUIRED" ||
+      error.message === "TOO_MANY_EMAIL_RECIPIENTS" ||
+      error.message === "INVALID_EMAIL_RECIPIENT"
     ) {
       return fail(error.message, "Notification destination configuration was rejected", 422);
+    }
+    if (error.message === "NAME_REQUIRED" || error.message === "EVENT_TYPES_REQUIRED") {
+      return fail(error.message, "Invalid alerting configuration", 422);
+    }
+    if (error.message === "ORGANIZATION_SCOPE_REQUIRES_CLIENT" || error.message === "DESTINATION_SCOPE_MISMATCH") {
+      return fail(error.message, "This rule's scope does not match the selected destination's organization", 422);
     }
   }
 

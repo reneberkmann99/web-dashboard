@@ -8,6 +8,7 @@ import type { AuthSession } from "@/server/auth/session";
 import { getManagedExecutionEligibility } from "@/server/services/node-agent/execution-eligibility";
 import { recomputePlanHash, resolveLatestSecretVersions, deriveImageRefs } from "@/server/services/deployment-plan";
 import { reanalyzeRevision } from "@/server/services/deployments";
+import { createDeploymentNotificationEvent } from "@/server/services/notifications";
 import { parse as parseYaml } from "yaml";
 
 /**
@@ -201,6 +202,31 @@ async function finish(operationId: string, state: OperationState, error: string 
     where: { id: operationId },
     data: { state, error, finishedAt: new Date(), result: await mergeResult(operationId, patch) }
   });
+  // Alerting (Phase 4): "Deployment failed" / opt-in "Deployment succeeded".
+  // CANCELLED is neither — an operator-initiated stop isn't a failure the
+  // alerting pipeline needs to raise. Never let a notification-side error
+  // fail the deployment operation itself, which has already terminated.
+  if (state === "SUCCEEDED" || state === "FAILED") {
+    try {
+      const operation = await prisma.deploymentOperation.findUnique({
+        where: { id: operationId },
+        select: { deployment: { select: { project: { select: { id: true, name: true, node: { select: { id: true, name: true } } } } } } }
+      });
+      if (operation) {
+        await createDeploymentNotificationEvent({
+          operationId,
+          type: state === "SUCCEEDED" ? "DEPLOYMENT_SUCCEEDED" : "DEPLOYMENT_FAILED",
+          projectId: operation.deployment.project.id,
+          projectName: operation.deployment.project.name,
+          nodeId: operation.deployment.project.node.id,
+          nodeName: operation.deployment.project.node.name,
+          error
+        });
+      }
+    } catch (notificationError) {
+      console.error("[Noderaft] deployment notification event failed", notificationError);
+    }
+  }
 }
 
 async function mergeResult(operationId: string, patch: Record<string, unknown>): Promise<Prisma.InputJsonValue> {

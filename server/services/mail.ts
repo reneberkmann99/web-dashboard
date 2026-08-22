@@ -52,10 +52,20 @@ export type UpdatePlatformEmailSettingsInput = {
   replyTo?: string | null;
 };
 
+/**
+ * Best-effort classification of an EMAIL delivery failure (Phase 4 alerting
+ * delivery history: "For Email, classify failures where possible"). Derived
+ * from Nodemailer/SMTP error shape — never guaranteed exhaustive, hence
+ * UNKNOWN as the fallback rather than a forced guess.
+ */
+export type EmailFailureClass = "AUTH_FAILURE" | "RECIPIENT_REJECTED" | "TIMEOUT" | "TRANSIENT_SMTP_ERROR" | "UNKNOWN";
+
 export type MailDeliveryResult = {
   status: "SENT" | "DISABLED" | "FAILED";
   message: string;
   detail?: string;
+  /** Present only when status is FAILED. */
+  classification?: EmailFailureClass;
 };
 
 type ActiveSmtpConfig = {
@@ -333,16 +343,49 @@ function redactSmtpDetail(error: unknown, config: Pick<ActiveSmtpConfig, "userna
     .slice(0, 1000);
 }
 
+/**
+ * Classifies a raw SMTP/Nodemailer error into one of the buckets the
+ * alerting delivery history surfaces. `responseCode` follows RFC 5321: 4xx is
+ * a transient failure (worth an automatic retry), 5xx is permanent — a
+ * rejected recipient in particular is almost always 550/553 with "EENVELOPE".
+ */
+function classifyEmailError(error: unknown): EmailFailureClass {
+  const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
+  const responseCode = error && typeof error === "object" && "responseCode" in error && typeof (error as { responseCode: unknown }).responseCode === "number"
+    ? (error as { responseCode: number }).responseCode
+    : null;
+  const message = error instanceof Error ? error.message : String(error);
+  if (code === "EAUTH" || /auth(?:entication)?|login/i.test(message)) return "AUTH_FAILURE";
+  // The response code range is authoritative when present (RFC 5321: 4xx is
+  // transient, 5xx is permanent) — checked before the EENVELOPE/message
+  // heuristics below, since an envelope-level 4xx (e.g. a greylisting 451)
+  // must classify as transient, not as a permanently rejected recipient.
+  if (responseCode !== null && responseCode >= 400 && responseCode < 500) return "TRANSIENT_SMTP_ERROR";
+  if (
+    (responseCode !== null && responseCode >= 550 && responseCode < 560) ||
+    code === "EENVELOPE" ||
+    /recipient|mailbox|user unknown/i.test(message)
+  ) {
+    return "RECIPIENT_REJECTED";
+  }
+  if (code === "ETIMEDOUT" || /timed?\s?out/i.test(message)) return "TIMEOUT";
+  if (code === "ECONNREFUSED" || code === "ECONNECTION" || code === "EDNS") {
+    return "TRANSIENT_SMTP_ERROR";
+  }
+  return "UNKNOWN";
+}
+
 function failureFor(error: unknown, config: Pick<ActiveSmtpConfig, "username" | "password">): MailDeliveryResult {
-  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
   const detail = redactSmtpDetail(error, config);
-  if (code === "EAUTH" || /auth(?:entication)?|login/i.test(detail)) {
-    return { status: "FAILED", message: "Authentication failed", detail };
-  }
-  if (code === "ETIMEDOUT" || code === "ECONNREFUSED" || code === "EDNS") {
-    return { status: "FAILED", message: "Could not connect to SMTP server", detail };
-  }
-  return { status: "FAILED", message: "SMTP delivery failed", detail };
+  const classification = classifyEmailError(error);
+  const message: Record<EmailFailureClass, string> = {
+    AUTH_FAILURE: "Authentication failed",
+    RECIPIENT_REJECTED: "Recipient rejected",
+    TIMEOUT: "Could not connect to SMTP server",
+    TRANSIENT_SMTP_ERROR: "Could not connect to SMTP server",
+    UNKNOWN: "SMTP delivery failed"
+  };
+  return { status: "FAILED", message: message[classification], detail, classification };
 }
 
 /**
