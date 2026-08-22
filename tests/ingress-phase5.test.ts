@@ -1028,4 +1028,30 @@ describe("Phase 5 review follow-ups", () => {
     expect(freshA.statusDetail).toBe("Backend container is no longer reported by the node agent");
     expect(freshB.status).toBe("DISABLED"); // untouched — an operator's explicit disable is never overwritten
   });
+
+  it("serializes concurrent updates that each clear a different backend identifier — never leaves both null", async () => {
+    const container = await prisma.container.create({
+      data: { nodeId: world.node1.id, projectId: world.projectA.id, dockerContainerId: `both-set-${Date.now()}`, dockerName: "both-set", isActive: true }
+    });
+    const address = await createPublicAddress({ label: "Backend race test", ipAddress: "203.0.113.181", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const endpoint = await createIngressEndpoint({
+      workloadId: world.projectA.id, containerId: container.id, serviceName: "svc", targetPort: 8700, exposureType: "TCP",
+      publicAddressId: address.id, publicPort: 28700, actor: sessionFor(world.clientAAdmin)
+    });
+    expect(endpoint.containerId).toBe(container.id);
+    expect(endpoint.serviceName).toBe("svc");
+
+    const results = await Promise.allSettled([
+      updateIngressEndpoint({ id: endpoint.id, containerId: null, actor: sessionFor(world.clientAAdmin) }),
+      updateIngressEndpoint({ id: endpoint.id, serviceName: null, actor: sessionFor(world.clientAAdmin) })
+    ]);
+
+    const final = await getIngressEndpoint(endpoint.id, sessionFor(world.clientAAdmin));
+    // The whole point of the lock: never both null, regardless of which request "won".
+    expect(final.containerId === null && final.serviceName === null).toBe(false);
+    // At least one of the two concurrent requests must have been rejected
+    // once the other's change was visible, since clearing the second field
+    // against the already-updated state would leave nothing.
+    expect(results.some((r) => r.status === "rejected")).toBe(true);
+  });
 });

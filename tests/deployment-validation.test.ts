@@ -3,6 +3,7 @@ import { prisma } from "./helpers/db";
 import { resetDatabase } from "./setup";
 import { seedWorld, sessionFor } from "./helpers/fixtures";
 import { createDeployment, stripTransientProjectName, validateDeploymentDefinition } from "@/server/services/deployments";
+import { createIngressEndpoint, createPublicAddress } from "@/server/services/ingress";
 
 const { validateComposeMock } = vi.hoisted(() => ({ validateComposeMock: vi.fn() }));
 
@@ -175,6 +176,29 @@ describe("managed deployment validation + creation", () => {
       environment: {}, secretReferences: [], acknowledgedFindings: [], actor: sessionFor(world.adminA)
     });
     expect(second.status).toBe("compose_project_taken");
+  });
+
+  it("Phase 5: refuses to adopt an existing project into a different organization while it has a bound ingress endpoint", async () => {
+    const world = await seedWorld();
+    const composeProjectName = `adopt-${Date.now()}`;
+    const created = await createDeployment({
+      nodeId: world.node1.id, name: "Adopt target", composeProjectName, compose: VALID_COMPOSE,
+      environment: {}, secretReferences: [], acknowledgedFindings: [], clientAccountId: world.clientA.id, actor: sessionFor(world.adminA)
+    });
+    expect(created.status).toBe("created");
+    if (created.status !== "created") return;
+
+    const address = await createPublicAddress({ label: "Adopt guard test", ipAddress: "203.0.113.180", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await createIngressEndpoint({
+      workloadId: created.projectId, serviceName: "svc", targetPort: 8600, exposureType: "TCP", publicAddressId: address.id, publicPort: 28600,
+      clientAccountId: world.clientA.id, actor: sessionFor(world.adminA)
+    });
+
+    await expect(createDeployment({
+      nodeId: world.node1.id, name: "Adopt target", composeProjectName, compose: VALID_COMPOSE,
+      environment: {}, secretReferences: [], acknowledgedFindings: [], adoptExistingProjectId: created.projectId,
+      clientAccountId: world.clientB.id, actor: sessionFor(world.adminA)
+    })).rejects.toThrow("WORKLOAD_HAS_INGRESS_ENDPOINT");
   });
 
   it("standalone validate endpoint logic returns findings without persisting", async () => {

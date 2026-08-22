@@ -1,9 +1,10 @@
 import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { updateProjectSchema, cuidParamSchema } from "@/server/validation/admin";
-import { fromError, ok } from "@/server/http";
+import { fail, fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
+import { assertWorkloadReassignable } from "@/server/services/ingress";
 
 export async function PATCH(
   request: Request,
@@ -15,6 +16,19 @@ export async function PATCH(
     const id = cuidParamSchema.parse((await params).id);
 
     const body = updateProjectSchema.parse(await request.json());
+
+    // Same reassignment guard as app/api/admin/workloads/[id]/route.ts — this
+    // route accepts the identical clientAccountId field and must not be a
+    // way around it (see server/services/ingress.ts's
+    // assertWorkloadReassignable doc comment for why reassigning a workload
+    // with a bound ingress endpoint is unsafe).
+    if (body.clientAccountId !== undefined) {
+      const existing = await prisma.project.findUnique({ where: { id }, select: { clientAccountId: true } });
+      if (!existing) return fail("NOT_FOUND", "Workload not found", 404);
+      if (body.clientAccountId !== existing.clientAccountId) {
+        await assertWorkloadReassignable(id);
+      }
+    }
 
     await prisma.project.update({ where: { id }, data: body });
 

@@ -58,3 +58,17 @@ export async function lockPublicAddressForUpdate(tx: Prisma.TransactionClient, p
 export async function lockContainerForUpdate(tx: Prisma.TransactionClient, containerId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM "Container" WHERE id = ${containerId} FOR UPDATE`;
 }
+
+/**
+ * Locks an IngressEndpoint row for the rest of the current transaction.
+ * updateIngressEndpoint takes this before deriving the resulting
+ * containerId/serviceName from a fresh read — two concurrent PATCHes each
+ * clearing a different one of the two fields would otherwise both validate
+ * against the same stale pre-transaction snapshot (each individually still
+ * leaves the other field set, so both pass) and then commit in sequence,
+ * leaving both null — exactly the unusable-backend state that validation
+ * exists to prevent.
+ */
+export async function lockIngressEndpointForUpdate(tx: Prisma.TransactionClient, endpointId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "IngressEndpoint" WHERE id = ${endpointId} FOR UPDATE`;
+}

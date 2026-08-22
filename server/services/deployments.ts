@@ -4,6 +4,7 @@ import { parse, stringify } from "yaml";
 import { prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { logAuditEvent } from "@/server/audit";
+import { assertWorkloadReassignable } from "@/server/services/ingress";
 import type { AuthSession } from "@/server/auth/session";
 import {
   ANALYZER_VERSION,
@@ -306,7 +307,7 @@ export async function createDeployment(input: {
   // IS that row, so the managed definition is authored onto it instead.
   const existingProject = await prisma.project.findFirst({
     where: { nodeId: input.nodeId, composeProject: input.composeProjectName },
-    select: { id: true, name: true }
+    select: { id: true, name: true, clientAccountId: true }
   });
   if (existingProject && existingProject.id !== input.adoptExistingProjectId) {
     return { status: "compose_project_taken", existingName: existingProject.name };
@@ -314,6 +315,15 @@ export async function createDeployment(input: {
   const adoptingExisting = Boolean(input.adoptExistingProjectId && existingProject);
   if (input.adoptExistingProjectId && !existingProject) {
     return { status: "invalid", findings: [], composeErrors: ["Adoption target project not found on this node"] };
+  }
+  // Adoption authors the definition onto an EXISTING project row and may
+  // reassign its clientAccountId in the same call — same reassignment guard
+  // as app/api/admin/workloads/[id]/route.ts (see assertWorkloadReassignable's
+  // doc comment): that existing project could already have a bound ingress
+  // endpoint, and reassigning it here would be just as unsafe as reassigning
+  // it through the workload settings form.
+  if (adoptingExisting && existingProject && (input.clientAccountId ?? null) !== existingProject.clientAccountId) {
+    await assertWorkloadReassignable(existingProject.id);
   }
 
   const slug = input.slug?.trim()

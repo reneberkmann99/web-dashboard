@@ -1,6 +1,6 @@
 import net from "node:net";
 import { Prisma, type IngressExposureType, type PublicAddressAllocation, type IngressProviderKind, type IngressEndpointStatus } from "@prisma/client";
-import { lockClientAccountForQuota, lockContainerForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
+import { lockClientAccountForQuota, lockContainerForUpdate, lockIngressEndpointForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
 
@@ -771,20 +771,27 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
     if (!container || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
   }
 
-  // An endpoint with neither a container nor a service name has nothing for
-  // a gateway to route to — reject a patch that would leave it that way,
-  // same as create.
-  const resultingContainerId = input.containerId !== undefined ? input.containerId : existing.containerId;
-  const resultingServiceName = input.serviceName !== undefined ? input.serviceName : existing.serviceName;
-  if (!resultingContainerId && !resultingServiceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
-
   if (input.providerId) await assertProviderUsable(prisma, input.providerId);
 
-  // Locks the newly-attached container (if any) against a concurrent
-  // deleteContainer the same way createIngressEndpoint does — a
-  // pre-transaction isActive read would leave the same TOCTOU window open on
-  // this path too (see server/db.ts's lockContainerForUpdate doc comment).
+  // Locks this IngressEndpoint row and re-reads it fresh before deriving the
+  // resulting containerId/serviceName (see server/db.ts's
+  // lockIngressEndpointForUpdate doc comment — two concurrent PATCHes each
+  // clearing a different one of the two fields would otherwise both validate
+  // against the same stale snapshot and commit in sequence, leaving both
+  // null). Also locks the newly-attached container (if any) against a
+  // concurrent deleteContainer the same way createIngressEndpoint does (see
+  // lockContainerForUpdate).
   const endpoint = await prisma.$transaction(async (tx) => {
+    await lockIngressEndpointForUpdate(tx, input.id);
+    const fresh = await tx.ingressEndpoint.findUniqueOrThrow({ where: { id: input.id }, select: { containerId: true, serviceName: true } });
+
+    // An endpoint with neither a container nor a service name has nothing
+    // for a gateway to route to — reject a patch that would leave it that
+    // way, same as create.
+    const resultingContainerId = input.containerId !== undefined ? input.containerId : fresh.containerId;
+    const resultingServiceName = input.serviceName !== undefined ? input.serviceName : fresh.serviceName;
+    if (!resultingContainerId && !resultingServiceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
+
     if (input.containerId) {
       await lockContainerForUpdate(tx, input.containerId);
       const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true } });
