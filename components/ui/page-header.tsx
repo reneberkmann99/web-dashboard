@@ -36,6 +36,7 @@ function mobileModeFor(pathname: string): "hidden" | "compact" {
 
 export function PageHeader({
   title,
+  count,
   description,
   eyebrow,
   actions,
@@ -44,6 +45,7 @@ export function PageHeader({
   mobile = "auto"
 }: {
   title: React.ReactNode;
+  count?: number;
   description?: React.ReactNode;
   eyebrow?: React.ReactNode;
   actions?: React.ReactNode;
@@ -58,22 +60,24 @@ export function PageHeader({
   return (
     <>
       {typeof title === "string" && <DocumentTitle title={title} />}
-      <header className={cn("flex flex-wrap items-end justify-between gap-4", mode === "hidden" && "max-md:hidden", className)}>
+      <header className={cn("flex min-h-[58px] flex-wrap items-end justify-between gap-4", mode === "hidden" && "max-md:hidden", className)} data-page-header>
         <div className="min-w-0">
-          {back && <div className="max-md:hidden">{back}</div>}
-          {eyebrow && <div className={cn("eyebrow mb-1", mode === "compact" && "max-md:hidden")}>{eyebrow}</div>}
+          {/* Desktop breadcrumbs live persistently in the 52px top bar. */}
+          {back && <div className="hidden">{back}</div>}
+          {eyebrow && <div className="sr-only">{eyebrow}</div>}
           <h1
             className={cn(
-              "break-words",
+              "flex flex-wrap items-baseline gap-2 break-words",
               mode === "compact"
-                ? "text-lg font-semibold leading-tight tracking-[-0.01em] md:text-[clamp(1.875rem,3vw,2.25rem)] md:tracking-[-0.03em]"
-                : "page-title"
+                ? "text-lg font-semibold leading-tight tracking-[-0.01em] md:text-[26px] md:tracking-[-0.02em]"
+                : "text-[26px] font-semibold leading-[1.15] tracking-[-0.02em]"
             )}
           >
-            {title}
+            <span>{title}</span>
+            {count !== undefined && <span className="font-mono text-base font-normal tabular-nums text-text-subtle">{count}</span>}
           </h1>
           {description && (
-            <div className={cn("mt-1 text-text-muted", mode === "compact" && "max-md:hidden")}>{description}</div>
+            <div className={cn("mt-1 text-[13.5px] leading-5 text-text-muted", mode === "compact" && "max-md:hidden")}>{description}</div>
           )}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

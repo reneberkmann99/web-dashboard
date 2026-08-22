@@ -14,6 +14,7 @@ import { ResourceUsage } from "@/components/ui/resource-usage";
 import { timeAgo, humanizeAction } from "@/lib/format";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { MobileAdminOverview } from "@/components/mobile/mobile-overview";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import type { AttentionItem, WorkloadSummary, FleetSummary, RecentFailure, ActiveOperationSummary, ResourceThresholds } from "@/types/domain";
 
 type OverviewPayload = {
@@ -144,7 +145,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
       <div className="md:hidden">
         <MobileAdminOverview data={query.data} />
       </div>
-      <div className="hidden space-y-6 md:block">
+      <div className="hidden space-y-5 md:block">
       <PageHeader
         eyebrow="Fleet"
         title="Overview"
@@ -165,22 +166,15 @@ export default function AdminOverviewPage(): React.JSX.Element {
       />
 
       {/* Fleet summary (§2) — concise counters, never a Grafana clone */}
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
-        <MetricCard
-          label="Nodes"
-          value={`${fleetSummary.nodesOnline}/${fleetSummary.nodesTotal}`}
-          sub={fleetSummary.nodesOnline === fleetSummary.nodesTotal ? "all online" : "need attention"}
-        />
-        <MetricCard
-          label="Workloads"
-          value={`${fleetSummary.workloadsHealthy}/${fleetSummary.workloadsTotal}`}
-          sub={fleetSummary.degradedWorkloads > 0 ? `${fleetSummary.degradedWorkloads} degraded` : "all healthy"}
-        />
-        <MetricCard
-          label="Containers"
-          value={`${fleetSummary.containersRunning}/${fleetSummary.containersTotal}`}
-          sub={fleetSummary.unhealthyContainers > 0 ? `${fleetSummary.unhealthyContainers} unhealthy` : "running"}
-        />
+      <div className="grid gap-4 xl:grid-cols-[2fr_1fr_1fr]">
+        <div className="rounded-panel border border-border bg-surface-deck p-4">
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">Fleet</p>
+          <div className="mt-3 grid grid-cols-3 divide-x divide-border">
+            <div className="pr-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Nodes</p><p className="mt-2 font-mono text-2xl font-medium tabular-nums">{fleetSummary.nodesOnline}<span className="text-text-subtle">/{fleetSummary.nodesTotal}</span></p></div>
+            <div className="px-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Workloads</p><p className="mt-2 font-mono text-2xl font-medium tabular-nums">{fleetSummary.workloadsHealthy}<span className="text-text-subtle">/{fleetSummary.workloadsTotal}</span></p></div>
+            <div className="pl-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Containers</p><p className="mt-2 font-mono text-2xl font-medium tabular-nums">{fleetSummary.containersRunning}<span className="text-text-subtle">/{fleetSummary.containersTotal}</span></p></div>
+          </div>
+        </div>
         <MetricCard
           icon={AlertTriangle}
           label="Attention"
@@ -199,10 +193,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
       <section aria-label="Needs attention">
         <h2 className="mb-2 text-lg font-semibold">Needs attention</h2>
         {!attentionVisible ? (
-          <div className="rounded-panel border border-border bg-surface-raised/35 p-4 text-sm text-text-muted">
-            Nothing needs you. All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and{" "}
-            {fleetSummary.workloadsTotal} workload{fleetSummary.workloadsTotal === 1 ? "" : "s"} are operating normally.
-          </div>
+          <StatePanel compact tone="success" title="Nothing needs you." description={`All ${fleetSummary.nodesTotal} node${fleetSummary.nodesTotal === 1 ? "" : "s"} and ${fleetSummary.workloadsTotal} workload${fleetSummary.workloadsTotal === 1 ? "" : "s"} are operating normally.`} action={<Link href="/admin/attention?view=resolved" className="text-sm text-brand">Resolved history →</Link>} />
         ) : (
           <div className="space-y-2">
             {unexpectedAttention.map(renderAttentionCard)}
@@ -272,7 +263,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-surface-raised">
-                      <Server size={13} className="text-accent" />
+                      <Server size={13} className="text-text-muted" />
                     </span>
                     <span className="truncate font-medium">{node.name}</span>
                   </div>
@@ -371,7 +362,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
               className="flex cursor-pointer items-center gap-3 rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
             >
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[0.625rem] bg-surface-raised">
-                <Server size={16} className="text-accent" />
+                <Server size={16} className="text-text-muted" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-3">
@@ -446,24 +437,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
             View all <ArrowRight size={14} />
           </Link>
         </div>
-        <div className="rounded-lg border border-border bg-panel">
-          {recentActivity.length === 0 ? (
-            <p className="p-4 text-sm text-muted">No activity yet.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {recentActivity.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                  <span className="min-w-0">
-                    {a.humanized}
-                    {a.targetLabel && <span className="ml-1.5 font-mono text-[13px] text-text-muted">{a.targetLabel}</span>}
-                    <span className="ml-2 text-xs text-text-muted">{a.actorEmail ?? "system"}</span>
-                  </span>
-                  <span className="shrink-0 font-mono text-xs text-text-muted">{timeAgo(a.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <ActivityTimeline events={recentActivity} emptyTitle="No activity yet" emptyBody="Operator and system changes will appear here." />
       </section>
       </div>
     </>

@@ -129,9 +129,9 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
     <div className="space-y-6">
       <PageHeader
           eyebrow="Node"
-          title={node.name}
+          title={<>{node.name}<Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale" : "online"}</Badge></>}
           back={<Breadcrumbs />}
-          description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span><Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale heartbeat" : "online"}</Badge>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
+          description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
           actions={<Button variant="outline" size="sm" onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}>View activity →</Button>}
       />
 
@@ -409,8 +409,8 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
 function Stat({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted">{label}</dt>
-      <dd className="mt-0.5 break-words font-mono text-sm">{value}</dd>
+      <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">{label}</dt>
+      <dd className="mt-1 break-words font-mono text-[13px] leading-5 text-text">{value}</dd>
     </div>
   );
 }

@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { formatDateTime, humanizeAction } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -16,6 +15,7 @@ import { ActivityTimeline, type TimelineEvent } from "@/components/activity/acti
 import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
 import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
 import { MobileFiltersRow } from "@/components/mobile/mobile-resource-cards";
+import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
 
 type AuditEntry = {
   id: string;
@@ -67,8 +67,11 @@ export default function AdminActivityPage(): React.JSX.Element {
   );
 
   useEffect(() => {
-    syncUrl({ q, result, nodeId, clientId });
-  }, [q, result, nodeId, clientId, syncUrl]);
+    setQ(searchParams.get("q") ?? "");
+    setResult(searchParams.get("result") ?? "");
+    setNodeId(searchParams.get("nodeId") ?? "");
+    setClientId(searchParams.get("clientId") ?? "");
+  }, [searchParams]);
 
   const query = useQuery({
     queryKey: ["admin-activity", { q, result, nodeId, clientId, containerId, projectId, from, to, page }],
@@ -92,6 +95,11 @@ export default function AdminActivityPage(): React.JSX.Element {
   const refsQuery = useQuery({
     queryKey: ["admin-activity-refs"],
     queryFn: () => apiFetch<RefPayload>("/api/admin/clients-refs")
+  });
+  const totalQuery = useQuery({
+    queryKey: ["admin-activity-total"],
+    queryFn: () => apiFetch<ActivityPayload>("/api/admin/audit-logs?page=1&limit=1"),
+    refetchInterval: 30_000
   });
 
   const hasDeepLink = Boolean(containerId || projectId);
@@ -132,17 +140,20 @@ export default function AdminActivityPage(): React.JSX.Element {
 
   const applyDraft = (draft: FilterDraft): void => {
     const pick = (id: string): string => draft.groups.find((g) => g.id === id)?.selected[0] ?? "";
-    setResult(pick("result"));
-    setNodeId(pick("node"));
-    setClientId(pick("client"));
-    syncUrl({ page: "1" });
+    const nextResult = pick("result");
+    const nextNode = pick("node");
+    const nextClient = pick("client");
+    setResult(nextResult);
+    setNodeId(nextNode);
+    setClientId(nextClient);
+    syncUrl({ result: nextResult, nodeId: nextNode, clientId: nextClient, page: "1" });
   };
 
   const activeFilterCount = (q ? 1 : 0) + (result ? 1 : 0) + (nodeId ? 1 : 0) + (clientId ? 1 : 0);
 
   return (
-    <div className="space-y-6">
-      <PageHeader eyebrow="Audit trail" title="Activity" description="What happened across the platform." />
+    <div className="space-y-4">
+      <PageHeader eyebrow="Audit trail" title="Activity" count={totalQuery.data?.total ?? query.data?.total ?? 0} description="An ordered audit trail of operator and system changes." />
 
       {hasDeepLink && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-panelAlt px-3 py-2 text-sm">
@@ -155,48 +166,19 @@ export default function AdminActivityPage(): React.JSX.Element {
         </div>
       )}
 
-      <div className="hidden flex-wrap gap-2 md:flex">
-        <Input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search events, actors…"
-          aria-label="Search activity"
-          className="w-64"
-        />
-        <Select
-          value={result}
-          onChange={(e) => setResult(e.target.value)}
-          aria-label="Filter by result"
-          className="w-auto min-w-36"
-        >
-          <option value="">All results</option>
-          <option value="SUCCESS">Success</option>
-          <option value="FAILURE">Failure</option>
-        </Select>
-        <Select
-          value={nodeId}
-          onChange={(e) => setNodeId(e.target.value)}
-          aria-label="Filter by node"
-          className="w-auto min-w-40"
-        >
-          <option value="">All nodes</option>
-          {(refsQuery.data?.nodes ?? []).map((n) => (
-            <option key={n.id} value={n.id}>{n.name}</option>
-          ))}
-        </Select>
-        <Select
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          aria-label="Filter by client"
-          className="w-auto min-w-40"
-        >
-          <option value="">All clients</option>
-          {(refsQuery.data?.clients ?? []).map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </Select>
-      </div>
+      <DesktopFilterBar
+        search={q}
+        onSearchChange={(value) => { setQ(value); syncUrl({ q: value, page: "1" }); }}
+        searchPlaceholder="Search events, actors…"
+        dimensions={[
+          { id: "result", label: "Result", value: result, options: [{ value: "SUCCESS", label: "Success" }, { value: "FAILURE", label: "Failure" }], onChange: (value) => { setResult(value); syncUrl({ result: value, page: "1" }); } },
+          { id: "node", label: "Node", value: nodeId, options: (refsQuery.data?.nodes ?? []).map((node) => ({ value: node.id, label: node.name })), onChange: (value) => { setNodeId(value); syncUrl({ nodeId: value, page: "1" }); } },
+          { id: "client", label: "Client", value: clientId, options: (refsQuery.data?.clients ?? []).map((client) => ({ value: client.id, label: client.name })), onChange: (value) => { setClientId(value); syncUrl({ clientId: value, page: "1" }); } }
+        ]}
+        resultCount={query.data?.total ?? 0}
+        totalCount={totalQuery.data?.total ?? query.data?.total ?? 0}
+        onClearAll={() => { setQ(""); setResult(""); setNodeId(""); setClientId(""); syncUrl({ q: "", result: "", nodeId: "", clientId: "", page: "1" }); }}
+      />
 
       <div className="md:hidden">
         <Input
@@ -295,7 +277,7 @@ export default function AdminActivityPage(): React.JSX.Element {
           setResult("");
           setNodeId("");
           setClientId("");
-          syncUrl({ page: "1" });
+          syncUrl({ result: "", nodeId: "", clientId: "", page: "1" });
         }}
         onDraftChange={() => setSheetCount(null)}
       />

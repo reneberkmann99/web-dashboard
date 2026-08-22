@@ -38,7 +38,7 @@ export function TabBar<T extends string>({
   };
 
   return (
-    <div role="tablist" aria-label="Sections" className="flex gap-1 overflow-x-auto border-b border-border">
+    <div role="tablist" aria-label="Sections" className="flex gap-6 overflow-x-auto border-b border-border">
       {tabs.map((t, i) => {
         const selected = t === active;
         return (
@@ -53,10 +53,10 @@ export function TabBar<T extends string>({
             onClick={() => onChange(t)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "relative shrink-0 rounded-t-control px-4 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-focus",
+              "relative shrink-0 px-0.5 pb-2.5 pt-1 text-sm outline-none transition-colors focus:ring-2 focus:ring-focus",
               selected
-                ? "bg-selected/50 font-medium text-brand-hover after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-selected-border"
-                : "text-text-muted hover:bg-surface-raised/60 hover:text-text"
+                ? "font-medium text-text after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-selected-border"
+                : "text-text-muted hover:text-text"
             )}
           >
             {t}

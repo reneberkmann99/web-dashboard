@@ -225,6 +225,30 @@ samp,
   background: rgb(var(--text-subtle));
 }
 
+@media (min-width: 768px) {
+  main table thead th {
+    color: rgb(var(--text-subtle));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  main table tbody tr {
+    height: 44px;
+  }
+
+  main table tbody td {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  main table tbody tr[role="link"]:hover {
+    background: rgb(var(--surface-raised));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

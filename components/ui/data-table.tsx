@@ -10,11 +10,14 @@ import { useStoredViewState } from "@/components/navigation/view-state";
 
 export type Column<T> = {
   key: string;
-  header: string;
+  header: React.ReactNode;
+  ariaLabel?: string;
   sortValue?: (row: T) => string | number;
   render: (row: T) => React.ReactNode;
   className?: string;
   hideBelow?: "sm" | "md" | "lg"; // progressive disclosure on small screens
+  /** Omit this column when every currently visible row is empty. */
+  omitWhenEmpty?: (row: T) => boolean;
 };
 
 export function isInteractiveTableTarget(target: EventTarget | null): boolean {
@@ -95,6 +98,10 @@ export function DataTable<T>({
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(safePage * pageSize, (safePage + 1) * pageSize);
+  const visibleColumns = useMemo(
+    () => columns.filter((column) => !column.omitWhenEmpty || pageRows.some((row) => !column.omitWhenEmpty?.(row))),
+    [columns, pageRows]
+  );
 
   function toggleSort(key: string): void {
     if (sortKey === key) {
@@ -155,13 +162,13 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className={cn("overflow-x-auto rounded-panel border border-border bg-surface-deck", mobileCard && "max-md:hidden")}>
+      <div className={cn("overflow-x-auto rounded-panel border border-border bg-surface-deck md:overflow-x-visible", mobileCard && "max-md:hidden")} data-desktop-table>
         <table className="w-full text-sm" aria-label={ariaLabel}>
-          <thead className="sticky top-0 bg-surface-raised/85 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted backdrop-blur">
+          <thead className="sticky top-[52px] z-[5] bg-surface-raised/95 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle backdrop-blur">
             <tr>
-              {columns.map((col) => (
+              {visibleColumns.map((col) => (
                 <th key={col.key} className={cn(
-                  "px-3 py-2.5 font-medium",
+                  "h-9 px-3 py-2 font-medium",
                   col.className,
                   col.hideBelow === "sm" && "max-md:hidden",
                   col.hideBelow === "md" && "max-lg:hidden",
@@ -172,7 +179,7 @@ export function DataTable<T>({
                       type="button"
                       onClick={() => toggleSort(col.key)}
                       className="inline-flex items-center gap-1 rounded-control hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
-                      aria-label={`Sort by ${col.header}`}
+                      aria-label={`Sort by ${col.ariaLabel ?? (typeof col.header === "string" ? col.header : col.key)}`}
                     >
                       {col.header}
                       {sortKey === col.key &&
@@ -195,15 +202,15 @@ export function DataTable<T>({
                 role={onRowClick ? "link" : undefined}
                 data-row-key={rowKey ? rowKey(row) : undefined}
                 className={cn(
-                  "h-12 border-t border-border transition-colors",
-                  onRowClick && "cursor-pointer hover:bg-surface-raised/60 focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
+                  "h-11 border-t border-border transition-colors",
+                  onRowClick && "cursor-pointer hover:bg-surface-raised focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
                 )}
               >
-                {columns.map((col) => (
+                {visibleColumns.map((col) => (
                   <td
                     key={col.key}
                     className={cn(
-                      "px-3 py-2.5 align-middle",
+                      "px-3 py-2 align-middle",
                       col.className,
                       col.hideBelow === "sm" && "max-md:hidden",
                       col.hideBelow === "md" && "max-lg:hidden",

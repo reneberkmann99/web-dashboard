@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -15,6 +15,8 @@ import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { clientCard } from "@/components/mobile/mobile-resource-cards";
+import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
+import { Menu } from "@/components/ui/menu";
 
 type ClientListRecord = {
   id: string;
@@ -41,7 +43,13 @@ export default function AdminClientsPage(): React.JSX.Element {
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [state, setState] = useState(searchParams.get("state") ?? "");
   const page = Math.max(Number(searchParams.get("page") ?? "1"), 1);
+
+  useEffect(() => {
+    setSearch(searchParams.get("search") ?? "");
+    setState(searchParams.get("state") ?? "");
+  }, [searchParams]);
 
   const syncUrl = useCallback(
     (patch: Record<string, string>) => {
@@ -56,14 +64,19 @@ export default function AdminClientsPage(): React.JSX.Element {
   );
 
   const query = useQuery({
-    queryKey: ["admin-clients", { search, page }],
+    queryKey: ["admin-clients", { search, state, page }],
     queryFn: () => {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (state) params.set("state", state);
       params.set("page", String(page));
       params.set("limit", String(PAGE_SIZE));
       return apiFetch<ClientsPayload>(`/api/admin/clients?${params.toString()}`);
     }
+  });
+  const totalQuery = useQuery({
+    queryKey: ["admin-clients-total"],
+    queryFn: () => apiFetch<ClientsPayload>("/api/admin/clients?page=1&limit=1")
   });
 
   const createMutation = useMutation({
@@ -90,29 +103,32 @@ export default function AdminClientsPage(): React.JSX.Element {
       header: "Client",
       sortValue: (c) => c.name,
       render: (c) => (
-        <div>
-          <p className="font-medium">{c.name}</p>
-          <p className="text-xs text-muted">{c.slug}</p>
-        </div>
+        <p className="truncate font-medium text-text">{c.name}<span className="ml-2 font-mono text-[11px] font-normal text-text-subtle">{c.slug}</span></p>
       )
     },
     {
       key: "users",
       header: "Active users",
+      className: "text-right",
+      omitWhenEmpty: (c) => c.activeUsers === 0,
       sortValue: (c) => c.activeUsers,
-      render: (c) => <span className="text-sm">{c.activeUsers}</span>
+      render: (c) => <span className="font-mono text-xs tabular-nums">{c.activeUsers}</span>
     },
     {
       key: "workloads",
       header: "Workloads",
+      className: "text-right",
+      omitWhenEmpty: (c) => c.workloadCount === 0,
       sortValue: (c) => c.workloadCount,
-      render: (c) => <span className="text-sm">{c.workloadCount}</span>
+      render: (c) => <span className="font-mono text-xs tabular-nums">{c.workloadCount}</span>
     },
     {
       key: "containers",
       header: "Containers",
+      className: "text-right",
+      omitWhenEmpty: (c) => c.containerCount === 0,
       sortValue: (c) => c.containerCount,
-      render: (c) => <span className="text-sm">{c.containerCount}</span>,
+      render: (c) => <span className="font-mono text-xs tabular-nums">{c.containerCount}</span>,
       hideBelow: "sm"
     },
     {
@@ -125,16 +141,36 @@ export default function AdminClientsPage(): React.JSX.Element {
       key: "lastActivity",
       header: "Last activity",
       sortValue: (c) => c.lastActivity?.createdAt ?? "",
+      omitWhenEmpty: (c) => !c.lastActivity,
       hideBelow: "md",
-      render: (c) => (c.lastActivity ? <span className="text-xs text-muted">{timeAgo(c.lastActivity.createdAt)}</span> : <span className="text-xs text-muted">—</span>)
+      render: (c) => (c.lastActivity ? <span className="font-mono text-xs text-muted">{timeAgo(c.lastActivity.createdAt)}</span> : null)
+    },
+    {
+      key: "actions",
+      header: "",
+      className: "w-10 text-right",
+      render: (client) => <Menu label={`Actions for ${client.name}`} items={[
+        { label: "Open client", onSelect: () => go({ url: `/admin/clients/${client.id}`, label: client.name, type: "client", id: client.id }) },
+        { label: "Copy identifier", onSelect: () => { void navigator.clipboard.writeText(client.id); toast.success("Client ID copied"); } }
+      ]} />
     }
   ];
 
   return (
-    <div className="space-y-6">
-      <PageHeader eyebrow="Tenancy" title="Clients" description="Organizations and who can access what." actions={<Button onClick={() => setCreateOpen(true)}>Create client</Button>} />
+    <div className="space-y-4">
+      <PageHeader eyebrow="Tenancy" title="Clients" count={totalQuery.data?.total ?? query.data?.total ?? 0} description="Organizations and their access boundaries." actions={<Button onClick={() => setCreateOpen(true)}>Create client</Button>} />
 
-      <div className="mb-4">
+      <DesktopFilterBar
+        search={search}
+        onSearchChange={(value) => { setSearch(value); syncUrl({ search: value, page: "1" }); }}
+        searchPlaceholder="Search clients…"
+        dimensions={[{ id: "state", label: "State", value: state, options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }], onChange: (value) => { setState(value); syncUrl({ state: value, page: "1" }); } }]}
+        resultCount={query.data?.total ?? 0}
+        totalCount={totalQuery.data?.total ?? query.data?.total ?? 0}
+        onClearAll={() => { setSearch(""); setState(""); syncUrl({ search: "", state: "", page: "1" }); }}
+      />
+
+      <div className="md:hidden">
         <Input
           type="search"
           value={search}
@@ -144,7 +180,7 @@ export default function AdminClientsPage(): React.JSX.Element {
           }}
           placeholder="Search clients…"
           aria-label="Search clients"
-          className="w-full md:w-64"
+          className="w-full"
         />
       </div>
 

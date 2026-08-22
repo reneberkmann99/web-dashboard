@@ -10,6 +10,7 @@ const buttonVariants = cva(
         default: "bg-brand px-4 py-2 text-brand-contrast hover:bg-brand-hover",
         secondary: "border-border bg-surface-raised px-4 py-2 text-text hover:border-border-strong hover:bg-surface-overlay",
         danger: "bg-critical px-4 py-2 text-white hover:bg-critical/85",
+        dangerOutline: "border-critical/45 bg-critical/10 px-4 py-2 text-critical-foreground hover:border-critical/70 hover:bg-critical/15",
         warning: "bg-warning px-4 py-2 text-text-inverse hover:bg-warning/85",
         ghost: "px-3 py-2 text-text-muted hover:bg-surface-raised hover:text-text",
         outline: "border-border bg-transparent px-4 py-2 text-text-muted hover:border-border-strong hover:bg-surface-raised hover:text-text"

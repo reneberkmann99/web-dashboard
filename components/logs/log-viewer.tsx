@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Pause, Play, Loader2, WifiOff } from "lucide-react";
+import { Copy, Download, Pause, Play, Loader2, WifiOff, WrapText } from "lucide-react";
 import { maskSecrets } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
  * Live container logs via Server-Sent Events (relayed through the control
@@ -52,6 +53,71 @@ function isStopped(status?: string): boolean {
   return status === "stopped" || status === "exited";
 }
 
+export type ParsedLogLine = {
+  raw: string;
+  timestamp: string | null;
+  time: string | null;
+  message: string;
+  level: "info" | "warn" | "error" | null;
+};
+
+/** Parse only an unambiguous ISO-like prefix; uncertain lines stay intact. */
+export function parseLogLine(raw: string): ParsedLogLine {
+  const timestampMatch = /^(?:\[)?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)(?:\])?(?:\s+|\s*[-|]\s*)/.exec(raw);
+  let timestamp: string | null = null;
+  let time: string | null = null;
+  let message = raw;
+  if (timestampMatch && !Number.isNaN(Date.parse(timestampMatch[1]))) {
+    timestamp = timestampMatch[1];
+    time = /[T ](\d{2}:\d{2}:\d{2})/.exec(timestamp)?.[1] ?? null;
+    message = raw.slice(timestampMatch[0].length);
+  }
+  const levelMatch = /^(?:\[)?(INFO|WARN|WARNING|ERROR|ERR)(?:\])?(?=\s|:|-)/.exec(message);
+  const level = levelMatch
+    ? levelMatch[1] === "INFO" ? "info" : levelMatch[1].startsWith("WARN") ? "warn" : "error"
+    : null;
+  return { raw, timestamp, time, message, level };
+}
+
+function LogRows({ lines, wrap }: { lines: string[]; wrap: boolean }): React.JSX.Element {
+  return (
+    <>
+      {lines.map((line, index) => {
+        const parsed = parseLogLine(maskSecrets(line));
+        return (
+          <div
+            key={`${index}-${line.length}`}
+            className={cn(
+              "group relative flex min-h-[21px] gap-3 px-3 pr-9 hover:bg-surface-raised",
+              wrap ? "min-w-0" : "min-w-max whitespace-pre",
+              parsed.level === "warn" && "bg-warning/[0.08]",
+              parsed.level === "error" && "bg-critical/[0.09]"
+            )}
+          >
+            {parsed.time && <span title={parsed.timestamp ?? undefined} className="w-[78px] shrink-0 select-none text-text-subtle">{parsed.time}</span>}
+            <span className={cn(
+              "min-w-0 flex-1",
+              wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
+              parsed.level === "info" && "text-success-foreground",
+              parsed.level === "warn" && "text-warning-foreground",
+              parsed.level === "error" && "text-critical-foreground",
+              !parsed.level && "text-text"
+            )}>{parsed.message}</span>
+            <button
+              type="button"
+              aria-label={`Copy log line ${index + 1}`}
+              onClick={() => { void navigator.clipboard.writeText(parsed.raw); }}
+              className="absolute right-2 top-0.5 grid h-[18px] w-[18px] place-items-center rounded text-text-subtle opacity-0 hover:bg-surface-overlay hover:text-text group-hover:opacity-100 focus:opacity-100"
+            >
+              <Copy size={11} />
+            </button>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export function LogViewer({
   streamPath,
   historicalPath,
@@ -63,12 +129,12 @@ export function LogViewer({
   // Offline node: never start a stream or a reconnect loop.
   if (nodeOnline === false) {
     return (
-      <div className="overflow-hidden rounded-panel border border-border bg-surface-deck">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-panel border border-border bg-surface-deck">
         <div className="flex items-center gap-2 border-b border-border bg-surface-raised/55 px-3 py-2 text-sm text-muted">
           <WifiOff size={13} />
           Logs unavailable — node is offline
         </div>
-        <div className="h-[420px] bg-surface-hull/80 p-3 font-mono text-[11px] text-muted">
+        <div className="min-h-0 flex-1 bg-surface-hull/80 p-3 font-mono text-[11px] text-muted max-md:h-[420px]">
           No log data can be read while the node is unreachable.
         </div>
       </div>
@@ -111,6 +177,7 @@ function HistoricalLogViewer({
   const [filter, setFilter] = useState("");
   const [lines, setLines] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [wrap, setWrap] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,8 +218,8 @@ function HistoricalLogViewer({
   };
 
   return (
-    <div className="overflow-hidden rounded-panel border border-border bg-surface-deck">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised/55 px-3 py-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-panel border border-border bg-surface-deck">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised/55 px-3 py-2">
         <span className="inline-flex items-center gap-1.5 text-xs text-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-warning" />
           {banner}
@@ -178,13 +245,16 @@ function HistoricalLogViewer({
               </option>
             ))}
           </Select>
+          <button type="button" aria-pressed={wrap} onClick={() => setWrap((value) => !value)} className={cn("inline-flex h-8 items-center gap-1 rounded-control border px-2 font-mono text-[11px]", wrap ? "border-selected-border/40 bg-selected text-text" : "border-border bg-surface-hull/40 text-text-muted hover:text-text")}>
+            <WrapText size={12} /> Wrap {wrap ? "on" : "off"}
+          </button>
           <Button onClick={download} aria-label="Download logs" variant="outline" size="sm">
             <Download size={12} /> Download
           </Button>
         </div>
       </div>
 
-      <pre className="log-scroll h-[420px] max-h-[420px] overflow-auto bg-surface-hull/80 p-3 font-mono text-[11px] leading-relaxed text-text">
+      <pre className={cn("log-scroll min-h-0 flex-1 overflow-auto bg-surface-hull/80 py-2 font-mono text-[12.5px] leading-[21px] tabular-nums max-md:h-[420px] max-md:max-h-[420px]", wrap ? "overflow-x-hidden" : "overflow-x-auto")} data-log-wrap={wrap ? "on" : "off"}>
         {error !== null ? (
           <span className="text-muted">Failed to load logs: {error}</span>
         ) : lines === null ? (
@@ -192,7 +262,7 @@ function HistoricalLogViewer({
         ) : filtered.length === 0 ? (
           <span className="text-muted">{filter ? "No log lines match." : "No logs available."}</span>
         ) : (
-          filtered.map((line, i) => <div key={`${i}-${line.length}`}>{maskSecrets(line)}</div>)
+          <LogRows lines={filtered} wrap={wrap} />
         )}
       </pre>
       <div className="border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted">
@@ -218,6 +288,7 @@ function LiveLogViewer({
   const [connected, setConnected] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [lines, setLines] = useState<string[]>([]);
+  const [wrap, setWrap] = useState(false);
 
   const pausedRef = useRef(paused);
   const connectedRef = useRef(false);
@@ -353,8 +424,8 @@ function LiveLogViewer({
   };
 
   return (
-    <div className="overflow-hidden rounded-panel border border-border bg-surface-deck">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised/55 px-3 py-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-panel border border-border bg-surface-deck">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised/55 px-3 py-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -399,21 +470,26 @@ function LiveLogViewer({
               </option>
             ))}
           </Select>
+          <button type="button" aria-pressed={wrap} onClick={() => setWrap((value) => !value)} className={cn("inline-flex h-8 items-center gap-1 rounded-control border px-2 font-mono text-[11px]", wrap ? "border-selected-border/40 bg-selected text-text" : "border-border bg-surface-hull/40 text-text-muted hover:text-text")}>
+            <WrapText size={12} /> Wrap {wrap ? "on" : "off"}
+          </button>
           <Button onClick={download} aria-label="Download logs" variant="outline" size="sm">
             <Download size={12} /> Download
           </Button>
         </div>
       </div>
 
+      <div className="relative min-h-0 flex-1">
       <pre
         ref={preRef}
         onScroll={handleScroll}
-        className="log-scroll h-[420px] max-h-[420px] overflow-auto bg-surface-hull/80 p-3 font-mono text-[11px] leading-relaxed text-text"
+        className={cn("log-scroll h-full min-h-0 overflow-y-auto bg-surface-hull/80 py-2 font-mono text-[12.5px] leading-[21px] tabular-nums max-md:h-[420px] max-md:max-h-[420px]", wrap ? "overflow-x-hidden" : "overflow-x-auto")}
+        data-log-wrap={wrap ? "on" : "off"}
       >
         {filtered.length === 0 ? (
           <span className="text-muted">{filter ? "No log lines match." : "Waiting for logs…"}</span>
         ) : (
-          filtered.map((line, i) => <div key={`${i}-${line.length}`}>{maskSecrets(line)}</div>)
+          <LogRows lines={filtered} wrap={wrap} />
         )}
       </pre>
       {!autoScroll && (
@@ -423,11 +499,12 @@ function LiveLogViewer({
             setAutoScroll(true);
             if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
           }}
-          className="border-t border-border px-3 py-2 font-mono text-xs text-brand hover:text-brand-hover"
+          className="absolute bottom-3 right-4 rounded-full border border-selected-border/35 bg-surface-overlay px-3 py-1.5 font-mono text-[11px] text-brand shadow-overlay hover:text-brand-hover"
         >
           Jump to latest
         </button>
       )}
+      </div>
     </div>
   );
 }

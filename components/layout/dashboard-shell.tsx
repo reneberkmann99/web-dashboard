@@ -14,7 +14,9 @@ import {
   Server,
   ShieldAlert,
   Users,
-  Workflow
+  Workflow,
+  PanelLeftClose,
+  PanelLeftOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isClientRole } from "@/types/domain";
@@ -28,6 +30,7 @@ import { MobileAppHeader } from "@/components/mobile/mobile-app-header";
 import { MobileBottomNav } from "@/components/mobile/mobile-bottom-nav";
 import { AccountSheet } from "@/components/mobile/account-sheet";
 import type { NavRootKey } from "@/lib/navigation";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 
 type ShellSession = {
   displayName: string;
@@ -161,19 +164,55 @@ function DashboardShellInner({
   const overviewHref = isAdmin ? "/admin" : "/client";
 
   const [accountOpen, setAccountOpen] = useState(false);
-  const [now, setNow] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
   useEffect(() => {
-    setNow(new Date().toLocaleString());
+    try {
+      setSidebarCollapsed(window.sessionStorage.getItem("noderaft:desktop-sidebar-collapsed") === "1");
+    } catch {
+      /* storage unavailable */
+    }
+    const timer = window.setInterval(() => setFreshnessNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // Attention badge for the mobile bottom tab (admins only). Uses the same
   // authoritative fleet summary as the Overview screen; refreshes slowly.
   const attentionQuery = useQuery({
-    queryKey: ["mobile-nav-attention"],
-    queryFn: () => apiFetch<FleetSummaryPayload>("/api/admin/overview"),
-    refetchInterval: 60_000,
-    enabled: isAdmin
+    queryKey: ["shell-freshness", isAdmin ? "admin" : "client"],
+    queryFn: () => apiFetch<FleetSummaryPayload | Record<string, unknown>>(isAdmin ? "/api/admin/overview" : "/api/client/overview"),
+    refetchInterval: 20_000
   });
+
+  const fleetSummary = "fleetSummary" in (attentionQuery.data ?? {})
+    ? (attentionQuery.data as FleetSummaryPayload).fleetSummary
+    : null;
+  const freshnessAge = attentionQuery.dataUpdatedAt > 0 ? Math.max(0, Math.floor((freshnessNow - attentionQuery.dataUpdatedAt) / 1000)) : null;
+  const agentUnavailable = attentionQuery.isError || Boolean(fleetSummary && fleetSummary.nodesTotal > 0 && fleetSummary.nodesOnline === 0);
+  const stale = !agentUnavailable && (freshnessAge === null || freshnessAge > 45 || Boolean(fleetSummary && fleetSummary.nodesOnline < fleetSummary.nodesTotal));
+  const freshnessLabel = agentUnavailable
+    ? "agent unavailable"
+    : stale
+      ? `stale${freshnessAge !== null ? ` · ${freshnessAge}s ago` : ""}`
+      : `live · ${freshnessAge ?? 0}s ago`;
+
+  const setCollapsed = (value: boolean): void => {
+    setSidebarCollapsed(value);
+    try {
+      window.sessionStorage.setItem("noderaft:desktop-sidebar-collapsed", value ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+  };
+
+  const navCount = (item: NavItem): number | null => {
+    if (!fleetSummary) return item.key === "attention" ? 0 : null;
+    if (item.key === "workloads") return fleetSummary.workloadsTotal;
+    if (item.key === "containers") return fleetSummary.containersTotal;
+    if (item.key === "nodes") return fleetSummary.nodesTotal;
+    if (item.key === "attention") return fleetSummary.attentionIssues;
+    return null;
+  };
 
   const renderLink = (item: NavItem, Icon: NavItem["icon"]): React.JSX.Element => {
     const active = rootHref === item.href;
@@ -186,13 +225,20 @@ function DashboardShellInner({
         }}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex items-center gap-2 rounded-control border border-transparent px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
-          active && "border-selected-border/35 bg-selected text-text"
+          "relative flex h-[38px] items-center rounded-control px-3 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
+          sidebarCollapsed ? "justify-center" : "gap-2.5",
+          active && "bg-selected/70 text-text before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-brand"
         )}
         key={item.href}
+        title={sidebarCollapsed ? item.label : undefined}
       >
-        <Icon className="h-4 w-4" />
-        <span>{item.label}</span>
+        <Icon className={cn("h-4 w-4 shrink-0", active && "text-brand")} />
+        {!sidebarCollapsed && <span>{item.label}</span>}
+        {!sidebarCollapsed && navCount(item) !== null && (
+          <span className={cn("ml-auto font-mono text-[11px] tabular-nums text-text-subtle", item.key === "attention" && navCount(item)! > 0 && "rounded bg-warning/15 px-1.5 py-0.5 text-warning-foreground")}>
+            {navCount(item)}
+          </span>
+        )}
       </a>
     );
   };
@@ -200,8 +246,9 @@ function DashboardShellInner({
   const pinnedActions = hasPinnedContainerActions(pathname);
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[264px_1fr]">
-      <aside className="hidden border-b border-border bg-surface-deck p-4 md:block md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r">
+    <div className={cn("min-h-screen md:grid", sidebarCollapsed ? "md:grid-cols-[64px_1fr]" : "md:grid-cols-[264px_1fr]")}>
+      <aside className={cn("hidden border-b border-border bg-surface-deck md:sticky md:top-0 md:flex md:h-screen md:flex-col md:border-b-0 md:border-r", sidebarCollapsed ? "p-3" : "p-4")} data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}>
+        <div className={cn("flex h-9 items-center", sidebarCollapsed ? "justify-center" : "justify-between")}>
         <a
           href={overviewHref}
           aria-label="Noderaft overview"
@@ -211,77 +258,77 @@ function DashboardShellInner({
           }}
           className="inline-flex rounded-control focus:outline-none focus:ring-2 focus:ring-focus"
         >
-          <NoderaftLogo priority />
+          <NoderaftLogo priority compact={sidebarCollapsed} className={sidebarCollapsed ? "h-[30px] w-[30px]" : "h-[30px] w-auto"} />
         </a>
-
-        <div className="mt-5 border-y border-border py-3">
-          <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-selected-border/30 bg-surface-raised font-mono text-xs font-medium text-brand"
-            >
-              {(session.displayName || session.email || "?").charAt(0).toUpperCase()}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate font-medium">{session.displayName}</p>
-              <p className="truncate font-mono text-[11px] text-text-muted">{session.email}</p>
-            </div>
-          </div>
-          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-text-subtle">
-            {isAdmin ? "Administrator" : session.clientAccountName}
-          </p>
+        {!sidebarCollapsed && (
+          <button type="button" onClick={() => setCollapsed(true)} aria-label="Collapse sidebar" className="grid h-8 w-8 place-items-center rounded-control text-text-subtle hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus">
+            <PanelLeftClose size={15} />
+          </button>
+        )}
         </div>
 
-        <nav className="mt-4 space-y-1" aria-label="Primary">
+        {sidebarCollapsed && (
+          <button type="button" onClick={() => setCollapsed(false)} aria-label="Expand sidebar" title="Expand sidebar" className="mt-3 grid h-8 w-full place-items-center rounded-control text-text-subtle hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus">
+            <PanelLeftOpen size={15} />
+          </button>
+        )}
+
+        <nav className={cn("space-y-0.5", sidebarCollapsed ? "mt-3" : "mt-5")} aria-label="Primary">
           {navItems.map((item) => renderLink(item, item.icon))}
         </nav>
 
         {settingsItems.length > 0 && (
           <>
-            <p className="mt-6 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-text-subtle">Settings</p>
+            <div className="mt-5 border-t border-border pt-3">
+              {!sidebarCollapsed && <p className="px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-text-subtle">Settings</p>}
+            </div>
             <nav className="mt-2 space-y-1" aria-label="Settings">
               {settingsItems.map((item) => renderLink(item, item.icon))}
             </nav>
           </>
         )}
+
+        <div className="mt-auto border-t border-border pt-2">
+          <Menu
+            label="Open account menu"
+            align="left"
+            side="top"
+            triggerClassName="h-12 w-full justify-start px-0"
+            trigger={
+              <span className={cn("flex h-10 w-full items-center", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
+                <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border-strong bg-surface-raised font-mono text-xs font-medium text-text">
+                  {(session.displayName || session.email || "?").charAt(0).toUpperCase()}
+                </span>
+                {!sidebarCollapsed && <span className="min-w-0 flex-1 text-left"><span className="block truncate text-sm text-text">{session.displayName}</span><span className="block truncate font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">{isAdmin ? "Administrator" : session.clientAccountName}</span></span>}
+                {!sidebarCollapsed && <ChevronDown className="h-3.5 w-3.5 text-text-subtle" />}
+              </span>
+            }
+            items={[
+              { label: "Profile", onSelect: () => router.push("/account") },
+              { label: "Log out", tone: "danger", onSelect: () => { void (async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); })(); } }
+            ]}
+          />
+        </div>
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-10 hidden min-h-16 items-center justify-between border-b border-border bg-surface-hull/95 px-4 py-3 backdrop-blur md:flex md:px-6">
-          <p className="font-mono text-xs text-text-muted">{now ?? ""}</p>
+        <header className="sticky top-0 z-20 hidden h-[52px] items-center justify-between border-b border-border bg-surface-hull/95 px-4 backdrop-blur md:flex md:px-5" data-desktop-topbar>
+          <Breadcrumbs className="min-w-0" />
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => window.dispatchEvent(new CustomEvent("noderaft:open-search"))}
-              className="hidden items-center gap-2 rounded-control border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-muted transition-colors hover:border-border-strong hover:text-text focus:outline-none focus:ring-2 focus:ring-focus sm:flex"
+              className="hidden h-8 items-center gap-2 rounded-control border border-border bg-surface-raised px-2.5 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text focus:outline-none focus:ring-2 focus:ring-focus sm:flex"
               aria-label="Open search"
             >
               <Search size={14} />
-              <span className="hidden lg:inline">{isAdmin ? "Search nodes, workloads, containers" : "Search workloads, containers"}</span>
-              <span className="lg:hidden">Search</span>
+              <span>Search</span>
               <kbd className="rounded-sm border border-border px-1.5 text-[10px]">⌘K</kbd>
             </button>
-            <Menu
-              label="Open account menu"
-              trigger={<><span className="max-w-36 truncate">{session.displayName}</span><ChevronDown className="ml-1 h-3.5 w-3.5" /></>}
-              items={[
-                {
-                  label: "Account settings",
-                  onSelect: () => router.push("/account")
-                },
-                {
-                  label: "Sign out",
-                  tone: "danger",
-                  onSelect: () => {
-                    void (async () => {
-                      await fetch("/api/auth/logout", { method: "POST" });
-                      router.push("/login");
-                      router.refresh();
-                    })();
-                  }
-                }
-              ]}
-            />
+            <span className={cn("inline-flex items-center gap-1.5 font-mono text-[11px]", agentUnavailable ? "text-critical-foreground" : stale ? "text-warning-foreground" : "text-success-foreground")} data-freshness-state={agentUnavailable ? "unavailable" : stale ? "stale" : "live"}>
+              <span className={cn("h-1.5 w-1.5 rounded-full", agentUnavailable ? "bg-critical" : stale ? "bg-warning" : "bg-success")} />
+              {freshnessLabel}
+            </span>
           </div>
         </header>
 
@@ -302,7 +349,7 @@ function DashboardShellInner({
 
       <MobileBottomNav
         role={session.role}
-        attentionCount={isAdmin ? (attentionQuery.data?.fleetSummary.attentionIssues ?? 0) : 0}
+        attentionCount={isAdmin ? (fleetSummary?.attentionIssues ?? 0) : 0}
       />
       <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} session={session} />
       <CommandPalette />

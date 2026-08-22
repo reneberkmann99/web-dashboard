@@ -11,17 +11,21 @@ export async function GET(request: Request): Promise<Response> {
 
     const url = new URL(request.url);
     const search = url.searchParams.get("search")?.trim();
+    const state = url.searchParams.get("state");
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? "25"), 1), 100);
     const page = Math.max(Number(url.searchParams.get("page") ?? "1"), 1);
 
-    const where = search
+    const where = {
+      ...(search
       ? {
           OR: [
             { name: { contains: search, mode: "insensitive" as const } },
             { slug: { contains: search, mode: "insensitive" as const } }
           ]
         }
-      : {};
+      : {}),
+      ...(state === "active" ? { isActive: true } : state === "inactive" ? { isActive: false } : {})
+    };
 
     const [total, clients] = await Promise.all([
       prisma.clientAccount.count({ where }),

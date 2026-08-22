@@ -1,21 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Compass } from "lucide-react";
+import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
-import { Select } from "@/components/ui/select";
-import { humanizeAction, timeAgo } from "@/lib/format";
+import { compactMemory, humanizeAction, timeAgo } from "@/lib/format";
 import type { WorkloadSummary } from "@/types/domain";
-import { useStoredViewState } from "@/components/navigation/view-state";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
 import { MobileFiltersRow, workloadCard } from "@/components/mobile/mobile-resource-cards";
+import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
+import { Menu } from "@/components/ui/menu";
+import { Input } from "@/components/ui/input";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type RefPayload = { nodes: Array<{ id: string; name: string }>; clients: Array<{ id: string; name: string }> };
@@ -31,6 +33,7 @@ function healthAttention(w: WorkloadSummary): "critical" | "warning" | "info" | 
 }
 
 type Filters = {
+  search: string;
   nodeFilter: string;
   clientFilter: string;
   stateFilter: string;
@@ -40,6 +43,10 @@ type Filters = {
 
 function applyFilters(workloads: WorkloadSummary[], f: Filters): WorkloadSummary[] {
   let out = workloads;
+  if (f.search) {
+    const query = f.search.toLowerCase();
+    out = out.filter((workload) => `${workload.name} ${workload.nodeName} ${workload.clientName ?? ""} ${workload.description ?? ""} ${workload.source}`.toLowerCase().includes(query));
+  }
   if (f.nodeFilter) out = out.filter((w) => w.nodeId === f.nodeFilter);
   if (f.clientFilter) out = out.filter((w) => w.clientId === f.clientFilter);
   if (f.stateFilter) out = out.filter((w) => w.health === f.stateFilter);
@@ -61,16 +68,51 @@ function activeCount(f: Filters): number {
 export default function AdminWorkloadsPage(): React.JSX.Element {
   const go = useResourceNavigation();
   const router = useRouter();
-  const [filters, setFilters] = useStoredViewState<Filters>("filters:admin-workloads", {
-    nodeFilter: "",
-    clientFilter: "",
-    stateFilter: "",
-    sourceFilter: "",
-    needsAttentionOnly: false
+  const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const [filters, setFilters] = useState<Filters>({
+    search: searchParams.get("search") ?? "",
+    nodeFilter: searchParams.get("nodeId") ?? "",
+    clientFilter: searchParams.get("clientId") ?? "",
+    stateFilter: searchParams.get("state") ?? "",
+    sourceFilter: searchParams.get("source") ?? "",
+    needsAttentionOnly: searchParams.get("needsAttention") === "1"
   });
-  const { nodeFilter, clientFilter, stateFilter, sourceFilter, needsAttentionOnly } = filters;
+  const { search, nodeFilter, clientFilter, stateFilter, sourceFilter, needsAttentionOnly } = filters;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetCount, setSheetCount] = useState<number | null>(null);
+
+  const syncUrl = useCallback((next: Filters) => {
+    const params = new URLSearchParams();
+    if (next.search) params.set("search", next.search);
+    if (next.nodeFilter) params.set("nodeId", next.nodeFilter);
+    if (next.clientFilter) params.set("clientId", next.clientFilter);
+    if (next.stateFilter) params.set("state", next.stateFilter);
+    if (next.sourceFilter) params.set("source", next.sourceFilter);
+    if (next.needsAttentionOnly) params.set("needsAttention", "1");
+    const query = params.toString();
+    router.replace(query ? `/admin/workloads?${query}` : "/admin/workloads", { scroll: false });
+  }, [router]);
+
+  const updateFilters = useCallback((patch: Partial<Filters>) => {
+    setFilters((current) => {
+      const next = { ...current, ...patch };
+      syncUrl(next);
+      return next;
+    });
+  }, [syncUrl]);
+
+  useEffect(() => {
+    const next: Filters = {
+      search: searchParams.get("search") ?? "",
+      nodeFilter: searchParams.get("nodeId") ?? "",
+      clientFilter: searchParams.get("clientId") ?? "",
+      stateFilter: searchParams.get("state") ?? "",
+      sourceFilter: searchParams.get("source") ?? "",
+      needsAttentionOnly: searchParams.get("needsAttention") === "1"
+    };
+    setFilters((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
+  }, [searchParams]);
 
   const workloadsQuery = useQuery({
     queryKey: ["admin-workloads"],
@@ -80,6 +122,15 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
   const refsQuery = useQuery({
     queryKey: ["admin-workloads-refs"],
     queryFn: () => apiFetch<RefPayload>("/api/admin/clients-refs")
+  });
+  const restartMutation = useMutation({
+    mutationFn: (id: string) => apiFetch<{ total: number; failures: Array<{ reason: string }> }>(`/api/admin/workloads/${id}/restart`, { method: "POST" }),
+    onSuccess: async (data) => {
+      if (data.failures.length > 0) toast.warning(`${data.total - data.failures.length}/${data.total} restarts queued`);
+      else toast.success(`Restart queued for ${data.total} containers`);
+      await queryClient.invalidateQueries({ queryKey: ["admin-workloads"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Restart failed")
   });
 
   const allWorkloads = workloadsQuery.data?.workloads ?? [];
@@ -100,10 +151,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       header: "Workload",
       sortValue: (w) => w.name,
       render: (w) => (
-        <div>
-          <p className="font-medium">{w.name}</p>
-          <p className="text-xs text-muted">{w.description ?? w.slug}</p>
-        </div>
+        <p className="truncate font-medium text-text" title={w.name}>{w.name}</p>
       )
     },
     {
@@ -150,22 +198,26 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       key: "attention",
       header: "Attention",
       sortValue: (w) => ATTENTION_RANK[healthAttention(w)],
+      omitWhenEmpty: (w) => healthAttention(w) === "healthy",
       render: (w) => {
         const a = healthAttention(w);
-        return a === "healthy" ? <span className="text-xs text-muted">—</span> : <AttentionBadge severity={a} />;
+        return a === "healthy" ? null : <AttentionBadge severity={a} />;
       },
       hideBelow: "md"
     },
     {
-      key: "resources",
-      header: "Resources",
+      key: "cpu",
+      header: "CPU",
+      className: "text-right",
       hideBelow: "md",
-      render: (w) => (
-        <span className="font-mono text-xs text-muted">
-          {w.cpuPercent !== null ? `${w.cpuPercent}% CPU` : "— CPU"}
-          {w.memoryUsage ? ` · ${w.memoryUsage}` : ""}
-        </span>
-      )
+      render: (w) => <span className="font-mono text-xs tabular-nums text-text-muted">{w.cpuPercent !== null ? `${w.cpuPercent.toFixed(1)}%` : "—"}</span>
+    },
+    {
+      key: "memory",
+      header: "Memory",
+      className: "text-right",
+      hideBelow: "md",
+      render: (w) => <span className="font-mono text-xs tabular-nums text-text-muted" title={w.memoryUsage ?? undefined}>{compactMemory(w.memoryUsage)}</span>
     },
     {
       key: "lastEvent",
@@ -181,6 +233,17 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         ) : (
           <span className="text-xs text-muted">—</span>
         )
+    },
+    {
+      key: "actions",
+      header: "",
+      className: "w-10 text-right",
+      render: (workload) => <Menu label={`Actions for ${workload.name}`} items={[
+        { label: "Open workload", onSelect: () => go({ url: `/admin/workloads/${workload.id}`, label: workload.name, type: "workload", id: workload.id }) },
+        ...(workload.totalContainers > 0 ? [{ label: "Restart workload", onSelect: () => restartMutation.mutate(workload.id) }] : []),
+        { label: "View activity", onSelect: () => router.push(`/admin/activity?projectId=${workload.id}`) },
+        { label: "Copy ID", onSelect: () => { void navigator.clipboard.writeText(workload.id); } }
+      ]} />
     }
   ];
 
@@ -221,6 +284,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
   const draftToFilters = (draft: FilterDraft): Filters => {
     const pick = (id: string): string => draft.groups.find((g) => g.id === id)?.selected[0] ?? "";
     return {
+      search,
       nodeFilter: pick("node"),
       stateFilter: pick("state"),
       sourceFilter: pick("source"),
@@ -241,11 +305,11 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         eyebrow="Fleet"
         title="Workloads"
-        description="Logical services running across your infrastructure."
+        count={allWorkloads.length}
         actions={<>
           <Button variant="secondary" onClick={() => router.push("/admin/compose")}>
             <Compass size={14} className="mr-2" />
@@ -257,73 +321,36 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         </>}
       />
 
+      <DesktopFilterBar
+        search={search}
+        onSearchChange={(value) => updateFilters({ search: value })}
+        searchPlaceholder="Search workloads…"
+        dimensions={[
+          { id: "node", label: "Node", value: nodeFilter, options: nodeOptions, onChange: (value) => updateFilters({ nodeFilter: value }) },
+          { id: "client", label: "Client", value: clientFilter, options: clientOptions, onChange: (value) => updateFilters({ clientFilter: value }) },
+          { id: "state", label: "State", value: stateFilter, options: [{ value: "healthy", label: "Healthy" }, { value: "degraded", label: "Degraded" }, { value: "down", label: "Down" }, { value: "unknown", label: "Unknown" }], onChange: (value) => updateFilters({ stateFilter: value }) },
+          { id: "source", label: "Type", value: sourceFilter, options: [{ value: "MANUAL", label: "Manual" }, { value: "COMPOSE", label: "External Compose" }, { value: "MANAGED", label: "Managed" }], onChange: (value) => updateFilters({ sourceFilter: value }) }
+        ]}
+        toggles={[{ id: "attention", label: "Needs attention", active: needsAttentionOnly, onChange: (active) => updateFilters({ needsAttentionOnly: active }) }]}
+        resultCount={rows.length}
+        totalCount={allWorkloads.length}
+        onClearAll={() => updateFilters({ search: "", nodeFilter: "", clientFilter: "", stateFilter: "", sourceFilter: "", needsAttentionOnly: false })}
+      />
+
+      {/* Mobile keeps its card/search/filter-sheet system. */}
+      <div className="md:hidden">
+        <Input type="search" value={search} onChange={(event) => updateFilters({ search: event.target.value })} placeholder="Search workloads…" aria-label="Search workloads…" />
+      </div>
+
+      <select aria-label="Filter by node" value={nodeFilter} onChange={(event) => updateFilters({ nodeFilter: event.target.value })} className="sr-only">
+        <option value="">All nodes</option>{nodeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+
       <DataTable
         columns={columns}
         rows={rows}
-        searchableText={(w) => `${w.name} ${w.nodeName} ${w.clientName ?? ""} ${w.description ?? ""} ${w.source}`}
-        searchPlaceholder="Search workloads…"
         stateKey="admin-workloads"
         ariaLabel="Workloads"
-        toolbar={<>
-        <Select
-          value={nodeFilter}
-          onChange={(e) => setFilters((current) => ({ ...current, nodeFilter: e.target.value }))}
-          aria-label="Filter by node"
-          className="w-auto min-w-40"
-        >
-          <option value="">All nodes</option>
-          {(refsQuery.data?.nodes ?? []).map((n) => (
-            <option key={n.id} value={n.id}>
-              {n.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={clientFilter}
-          onChange={(e) => setFilters((current) => ({ ...current, clientFilter: e.target.value }))}
-          aria-label="Filter by client"
-          className="w-auto min-w-40"
-        >
-          <option value="">All clients</option>
-          {(refsQuery.data?.clients ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={stateFilter}
-          onChange={(e) => setFilters((current) => ({ ...current, stateFilter: e.target.value }))}
-          aria-label="Filter by state"
-          className="w-auto min-w-36"
-        >
-          <option value="">All states</option>
-          <option value="healthy">Healthy</option>
-          <option value="degraded">Degraded</option>
-          <option value="down">Down</option>
-          <option value="unknown">Unknown</option>
-        </Select>
-        <Select
-          value={sourceFilter}
-          onChange={(e) => setFilters((current) => ({ ...current, sourceFilter: e.target.value }))}
-          aria-label="Filter by source type"
-          className="w-auto min-w-40"
-        >
-          <option value="">All types</option>
-          <option value="MANUAL">Manual</option>
-          <option value="COMPOSE">External Compose</option>
-          <option value="MANAGED">Managed</option>
-        </Select>
-        <label className="flex h-control items-center gap-2 rounded-control border border-border bg-surface-raised px-3 text-sm text-text-muted">
-          <input
-            type="checkbox"
-            checked={needsAttentionOnly}
-            onChange={(e) => setFilters((current) => ({ ...current, needsAttentionOnly: e.target.checked }))}
-            className="accent-accent"
-          />
-          Needs attention
-        </label>
-        </>}
         mobileToolbar={
           <MobileFiltersRow
             count={activeCount(filters)}
@@ -353,8 +380,8 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         toggles={toggles}
         resultCount={sheetCount}
         resultNoun="workloads"
-        onApply={(draft) => setFilters(draftToFilters(draft))}
-        onReset={() => setFilters({ nodeFilter: "", clientFilter: "", stateFilter: "", sourceFilter: "", needsAttentionOnly: false })}
+        onApply={(draft) => updateFilters(draftToFilters(draft))}
+        onReset={() => updateFilters({ nodeFilter: "", clientFilter: "", stateFilter: "", sourceFilter: "", needsAttentionOnly: false })}
         onDraftChange={(draft) => setSheetCount(applyFilters(allWorkloads, draftToFilters(draft)).length)}
       />
     </div>

@@ -22,6 +22,8 @@ import { MobileActionBar } from "@/components/mobile/mobile-action-bar";
 import { MobileMetricStrip, MobileMetricCard, CardChip } from "@/components/mobile/mobile-resource-card";
 import { MobileSheet } from "@/components/mobile/mobile-sheet";
 import { ScrollText } from "lucide-react";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Menu } from "@/components/ui/menu";
 
 type DetailResponse = {
   container: ContainerView;
@@ -210,29 +212,50 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
     </div>
   );
 
+  const desktopPrimaryActions = actions.map((action) => (
+    <Button
+      key={action.action}
+      size="sm"
+      variant={action.danger ? "dangerOutline" : "default"}
+      disabled={!nodeOnline || busy}
+      onClick={() => setConfirmAction(action.action)}
+    >
+      {action.label}
+    </Button>
+  ));
+
+  const labels = Object.entries(container.details?.labels ?? {});
+  const networks = container.details?.networks ?? [];
+  const copyLabels = async (): Promise<void> => {
+    await navigator.clipboard.writeText(JSON.stringify(container.details?.labels ?? {}, null, 2));
+    toast.success("Labels copied as JSON");
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Container"
-        title={container.name}
+        title={<>{container.name}<Badge variant={container.status === "running" ? "success" : container.status === "stopped" ? "danger" : "warning"}>{container.status}</Badge></>}
         mobile="hidden"
         back={<Breadcrumbs />}
         description={<span className="font-mono text-sm">{container.image}</span>}
-        actions={<>
-          <Badge
-            variant={
-              container.status === "running" ? "success" : container.status === "stopped" ? "danger" : "warning"
-            }
-          >
-            {container.status}
-          </Badge>
+        actions={<div className="hidden items-center gap-2 md:flex">
+          {desktopPrimaryActions}
           {!isManaged && (
             <Button size="sm" variant="secondary" onClick={() => setAdoptOpen(true)}>
               Manage with Noderaft
             </Button>
           )}
           {!nodeOnline && <Badge variant="danger">Node unreachable</Badge>}
-        </>}
+          <Menu
+            label={`More actions for ${container.name}`}
+            items={[
+              { label: "View activity", onSelect: () => router.push(`/admin/activity?containerId=${container.containerId}`) },
+              { label: "Copy container ID", onSelect: () => { void copyId(container.containerId); } },
+              ...(!isManaged ? [{ label: "Delete container", tone: "danger" as const, onSelect: () => setConfirmDelete(true) }] : [])
+            ]}
+          />
+        </div>}
       />
 
       {detail.data?.maintenance[0] && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">MAINTENANCE until {new Date(detail.data.maintenance[0].endsAt).toLocaleString()}{detail.data.maintenance[0].reason ? ` — ${detail.data.maintenance[0].reason}` : ""}. Container state remains {container.status}.</div>}
@@ -250,21 +273,17 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
       )}
 
       {detail.data?.managedDeployment?.managed && (
-        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">
-          <p className="font-medium">
-            Managed by Noderaft — workload <span className="font-mono text-xs">{container.projectName}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control border border-info/30 bg-info/5 px-3 py-2 text-[13px]">
+          <p>
+            Managed by workload <span className="font-medium text-text">{container.projectName}</span>
             {detail.data.managedDeployment.currentRelease && (
               <>
-                {' '}· Release #{detail.data.managedDeployment.currentRelease.displayNumber ?? "—"} · Revision{" "}
-                {detail.data.managedDeployment.currentRelease.revisionNumber}
+                {' '}· Release #{detail.data.managedDeployment.currentRelease.displayNumber ?? "—"}
               </>
             )}
+            . Direct actions are audited and can diverge from the deployment.
           </p>
-          <p className="mt-1 text-muted">
-            Direct start/stop/restart actions on this container are audited but can diverge from the managed deployment
-            state. Prefer workload-level deployment operations (edit → plan → deploy, rollback) for configuration changes;
-            keep direct actions for emergency recovery.
-          </p>
+          {container.projectId && <button type="button" onClick={() => router.push(`/admin/workloads/${container.projectId}`)} className="ml-auto shrink-0 text-brand hover:text-brand-hover">Deploy instead →</button>}
         </div>
       )}
 
@@ -413,11 +432,11 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
       </div>
 
       <div className="hidden md:block">
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid items-start gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <section className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Details</h2>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5 text-sm">
               <Stat label="Container ID">
                 <button
                   type="button"
@@ -447,67 +466,30 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
           </section>
 
           <section className="rounded-lg border border-border bg-panel p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Actions</h2>
-              <button
-                type="button"
-                onClick={() => router.push(`/admin/activity?containerId=${container.containerId}`)}
-                className="text-xs text-accent hover:underline"
-              >
-                View activity →
-              </button>
-            </div>
-            {!nodeOnline ? (
-              <p className="text-sm text-muted">
-                Actions are disabled because node <strong>{container.nodeName}</strong> is not responding.
-              </p>
-            ) : busy ? (
-              <p className="text-sm text-warning-foreground">
-                An operation is in progress — conflicting actions are disabled.
-              </p>
-            ) : actions.length === 0 ? (
-              <p className="text-sm text-muted">
-                No actions available while the container is {container.status}.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {actions.map((a) => (
-                  <Button
-                    key={a.action}
-                    variant={a.danger ? "danger" : "default"}
-                    onClick={() => setConfirmAction(a.action)}
-                  >
-                    {a.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-
-            {!detail.data?.managedDeployment?.managed && (
-              <div className="mt-4 border-t border-border pt-4">
-                <p className="mb-2 text-xs text-muted">
-                  Permanently remove this container from the node. Named volumes are preserved.
-                </p>
-                <Button variant="danger" disabled={!nodeOnline || busy} onClick={() => setConfirmDelete(true)}>
-                  Delete container
-                </Button>
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-lg border border-border bg-panel p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Networks</h2>
-            {(container.details?.networks?.length ?? 0) === 0 ? (
+            {networks.length === 0 ? (
+              <><h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Networks</h2>
               <p className="text-sm text-muted">No networks reported.</p>
+              </>
+            ) : networks.length > 4 ? (
+              <Disclosure label="Networks" count={networks.length}>
+                <ul className="space-y-1 text-sm">
+                  {networks.map((n) => (
+                    <li key={n.name} className="flex justify-between gap-3">
+                      <span>{n.name}</span>
+                      <span className="font-mono text-xs text-text-muted">{n.ipAddress || "—"}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Disclosure>
             ) : (
-              <ul className="space-y-1 text-sm">
-                {container.details?.networks?.map((n) => (
+              <><h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Networks</h2><ul className="space-y-1 text-sm">
+                {networks.map((n) => (
                   <li key={n.name} className="flex justify-between">
                     <span>{n.name}</span>
-                    <span className="text-muted">{n.ipAddress || "—"}</span>
+                    <span className="font-mono text-xs text-muted">{n.ipAddress || "—"}</span>
                   </li>
                 ))}
-              </ul>
+              </ul></>
             )}
           </section>
 
@@ -527,26 +509,31 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
             )}
           </section>
 
-          {container.details?.labels && Object.keys(container.details.labels).length > 0 && (
+          {labels.length > 0 && (
             <section className="rounded-lg border border-border bg-panel p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Labels</h2>
-              <div className="flex flex-wrap gap-1">
-                {Object.entries(container.details.labels)
-                  .slice(0, 12)
-                  .map(([k, v]) => (
-                    <Badge key={k}>
-                      {k}={v.length > 40 ? `${v.slice(0, 40)}…` : v}
-                    </Badge>
+              <Disclosure
+                label="Labels"
+                count={labels.length}
+                action={<button type="button" onClick={() => { void copyLabels(); }} className="rounded-control px-2 py-1 font-mono text-[11px] text-brand hover:bg-surface-raised hover:text-brand-hover">Copy all as JSON</button>}
+              >
+                <dl className="grid grid-cols-[minmax(160px,0.8fr)_minmax(0,1.2fr)] gap-x-4 gap-y-2 font-mono text-xs">
+                  {labels.map(([key, value]) => (
+                    <div key={key} className="contents">
+                      <dt className="break-all text-text-muted">{key}</dt>
+                      <dd className="min-w-0 select-all overflow-x-auto whitespace-pre-wrap break-words text-text">{value}</dd>
+                    </div>
                   ))}
-              </div>
+                </dl>
+              </Disclosure>
             </section>
           )}
         </div>
 
-        <section className="rounded-lg border border-border bg-panel p-4">
+        <section className="sticky top-[52px] flex h-[calc(100dvh-76px)] min-h-[480px] flex-col overflow-hidden rounded-lg border border-border bg-panel p-3" data-sticky-log-pane>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Logs</h2>
           </div>
+          <div className="min-h-0 flex-1">
           <LogViewer
             streamPath={`/api/admin/containers/direct/${nodeId}/${dockerId}/logs/stream`}
             historicalPath={`/api/admin/containers/direct/${nodeId}/${dockerId}/logs`}
@@ -554,6 +541,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
             containerStatus={container.status}
             nodeOnline={nodeOnline}
           />
+          </div>
         </section>
       </div>
       </div>
@@ -649,8 +637,8 @@ function Stat({
 }): React.JSX.Element {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted">{label}</dt>
-      <dd className="mt-0.5 break-words">{children ?? value ?? "—"}</dd>
+      <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">{label}</dt>
+      <dd className="mt-1 break-words font-mono text-[13px] leading-5 text-text">{children ?? value ?? "—"}</dd>
     </div>
   );
 }

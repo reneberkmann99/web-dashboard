@@ -33,6 +33,54 @@ export function formatDateTime(iso: string | Date | null | undefined): string {
   return date.toLocaleString();
 }
 
+/**
+ * Compact a docker `memoryUsage` string ("43.86MiB / 23.48GiB") into a
+ * single dense value for table rows ("43.9M") — design §05.3. The full pair
+ * remains available in detail views. Falls back to the raw string if it
+ * cannot be confidently parsed (never silently drops data).
+ */
+export function compactMemory(memoryUsage: string | null | undefined): string {
+  if (!memoryUsage) return "—";
+  const used = memoryUsage.split("/")[0]?.trim();
+  if (!used) return memoryUsage;
+  const match = /^([\d.]+)\s*([A-Za-z]+)$/.exec(used);
+  if (!match) return memoryUsage;
+  const value = Number(match[1]);
+  if (Number.isNaN(value)) return memoryUsage;
+  const unit = match[2].toUpperCase();
+  // Normalize to MiB, then pick the compact suffix.
+  const mib = unit.startsWith("G") ? value * 1024 : unit.startsWith("K") ? value / 1024 : unit.startsWith("T") ? value * 1024 * 1024 : value;
+  if (mib >= 1024 * 1024) return `${(mib / (1024 * 1024)).toFixed(1)}T`;
+  if (mib >= 1024) return `${(mib / 1024).toFixed(1)}G`;
+  if (mib >= 1) return `${mib.toFixed(1)}M`;
+  return `${(mib * 1024).toFixed(0)}K`;
+}
+
+/**
+ * Compact a docker `uptime`/Status string ("Up 4 weeks (healthy)", "Up 2
+ * minutes", "Exited (0) 3 hours ago") into a dense duration ("4w", "2m") for
+ * table rows — health is carried separately by the state badge, so the
+ * parenthetical health suffix is intentionally dropped here. Falls back to
+ * the raw string when the shape isn't recognized (never fabricates a value).
+ */
+export function compactUptime(uptime: string | null | undefined): string {
+  if (!uptime) return "—";
+  const match = /(\d+)\s*(second|minute|hour|day|week|month|year)s?/i.exec(uptime);
+  if (!match) return uptime;
+  const n = match[1];
+  const unitChar: Record<string, string> = {
+    second: "s",
+    minute: "m",
+    hour: "h",
+    day: "d",
+    week: "w",
+    month: "mo",
+    year: "y"
+  };
+  const suffix = unitChar[match[2].toLowerCase()] ?? "";
+  return `${n}${suffix}`;
+}
+
 export function maskSecrets(text: string): string {
   // crude but effective: redact common secret shapes in log lines
   return text
@@ -56,6 +104,7 @@ export function humanizeAction(action: string): string {
     USER_ACTIVATE: "Activated user",
     USER_DEACTIVATE: "Deactivated user",
     USER_REINVITE: "Reissued invitation",
+    USER_DELETE: "Deleted user",
     PROJECT_CONVERT_TO_COMPOSE: "Converted to Compose",
     PROJECT_DETACH_COMPOSE: "Detached from Compose tracking",
     COMPOSE_ADOPT: "Adopted Compose project",

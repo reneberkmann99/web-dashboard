@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellOff, CalendarClock, Check, ExternalLink, ShieldAlert, X } from "lucide-react";
 import { toast } from "sonner";
@@ -19,6 +19,8 @@ import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
 import { MobileFiltersRow } from "@/components/mobile/mobile-resource-cards";
+import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
+import { StatePanel } from "@/components/ui/state-panel";
 
 type Actor = { displayName: string; email: string } | null;
 type Acknowledgement = {
@@ -101,12 +103,15 @@ function actorName(actor: Actor): string {
 
 export default function AttentionPage(): React.JSX.Element {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const [view, setView] = useState<(typeof tabs)[number][0]>("active");
-  const [severity, setSeverity] = useState("");
-  const [conditionType, setConditionType] = useState("");
-  const [nodeId, setNodeId] = useState("");
-  const [workloadId, setWorkloadId] = useState("");
+  const initialView = tabs.some(([key]) => key === searchParams.get("view")) ? searchParams.get("view") as (typeof tabs)[number][0] : "active";
+  const [view, setView] = useState<(typeof tabs)[number][0]>(initialView);
+  const [q, setQ] = useState(searchParams.get("q") ?? "");
+  const [severity, setSeverity] = useState(searchParams.get("severity") ?? "");
+  const [conditionType, setConditionType] = useState(searchParams.get("conditionType") ?? "");
+  const [nodeId, setNodeId] = useState(searchParams.get("nodeId") ?? "");
+  const [workloadId, setWorkloadId] = useState(searchParams.get("workloadId") ?? "");
   const [maintenanceFilter, setMaintenanceFilter] = useState(searchParams.get("maintenance") ?? "");
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("conditionId"));
   const [ackOpen, setAckOpen] = useState(false);
@@ -121,11 +126,34 @@ export default function AttentionPage(): React.JSX.Element {
   const [maintenanceStart, setMaintenanceStart] = useState("");
   const [maintenanceEnd, setMaintenanceEnd] = useState("");
   const [maintenanceReason, setMaintenanceReason] = useState("");
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(Math.max(Number(searchParams.get("page") ?? "1") - 1, 0));
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetCount, setSheetCount] = useState<number | null>(null);
   const PAGE_SIZE = 15;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const syncUrl = useCallback((patch: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(patch)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    if (next.get("view") === "active") next.delete("view");
+    const query = next.toString();
+    router.replace(query ? `/admin/attention?${query}` : "/admin/attention", { scroll: false });
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    const nextView = tabs.some(([key]) => key === searchParams.get("view")) ? searchParams.get("view") as (typeof tabs)[number][0] : "active";
+    setView(nextView);
+    setQ(searchParams.get("q") ?? "");
+    setSeverity(searchParams.get("severity") ?? "");
+    setConditionType(searchParams.get("conditionType") ?? "");
+    setNodeId(searchParams.get("nodeId") ?? "");
+    setWorkloadId(searchParams.get("workloadId") ?? "");
+    setMaintenanceFilter(searchParams.get("maintenance") ?? "");
+    setPage(Math.max(Number(searchParams.get("page") ?? "1") - 1, 0));
+  }, [searchParams]);
 
   const params = new URLSearchParams({ view });
   if (severity) params.set("severity", severity);
@@ -138,6 +166,11 @@ export default function AttentionPage(): React.JSX.Element {
     queryKey: ["attention-center", view, severity, conditionType, nodeId, workloadId, maintenanceFilter],
     queryFn: () => apiFetch<{ conditions: Condition[] }>(`/api/admin/attention?${params.toString()}`),
     refetchInterval: 15_000
+  });
+  const totalConditionsQuery = useQuery({
+    queryKey: ["attention-center-total", view],
+    queryFn: () => apiFetch<{ conditions: Condition[] }>(`/api/admin/attention?view=${view}`),
+    refetchInterval: 30_000
   });
   const refsQuery = useQuery({
     queryKey: ["admin-attention-refs"],
@@ -153,8 +186,16 @@ export default function AttentionPage(): React.JSX.Element {
     queryFn: () => apiFetch<Detail>(`/api/admin/attention/${selectedId}`),
     enabled: Boolean(selectedId)
   });
-  const conditions = conditionsQuery.data?.conditions ?? [];
-  const conditionTypes = useMemo(() => Array.from(new Set(conditions.map((item) => item.conditionType))).sort(), [conditions]);
+  const allConditions = conditionsQuery.data?.conditions ?? [];
+  const conditions = q
+    ? allConditions.filter((condition) => `${condition.title} ${condition.detail} ${condition.conditionType}`.toLowerCase().includes(q.toLowerCase()))
+    : allConditions;
+  const conditionTypes = useMemo(() => Array.from(new Set(allConditions.map((item) => item.conditionType))).sort(), [allConditions]);
+  const filterCount = (q ? 1 : 0) + (severity ? 1 : 0) + (conditionType ? 1 : 0) + (nodeId ? 1 : 0) + (workloadId ? 1 : 0) + (maintenanceFilter ? 1 : 0);
+  const clearFilters = (): void => {
+    setQ(""); setSeverity(""); setConditionType(""); setNodeId(""); setWorkloadId(""); setMaintenanceFilter(""); setPage(0);
+    syncUrl({ q: "", severity: "", conditionType: "", nodeId: "", workloadId: "", maintenance: "", page: "" });
+  };
 
   const refresh = async (): Promise<void> => {
     await Promise.all([
@@ -228,12 +269,13 @@ export default function AttentionPage(): React.JSX.Element {
   const maintenanceWindows = maintenanceQuery.data?.windows ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         eyebrow="Operations"
         title="Attention"
-        description="Operational truth, acknowledgement, silence and maintenance — kept as separate states."
-        actions={<Button onClick={() => {
+        count={totalConditionsQuery.data?.conditions.length ?? allConditions.length}
+        description="Operational conditions that may require an operator."
+        actions={<Button variant="secondary" onClick={() => {
           const now = new Date();
           const end = new Date(now.getTime() + 60 * 60_000);
           setMaintenanceStart(datetimeLocalValue(now));
@@ -245,35 +287,33 @@ export default function AttentionPage(): React.JSX.Element {
         </Button>}
       />
 
-      <div className="flex gap-2 overflow-x-auto border-b border-border pb-3 no-scrollbar">
+      <div className="flex gap-6 overflow-x-auto border-b border-border no-scrollbar" role="tablist" aria-label="Attention state">
         {tabs.map(([key, label]) => (
-          <button key={key} type="button" onClick={() => setView(key)} className={`flex-none rounded-md px-3 py-1.5 text-sm ${view === key ? "bg-brand text-brand-contrast" : "bg-panelAlt text-muted hover:text-text"}`}>
+          <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => { setView(key); setPage(0); syncUrl({ view: key === "active" ? "" : key, page: "" }); }} className={`relative flex-none px-0.5 pb-2.5 pt-1 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-focus ${view === key ? "font-medium text-text after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-text-muted" : "text-text-muted hover:text-text"}`}>
             {label}
           </button>
         ))}
       </div>
 
-      <div className="hidden flex-wrap gap-2 md:flex">
-        <Select value={severity} onChange={(event) => { setSeverity(event.target.value); setPage(0); }} className="w-auto min-w-36">
-          <option value="">All severities</option><option value="CRITICAL">Critical</option><option value="WARNING">Warning</option><option value="INFO">Info</option>
-        </Select>
-        <Select value={conditionType} onChange={(event) => { setConditionType(event.target.value); setPage(0); }} className="w-auto min-w-44">
-          <option value="">All condition types</option>{conditionTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-        </Select>
-        <Select value={nodeId} onChange={(event) => { setNodeId(event.target.value); setPage(0); }} className="w-auto min-w-40">
-          <option value="">All nodes</option>{(refsQuery.data?.nodes ?? []).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}
-        </Select>
-        <Select value={workloadId} onChange={(event) => { setWorkloadId(event.target.value); setPage(0); }} className="w-auto min-w-44">
-          <option value="">All workloads</option>{(refsQuery.data?.workloads ?? []).map((workload) => <option key={workload.id} value={workload.id}>{workload.name}</option>)}
-        </Select>
-        <Select value={maintenanceFilter} onChange={(event) => { setMaintenanceFilter(event.target.value); setPage(0); }} className="w-auto min-w-44">
-          <option value="">Any maintenance state</option><option value="active">Under maintenance</option><option value="none">Not under maintenance</option>
-        </Select>
-      </div>
+      <DesktopFilterBar
+        search={q}
+        onSearchChange={(value) => { setQ(value); setPage(0); syncUrl({ q: value, page: "" }); }}
+        searchPlaceholder="Search conditions…"
+        dimensions={[
+          { id: "severity", label: "Severity", value: severity, options: [{ value: "CRITICAL", label: "Critical" }, { value: "WARNING", label: "Warning" }, { value: "INFO", label: "Info" }], onChange: (value) => { setSeverity(value); setPage(0); syncUrl({ severity: value, page: "" }); } },
+          { id: "conditionType", label: "Condition type", value: conditionType, options: conditionTypes.map((type) => ({ value: type, label: type })), onChange: (value) => { setConditionType(value); setPage(0); syncUrl({ conditionType: value, page: "" }); } },
+          { id: "node", label: "Node", value: nodeId, options: (refsQuery.data?.nodes ?? []).map((node) => ({ value: node.id, label: node.name })), onChange: (value) => { setNodeId(value); setPage(0); syncUrl({ nodeId: value, page: "" }); } },
+          { id: "workload", label: "Workload", value: workloadId, options: (refsQuery.data?.workloads ?? []).map((workload) => ({ value: workload.id, label: workload.name })), onChange: (value) => { setWorkloadId(value); setPage(0); syncUrl({ workloadId: value, page: "" }); } },
+          { id: "maintenance", label: "Maintenance", value: maintenanceFilter, options: [{ value: "active", label: "Under maintenance" }, { value: "none", label: "Not under maintenance" }], onChange: (value) => { setMaintenanceFilter(value); setPage(0); syncUrl({ maintenance: value, page: "" }); } }
+        ]}
+        resultCount={conditions.length}
+        totalCount={totalConditionsQuery.data?.conditions.length ?? allConditions.length}
+        onClearAll={clearFilters}
+      />
 
       <div className="md:hidden">
         <MobileFiltersRow
-          count={(severity ? 1 : 0) + (conditionType ? 1 : 0) + (nodeId ? 1 : 0) + (workloadId ? 1 : 0) + (maintenanceFilter ? 1 : 0)}
+          count={filterCount}
           onOpen={() => {
             setSheetCount(conditionsQuery.data?.conditions.length ?? null);
             setSheetOpen(true);
@@ -289,7 +329,20 @@ export default function AttentionPage(): React.JSX.Element {
       <section className="space-y-2" aria-label={`${view} attention conditions`}>
         {conditionsQuery.isLoading && <div className="h-24 animate-pulse rounded-lg bg-panelAlt" />}
         {conditionsQuery.isError && <p className="rounded-lg border border-critical/30 bg-critical/5 p-4 text-critical-foreground">Failed to load attention conditions.</p>}
-        {!conditionsQuery.isLoading && conditions.length === 0 && <p className="rounded-lg border border-border bg-panelAlt/40 p-5 text-sm text-muted">No conditions match these filters.</p>}
+        {!conditionsQuery.isLoading && conditions.length === 0 && view === "active" && filterCount === 0 && (
+          <StatePanel
+            tone="success"
+            title="Nothing needs you."
+            description="No active operational conditions are present across the fleet."
+            action={<button type="button" onClick={() => { setView("resolved"); syncUrl({ view: "resolved" }); }} className="text-sm text-brand hover:text-brand-hover">View resolved history →</button>}
+          />
+        )}
+        {!conditionsQuery.isLoading && conditions.length === 0 && filterCount > 0 && (
+          <StatePanel title="No conditions match these filters." description="Try removing a filter or clearing the search." action={<Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>} />
+        )}
+        {!conditionsQuery.isLoading && conditions.length === 0 && view !== "active" && filterCount === 0 && (
+          <StatePanel title={`No ${tabs.find(([key]) => key === view)?.[1].toLowerCase()} conditions.`} description="Conditions in this lifecycle state will appear here." />
+        )}
         {conditions.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((condition) => (
           <button key={condition.id} type="button" onClick={() => setSelectedId(condition.id)} className={`w-full rounded-lg border p-4 text-left transition hover:border-accent/50 max-md:rounded-[12px] max-md:p-3.5 ${condition.resolvedAt ? "border-border bg-panelAlt/30 opacity-75" : condition.severity === "CRITICAL" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"}`}>
             <div className="flex items-start justify-between gap-3">
@@ -321,7 +374,7 @@ export default function AttentionPage(): React.JSX.Element {
           total={conditions.length}
           page={page + 1}
           pageCount={Math.ceil(conditions.length / PAGE_SIZE)}
-          onPageChange={(p) => setPage(p - 1)}
+          onPageChange={(p) => { setPage(p - 1); syncUrl({ page: p > 1 ? String(p) : "" }); }}
         />
       )}
 
@@ -371,20 +424,21 @@ export default function AttentionPage(): React.JSX.Element {
         resultNoun="conditions"
         onApply={(draft: FilterDraft) => {
           const pick = (id: string): string => draft.groups.find((g) => g.id === id)?.selected[0] ?? "";
-          setSeverity(pick("severity"));
-          setConditionType(pick("conditionType"));
-          setNodeId(pick("node"));
-          setWorkloadId(pick("workload"));
-          setMaintenanceFilter(pick("maintenance"));
+          const nextSeverity = pick("severity");
+          const nextConditionType = pick("conditionType");
+          const nextNode = pick("node");
+          const nextWorkload = pick("workload");
+          const nextMaintenance = pick("maintenance");
+          setSeverity(nextSeverity);
+          setConditionType(nextConditionType);
+          setNodeId(nextNode);
+          setWorkloadId(nextWorkload);
+          setMaintenanceFilter(nextMaintenance);
           setPage(0);
+          syncUrl({ severity: nextSeverity, conditionType: nextConditionType, nodeId: nextNode, workloadId: nextWorkload, maintenance: nextMaintenance, page: "" });
         }}
         onReset={() => {
-          setSeverity("");
-          setConditionType("");
-          setNodeId("");
-          setWorkloadId("");
-          setMaintenanceFilter("");
-          setPage(0);
+          clearFilters();
         }}
         onDraftChange={() => setSheetCount(null)}
       />

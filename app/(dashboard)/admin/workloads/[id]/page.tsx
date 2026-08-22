@@ -232,7 +232,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Workload"
-        title={workload.name}
+        title={<>{workload.name}<Badge variant={healthVariant}>{workload.health}</Badge></>}
         back={<Breadcrumbs />}
         description={<div className="flex flex-wrap items-center gap-2">
           <span>
@@ -246,9 +246,13 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
             </button>
           </span>
           {workload.source === "COMPOSE" && <Badge variant="default">Compose{workload.composeProject ? `: ${workload.composeProject}` : ""}</Badge>}
-          <Badge variant={healthVariant}>{workload.health}</Badge>
         </div>}
         actions={<>
+          {workload.totalContainers > 0 && (
+            <Button size="sm" disabled={restartMutation.isPending || activeOperations.length > 0} onClick={() => setConfirmRestart(true)}>
+              Restart
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => router.push(`/admin/activity?projectId=${workload.id}`)}>
             View activity
           </Button>
@@ -263,9 +267,6 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
                 : []),
               ...(workload.source === "COMPOSE"
                 ? [{ label: "Detach from Compose", onSelect: () => setConfirmDetach(true) }]
-                : []),
-              ...(workload.totalContainers > 0
-                ? [{ label: "Restart workload", tone: "danger" as const, disabled: restartMutation.isPending || activeOperations.length > 0, onSelect: () => setConfirmRestart(true) }]
                 : []),
               {
                 label: workload.isActive ? "Deactivate workload" : "Reactivate workload",
@@ -341,7 +342,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Status</h2>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5 text-sm">
               <Stat label="Node" value={workload.node.name} />
               <Stat label="Hostname" value={workload.node.hostname} />
               <Stat label="Node state" value={workload.node.status} />
@@ -507,7 +508,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         title={`Restart ${workload.name}?`}
         impact={`${workload.totalContainers} container${workload.totalContainers === 1 ? "" : "s"} will be restarted and the service may be temporarily unavailable.`}
         confirmLabel={`Restart ${workload.totalContainers} container${workload.totalContainers === 1 ? "" : "s"}`}
-        danger
+        danger={false}
       />
 
       <ConfirmDialog
@@ -574,8 +575,8 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
 function Stat({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted">{label}</dt>
-      <dd className="mt-0.5">{value}</dd>
+      <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">{label}</dt>
+      <dd className="mt-1 break-words font-mono text-[13px] leading-5 text-text">{value}</dd>
     </div>
   );
 }

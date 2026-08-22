@@ -1,7 +1,8 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -19,16 +20,44 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ResourceUsageStrip } from "@/components/ui/resource-usage";
 import type { ResourceThresholds } from "@/types/domain";
 import { nodeCard } from "@/components/mobile/mobile-resource-cards";
+import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
+import { Input } from "@/components/ui/input";
 
 type NodesPayload = { resourceThresholds: ResourceThresholds; nodes: NodeRecord[] };
 type EnrollmentResponse = { token: string; expiresAt: string; ttlMinutes: number; nodeId: string | null };
 
 export default function AdminNodesPage(): React.JSX.Element {
   const go = useResourceNavigation();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollment, setEnrollment] = useState<EnrollmentResponse | null>(null);
   const [confirmDisable, setConfirmDisable] = useState<NodeRecord | null>(null);
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [nodeState, setNodeState] = useState(searchParams.get("state") ?? "");
+
+  useEffect(() => {
+    setSearch(searchParams.get("search") ?? "");
+    setNodeState(searchParams.get("state") ?? "");
+  }, [searchParams]);
+
+  const updateSearch = (value: string): void => {
+    setSearch(value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set("search", value);
+    else params.delete("search");
+    const searchString = params.toString();
+    router.replace(searchString ? `/admin/nodes?${searchString}` : "/admin/nodes", { scroll: false });
+  };
+  const updateState = (value: string): void => {
+    setNodeState(value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set("state", value);
+    else params.delete("state");
+    const searchString = params.toString();
+    router.replace(searchString ? `/admin/nodes?${searchString}` : "/admin/nodes", { scroll: false });
+  };
 
   const query = useQuery({
     queryKey: ["admin-nodes"],
@@ -83,10 +112,7 @@ export default function AdminNodesPage(): React.JSX.Element {
       header: "Node",
       sortValue: (n) => n.name,
       render: (n) => (
-        <div>
-          <p className="font-medium">{n.name}</p>
-          <p className="text-xs text-muted">{n.hostname}</p>
-        </div>
+        <p className="truncate font-medium text-text">{n.name}<span className="ml-2 font-mono text-[11px] font-normal text-text-subtle">{n.hostname}</span></p>
       )
     },
     {
@@ -153,13 +179,16 @@ export default function AdminNodesPage(): React.JSX.Element {
     {
       key: "containers",
       header: "Containers",
+      className: "text-right",
       sortValue: (n) => n.liveContainerCount,
-      render: (n) => (
-        <span className="font-mono text-sm">
-          {n.liveContainerCount}
-          <span className="ml-1 text-xs text-muted">{n.liveWorkloadCount ?? 0} workloads</span>
-        </span>
-      )
+      render: (n) => <span className="font-mono text-sm tabular-nums">{n.liveContainerCount}</span>
+    },
+    {
+      key: "workloads",
+      header: "Workloads",
+      className: "text-right",
+      sortValue: (n) => n.liveWorkloadCount ?? 0,
+      render: (n) => <span className="font-mono text-sm tabular-nums text-text-muted">{n.liveWorkloadCount ?? 0}</span>
     },
     {
       key: "actions",
@@ -184,16 +213,23 @@ export default function AdminNodesPage(): React.JSX.Element {
     mem: { warning: 85, critical: 95 },
     disk: { warning: 85, critical: 95 }
   };
+  const allNodes = query.data?.nodes ?? [];
+  const visibleNodes = allNodes.filter((node) => {
+    if (search && !`${node.name} ${node.hostname}`.toLowerCase().includes(search.toLowerCase())) return false;
+    if (nodeState && node.status.toLowerCase() !== nodeState) return false;
+    return true;
+  });
 
   return (
-    <div className="space-y-6">
-      <PageHeader eyebrow="Fleet" title="Nodes" description="Where your workloads run, and whether those hosts need attention." actions={<span className="max-md:hidden"><Button onClick={() => setEnrollOpen(true)}>Add node</Button></span>} />
+    <div className="space-y-4">
+      <PageHeader eyebrow="Fleet" title="Nodes" count={allNodes.length} description="Hosts reporting runtime and resource telemetry." actions={<span className="max-md:hidden"><Button onClick={() => setEnrollOpen(true)}>Add node</Button></span>} />
+
+      <DesktopFilterBar search={search} onSearchChange={updateSearch} searchPlaceholder="Search nodes…" dimensions={[{ id: "state", label: "State", value: nodeState, options: [{ value: "online", label: "Online" }, { value: "offline", label: "Offline" }, { value: "unknown", label: "Unknown" }, { value: "inactive", label: "Inactive" }], onChange: updateState }]} resultCount={visibleNodes.length} totalCount={allNodes.length} onClearAll={() => { setSearch(""); setNodeState(""); router.replace("/admin/nodes", { scroll: false }); }} />
+      <div className="md:hidden"><Input type="search" value={search} onChange={(event) => updateSearch(event.target.value)} placeholder="Search nodes…" aria-label="Search nodes…" /></div>
 
       <DataTable
         columns={columns}
-        rows={query.data?.nodes ?? []}
-        searchableText={(n) => `${n.name} ${n.hostname}`}
-        searchPlaceholder="Search nodes…"
+        rows={visibleNodes}
         loading={query.isLoading}
         error={query.isError ? "Failed to load nodes" : null}
         emptyTitle="No nodes yet"

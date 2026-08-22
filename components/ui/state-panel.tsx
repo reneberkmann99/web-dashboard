@@ -1,14 +1,15 @@
-import { AlertTriangle, CircleAlert, Inbox, Loader2, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, Inbox, Loader2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type StateTone = "neutral" | "loading" | "error" | "warning" | "info";
+type StateTone = "neutral" | "loading" | "error" | "warning" | "info" | "success";
 
 const toneStyles: Record<StateTone, string> = {
   neutral: "border-border bg-surface-raised/45",
   loading: "border-border bg-surface-raised/45",
   error: "border-critical/30 bg-critical/5",
   warning: "border-warning/30 bg-warning/5",
-  info: "border-info/30 bg-info/5"
+  info: "border-info/30 bg-info/5",
+  success: "border-success/30 bg-success/5"
 };
 
 const toneIcons: Record<StateTone, LucideIcon> = {
@@ -16,7 +17,8 @@ const toneIcons: Record<StateTone, LucideIcon> = {
   loading: Loader2,
   error: CircleAlert,
   warning: AlertTriangle,
-  info: CircleAlert
+  info: CircleAlert,
+  success: CheckCircle2
 };
 
 export function StatePanel({
@@ -52,6 +54,7 @@ export function StatePanel({
           tone === "loading" && "animate-spin text-info-foreground",
           tone === "error" && "text-critical-foreground",
           tone === "warning" && "text-warning-foreground",
+          tone === "success" && "text-success-foreground",
           (tone === "neutral" || tone === "info") && "text-text-muted"
         )}
       />
