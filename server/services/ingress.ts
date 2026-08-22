@@ -1,6 +1,6 @@
 import net from "node:net";
 import { Prisma, type IngressExposureType, type PublicAddressAllocation, type IngressProviderKind, type IngressEndpointStatus } from "@prisma/client";
-import { prisma } from "@/server/db";
+import { lockClientAccountForQuota, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
 
@@ -38,6 +38,29 @@ function isValidIpForVersion(ipAddress: string, ipVersion: "V4" | "V6"): boolean
   return ipVersion === "V4" ? net.isIPv4(ipAddress) : net.isIPv6(ipAddress);
 }
 
+/**
+ * IPv6 has many equivalent textual spellings of the same address (leading
+ * zeros, `::` compression, case) — without canonicalizing before storage,
+ * two different spellings of the identical real address could create two
+ * PublicAddress rows, each independently reserving the same real
+ * IP/port/protocol tuple (port-conflict detection keys off publicAddressId,
+ * not the underlying IP), silently defeating both address uniqueness and
+ * TCP/UDP conflict detection. The WHATWG URL host parser normalizes this
+ * (compresses zero runs, lowercases hex) far more reliably than a hand-rolled
+ * normalizer. IPv4 has no equivalent ambiguity once `net.isIPv4` accepts it.
+ */
+function canonicalizeIpAddress(ipAddress: string, ipVersion: "V4" | "V6"): string {
+  if (ipVersion === "V4") return ipAddress.trim();
+  // Zone-id addresses (fe80::1%eth0) pass net.isIPv6 but are link-local
+  // scoped, never a real public WAN address, and the URL parser rejects
+  // them — treat that rejection as an invalid address, same as any other.
+  try {
+    return new URL(`http://[${ipAddress.trim()}]`).hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    throw new Error("INVALID_IP_ADDRESS");
+  }
+}
+
 const publicAddressSelect = {
   id: true,
   label: true,
@@ -68,25 +91,31 @@ export type CreatePublicAddressInput = {
 export async function createPublicAddress(input: CreatePublicAddressInput) {
   requirePlatformAdmin(input.actor);
   if (!isValidIpForVersion(input.ipAddress, input.ipVersion)) throw new Error("INVALID_IP_ADDRESS");
+  const ipAddress = canonicalizeIpAddress(input.ipAddress, input.ipVersion);
   const allocation = input.allocation ?? "SHARED";
   if (allocation === "SHARED" && input.reservedForOrgId) throw new Error("SHARED_ADDRESS_CANNOT_BE_RESERVED");
-
-  if (allocation === "DEDICATED" && input.reservedForOrgId) {
-    await assertDedicatedIpQuota(input.reservedForOrgId);
-  }
   if (input.providerId) await assertProviderExists(input.providerId);
 
-  const address = await prisma.publicAddress.create({
-    data: {
-      label: input.label.trim(),
-      ipAddress: input.ipAddress,
-      ipVersion: input.ipVersion,
-      allocation,
-      enabled: input.enabled ?? true,
-      reservedForOrgId: allocation === "DEDICATED" ? (input.reservedForOrgId ?? null) : null,
-      providerId: input.providerId ?? null
-    },
-    select: publicAddressSelect
+  // The row lock serializes concurrent quota checks for this organization —
+  // without it, two concurrent requests with one dedicated-IP slot
+  // remaining could both observe headroom and both insert.
+  const address = await prisma.$transaction(async (tx) => {
+    if (allocation === "DEDICATED" && input.reservedForOrgId) {
+      await lockClientAccountForQuota(tx, input.reservedForOrgId);
+      await assertDedicatedIpQuota(tx, input.reservedForOrgId);
+    }
+    return tx.publicAddress.create({
+      data: {
+        label: input.label.trim(),
+        ipAddress,
+        ipVersion: input.ipVersion,
+        allocation,
+        enabled: input.enabled ?? true,
+        reservedForOrgId: allocation === "DEDICATED" ? (input.reservedForOrgId ?? null) : null,
+        providerId: input.providerId ?? null
+      },
+      select: publicAddressSelect
+    });
   });
   await logAuditEvent({
     actorUserId: input.actor.userId,
@@ -102,12 +131,27 @@ export async function createPublicAddress(input: CreatePublicAddressInput) {
   return address;
 }
 
-async function assertDedicatedIpQuota(clientAccountId: string): Promise<void> {
-  const account = await prisma.clientAccount.findUnique({ where: { id: clientAccountId }, select: { id: true, maxDedicatedIps: true } });
+async function assertDedicatedIpQuota(tx: Prisma.TransactionClient, clientAccountId: string): Promise<void> {
+  const account = await tx.clientAccount.findUnique({ where: { id: clientAccountId }, select: { id: true, maxDedicatedIps: true } });
   if (!account) throw new Error("NOT_FOUND");
   if (account.maxDedicatedIps === null) return;
-  const existing = await prisma.publicAddress.count({ where: { reservedForOrgId: clientAccountId, allocation: "DEDICATED" } });
+  const existing = await tx.publicAddress.count({ where: { reservedForOrgId: clientAccountId, allocation: "DEDICATED" } });
   if (existing >= account.maxDedicatedIps) throw new Error("DEDICATED_IP_QUOTA_EXCEEDED");
+}
+
+/**
+ * A DEDICATED reservation claims a PublicAddress as exclusive to one
+ * organization. If other organizations already have live IngressEndpoints
+ * bound to this address (e.g. it started SHARED and served several tenants),
+ * reserving it out from under them would misrepresent it as exclusive while
+ * still carrying cross-organization bindings — reject instead.
+ */
+async function assertNoConflictingEndpointOwners(tx: Prisma.TransactionClient, publicAddressId: string, reservedForOrgId: string): Promise<void> {
+  const foreignEndpoint = await tx.ingressEndpoint.findFirst({
+    where: { publicAddressId, clientAccountId: { not: reservedForOrgId } },
+    select: { id: true }
+  });
+  if (foreignEndpoint) throw new Error("RESERVATION_CONFLICTS_WITH_EXISTING_ENDPOINTS");
 }
 
 async function assertProviderExists(providerId: string): Promise<void> {
@@ -153,21 +197,25 @@ export async function updatePublicAddress(input: UpdatePublicAddressInput) {
   const allocation = input.allocation ?? existing.allocation;
   const reservedForOrgId = input.reservedForOrgId !== undefined ? input.reservedForOrgId : existing.reservedForOrgId;
   if (allocation === "SHARED" && reservedForOrgId) throw new Error("SHARED_ADDRESS_CANNOT_BE_RESERVED");
-  if (allocation === "DEDICATED" && reservedForOrgId && reservedForOrgId !== existing.reservedForOrgId) {
-    await assertDedicatedIpQuota(reservedForOrgId);
-  }
   if (input.providerId) await assertProviderExists(input.providerId);
 
-  const address = await prisma.publicAddress.update({
-    where: { id: input.id },
-    data: {
-      label: input.label?.trim(),
-      enabled: input.enabled,
-      allocation: input.allocation,
-      reservedForOrgId: allocation === "SHARED" ? null : reservedForOrgId,
-      providerId: input.providerId
-    },
-    select: publicAddressSelect
+  const address = await prisma.$transaction(async (tx) => {
+    if (reservedForOrgId && reservedForOrgId !== existing.reservedForOrgId) {
+      await lockClientAccountForQuota(tx, reservedForOrgId);
+      if (allocation === "DEDICATED") await assertDedicatedIpQuota(tx, reservedForOrgId);
+      await assertNoConflictingEndpointOwners(tx, existing.id, reservedForOrgId);
+    }
+    return tx.publicAddress.update({
+      where: { id: input.id },
+      data: {
+        label: input.label?.trim(),
+        enabled: input.enabled,
+        allocation: input.allocation,
+        reservedForOrgId: allocation === "SHARED" ? null : reservedForOrgId,
+        providerId: input.providerId
+      },
+      select: publicAddressSelect
+    });
   });
   await logAuditEvent({
     actorUserId: input.actor.userId,
@@ -380,13 +428,16 @@ const ingressEndpointSelect = {
  * shared PublicAddress on 443 can host any number of them, distinguished by
  * hostname/SNI at the gateway, not by this table).
  */
-export async function checkIngressPortConflict(input: {
-  publicAddressId: string;
-  publicPort: number;
-  exposureType: IngressExposureType;
-  excludeId?: string;
-}): Promise<boolean> {
-  const conflict = await prisma.ingressEndpoint.findFirst({
+export async function checkIngressPortConflict(
+  input: {
+    publicAddressId: string;
+    publicPort: number;
+    exposureType: IngressExposureType;
+    excludeId?: string;
+  },
+  client: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<boolean> {
+  const conflict = await client.ingressEndpoint.findFirst({
     where: {
       publicAddressId: input.publicAddressId,
       publicPort: input.publicPort,
@@ -455,38 +506,48 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
     throw new Error("PUBLIC_ADDRESS_RESERVED");
   }
 
-  if (tcpUdp) {
-    const totalExisting = await prisma.ingressEndpoint.count({ where: { clientAccountId, exposureType: { in: ["TCP", "UDP"] } } });
-    if (account.maxTcpUdpEndpoints !== null && totalExisting >= account.maxTcpUdpEndpoints) {
-      throw new Error("TCP_UDP_ENDPOINT_QUOTA_EXCEEDED");
-    }
-    if (await checkIngressPortConflict({ publicAddressId: input.publicAddressId, publicPort: input.publicPort!, exposureType: input.exposureType })) {
-      throw new Error("PORT_CONFLICT");
-    }
-  }
-
-  if (account.maxIngressEndpoints !== null) {
-    const totalExisting = await prisma.ingressEndpoint.count({ where: { clientAccountId } });
-    if (totalExisting >= account.maxIngressEndpoints) throw new Error("INGRESS_ENDPOINT_QUOTA_EXCEEDED");
-  }
-
+  // The row lock serializes concurrent quota checks for this organization —
+  // without it, two concurrent requests with one slot remaining could both
+  // observe headroom under maxIngressEndpoints/maxTcpUdpEndpoints and both
+  // insert. The port-conflict check runs in here too (consistent read within
+  // the same transaction); it's additionally backstopped by the table's own
+  // unique constraint regardless.
   let endpoint;
   try {
-    endpoint = await prisma.ingressEndpoint.create({
-      data: {
-        clientAccountId,
-        workloadId: input.workloadId,
-        containerId: input.containerId ?? null,
-        serviceName: input.serviceName ?? null,
-        targetPort: input.targetPort,
-        exposureType: input.exposureType,
-        domainId,
-        publicAddressId: input.publicAddressId,
-        publicPort: tcpUdp ? input.publicPort! : null,
-        providerId: input.providerId ?? publicAddress.providerId ?? null,
-        createdById: input.actor.userId
-      },
-      select: ingressEndpointSelect
+    endpoint = await prisma.$transaction(async (tx) => {
+      await lockClientAccountForQuota(tx, clientAccountId);
+
+      if (tcpUdp) {
+        const totalExisting = await tx.ingressEndpoint.count({ where: { clientAccountId, exposureType: { in: ["TCP", "UDP"] } } });
+        if (account.maxTcpUdpEndpoints !== null && totalExisting >= account.maxTcpUdpEndpoints) {
+          throw new Error("TCP_UDP_ENDPOINT_QUOTA_EXCEEDED");
+        }
+        if (await checkIngressPortConflict({ publicAddressId: input.publicAddressId, publicPort: input.publicPort!, exposureType: input.exposureType }, tx)) {
+          throw new Error("PORT_CONFLICT");
+        }
+      }
+
+      if (account.maxIngressEndpoints !== null) {
+        const totalExisting = await tx.ingressEndpoint.count({ where: { clientAccountId } });
+        if (totalExisting >= account.maxIngressEndpoints) throw new Error("INGRESS_ENDPOINT_QUOTA_EXCEEDED");
+      }
+
+      return tx.ingressEndpoint.create({
+        data: {
+          clientAccountId,
+          workloadId: input.workloadId,
+          containerId: input.containerId ?? null,
+          serviceName: input.serviceName ?? null,
+          targetPort: input.targetPort,
+          exposureType: input.exposureType,
+          domainId,
+          publicAddressId: input.publicAddressId,
+          publicPort: tcpUdp ? input.publicPort! : null,
+          providerId: input.providerId ?? publicAddress.providerId ?? null,
+          createdById: input.actor.userId
+        },
+        select: ingressEndpointSelect
+      });
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

@@ -110,6 +110,9 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "PUBLIC_ADDRESS_IN_USE" || error.message === "INGRESS_PROVIDER_IN_USE") {
       return fail(error.message, "This is still referenced by an ingress endpoint — remove that first", 409);
     }
+    if (error.message === "RESERVATION_CONFLICTS_WITH_EXISTING_ENDPOINTS") {
+      return fail(error.message, "Another organization already has an ingress endpoint on this address — remove it before reserving this address", 409);
+    }
     if (
       error.message === "TCP_UDP_ENDPOINT_CANNOT_HAVE_DOMAIN" ||
       error.message === "PUBLIC_PORT_REQUIRED" ||

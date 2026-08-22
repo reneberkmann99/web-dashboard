@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/server/db";
+import { lockClientAccountForQuota, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
 
@@ -105,26 +105,34 @@ export async function createDomain(input: CreateDomainInput) {
   const clientAccountId = input.actor.role === "ADMIN" ? input.clientAccountId : input.actor.clientAccountId!;
   if (!clientAccountId) throw new Error("ORGANIZATION_REQUIRED");
 
-  const account = await prisma.clientAccount.findUnique({
-    where: { id: clientAccountId },
-    select: { id: true, maxDomains: true }
-  });
-  if (!account) throw new Error("NOT_FOUND");
-
-  if (account.maxDomains !== null) {
-    const existing = await prisma.domain.count({ where: { clientAccountId } });
-    if (existing >= account.maxDomains) throw new Error("DOMAIN_QUOTA_EXCEEDED");
-  }
-
   const hostname = input.hostname.toLowerCase();
-  const domain = await prisma.domain.create({
-    data: {
-      clientAccountId,
-      hostname,
-      verificationToken: generateVerificationToken(),
-      createdById: input.actor.userId
-    },
-    select: domainPublicSelect
+
+  // The row lock below serializes concurrent quota checks for this
+  // organization — without it, two concurrent requests with one slot
+  // remaining could both observe headroom and both insert, exceeding
+  // maxDomains.
+  const domain = await prisma.$transaction(async (tx) => {
+    await lockClientAccountForQuota(tx, clientAccountId);
+    const account = await tx.clientAccount.findUnique({
+      where: { id: clientAccountId },
+      select: { id: true, maxDomains: true }
+    });
+    if (!account) throw new Error("NOT_FOUND");
+
+    if (account.maxDomains !== null) {
+      const existing = await tx.domain.count({ where: { clientAccountId } });
+      if (existing >= account.maxDomains) throw new Error("DOMAIN_QUOTA_EXCEEDED");
+    }
+
+    return tx.domain.create({
+      data: {
+        clientAccountId,
+        hostname,
+        verificationToken: generateVerificationToken(),
+        createdById: input.actor.userId
+      },
+      select: domainPublicSelect
+    });
   });
 
   await logAuditEvent({
@@ -244,29 +252,37 @@ export async function verifyDomain(input: { id: string; actor: AuthSession; sour
     checkError = "DNS_LOOKUP_FAILED";
   }
 
-  const domain = await prisma.domain.update({
-    where: { id: input.id },
+  // Conditional on still not DISABLED: the DNS lookup above can take a while,
+  // and an operator may disable the domain while it's in flight (the UI
+  // leaves Disable available during verification). Without this guard, the
+  // verification result would land after — and silently overwrite — an
+  // explicit disable.
+  const applied = await prisma.domain.updateMany({
+    where: { id: input.id, status: { not: "DISABLED" } },
     data: {
       status: verified ? "VERIFIED" : "INVALID",
       verifiedAt: verified ? now : existing.verifiedAt,
       lastCheckedAt: now,
       lastCheckError: checkError
-    },
-    select: domainPublicSelect
+    }
   });
 
-  await logAuditEvent({
-    actorUserId: input.actor.userId,
-    actorEmail: input.actor.email,
-    actorRole: input.actor.role,
-    clientAccountId: domain.clientAccountId,
-    action: verified ? "DOMAIN_VERIFIED" : "DOMAIN_VERIFICATION_FAILED",
-    targetType: "DOMAIN",
-    targetId: domain.id,
-    metadata: { hostname: domain.hostname, error: checkError },
-    result: verified ? "SUCCESS" : "FAILURE",
-    sourceIp: input.sourceIp ?? null
-  });
+  const domain = await prisma.domain.findUniqueOrThrow({ where: { id: input.id }, select: domainPublicSelect });
+
+  if (applied.count > 0) {
+    await logAuditEvent({
+      actorUserId: input.actor.userId,
+      actorEmail: input.actor.email,
+      actorRole: input.actor.role,
+      clientAccountId: domain.clientAccountId,
+      action: verified ? "DOMAIN_VERIFIED" : "DOMAIN_VERIFICATION_FAILED",
+      targetType: "DOMAIN",
+      targetId: domain.id,
+      metadata: { hostname: domain.hostname, error: checkError },
+      result: verified ? "SUCCESS" : "FAILURE",
+      sourceIp: input.sourceIp ?? null
+    });
+  }
   return domain;
 }
 
@@ -292,11 +308,15 @@ export async function dnsInstructionsForDomain(id: string, actor: AuthSession): 
 
   const boundEndpoint = await prisma.ingressEndpoint.findUnique({
     where: { domainId: id },
-    include: { publicAddress: { include: { provider: true } } }
+    include: { publicAddress: true, provider: true }
   });
 
-  const candidates = boundEndpoint
-    ? [boundEndpoint.publicAddress]
+  // An endpoint's own `provider` (set at create time — either inherited from
+  // its PublicAddress or explicitly overridden, see createIngressEndpoint)
+  // is authoritative once bound: the address's *current* provider may have
+  // since changed, but this endpoint's actual routing hasn't.
+  const candidates: Array<{ id: string; ipAddress: string; ipVersion: "V4" | "V6"; provider: { gatewayHostname: string | null } | null }> = boundEndpoint
+    ? [{ ...boundEndpoint.publicAddress, provider: boundEndpoint.provider }]
     : await prisma.publicAddress.findMany({
         where: {
           enabled: true,

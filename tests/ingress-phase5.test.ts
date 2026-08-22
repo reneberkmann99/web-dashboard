@@ -535,4 +535,97 @@ describe("Phase 5 quotas", () => {
     })).rejects.toThrow("INGRESS_ENDPOINT_QUOTA_EXCEEDED");
     await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { maxIngressEndpoints: null } });
   });
+
+  it("serializes concurrent creates against the same organization's quota — exactly one of two simultaneous requests succeeds with one slot remaining", async () => {
+    const before = await prisma.domain.count({ where: { clientAccountId: world.clientA.id } });
+    await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { maxDomains: before + 1 } });
+
+    const results = await Promise.allSettled([
+      createDomain({ hostname: `race-a-${Date.now()}.example.com`, actor: sessionFor(world.clientAAdmin) }),
+      createDomain({ hostname: `race-b-${Date.now()}.example.com`, actor: sessionFor(world.clientAAdmin) })
+    ]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason.message).toBe("DOMAIN_QUOTA_EXCEEDED");
+
+    const after = await prisma.domain.count({ where: { clientAccountId: world.clientA.id } });
+    expect(after).toBe(before + 1);
+    await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { maxDomains: null } });
+  });
+});
+
+describe("Phase 5 review follow-ups", () => {
+  it("canonicalizes IPv6 addresses so two spellings of the same address can't both be created", async () => {
+    await createPublicAddress({ label: "Canonical v6", ipAddress: "2001:0db8:0000:0000:0000:0000:0000:0050", ipVersion: "V6", actor: sessionFor(world.adminA) });
+    // Same address, different (fully-expanded vs compressed) textual spelling.
+    await expect(createPublicAddress({ label: "Canonical v6 dup", ipAddress: "2001:db8::50", ipVersion: "V6", actor: sessionFor(world.adminA) }))
+      .rejects.toThrow();
+
+    const stored = await prisma.publicAddress.findFirst({ where: { label: "Canonical v6" } });
+    expect(stored?.ipAddress).toBe("2001:db8::50");
+  });
+
+  it("rejects a link-local zone-id address (never a real public WAN address)", async () => {
+    await expect(createPublicAddress({ label: "Bad zone-id", ipAddress: "fe80::1%eth0", ipVersion: "V6", actor: sessionFor(world.adminA) }))
+      .rejects.toThrow("INVALID_IP_ADDRESS");
+  });
+
+  it("DNS instructions use the bound endpoint's own resolved provider, not the address's current (possibly since-changed) provider", async () => {
+    const defaultProvider = await createIngressProvider({ name: "Default gw", gatewayHostname: "default.gw.test", actor: sessionFor(world.adminA) });
+    const overrideProvider = await createIngressProvider({ name: "Override gw", gatewayHostname: "override.gw.test", actor: sessionFor(world.adminA) });
+    const address = await createPublicAddress({
+      label: "Provider override test", ipAddress: "203.0.113.150", ipVersion: "V4", providerId: defaultProvider.id, actor: sessionFor(world.adminA)
+    });
+    const domain = await verifiedDomain("provider-override.example.com", world.clientA, world.clientAAdmin);
+    const endpoint = await createIngressEndpoint({
+      workloadId: world.projectA.id, targetPort: 8080, exposureType: "HTTPS", domainId: domain.id,
+      publicAddressId: address.id, providerId: overrideProvider.id, // explicit override, different from the address's own default
+      actor: sessionFor(world.clientAAdmin)
+    });
+    expect(endpoint.provider?.id).toBe(overrideProvider.id);
+
+    const instructions = await dnsInstructionsForDomain(domain.id, sessionFor(world.clientAAdmin));
+    expect(instructions.routing).toHaveLength(1);
+    expect(instructions.routing[0]).toMatchObject({ type: "CNAME", value: "override.gw.test" });
+
+    // Changing the address's own provider afterward must not retroactively
+    // change what's already bound to this endpoint.
+    await updatePublicAddress({ id: address.id, providerId: defaultProvider.id, actor: sessionFor(world.adminA) });
+    const afterAddressProviderChange = await dnsInstructionsForDomain(domain.id, sessionFor(world.clientAAdmin));
+    expect(afterAddressProviderChange.routing[0]).toMatchObject({ type: "CNAME", value: "override.gw.test" });
+  });
+
+  it("rejects reserving a shared address to one organization while another organization still has an endpoint bound to it", async () => {
+    const address = await createPublicAddress({ label: "Shared with two tenants", ipAddress: "203.0.113.151", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await createIngressEndpoint({
+      workloadId: world.projectA.id, targetPort: 7100, exposureType: "TCP", publicAddressId: address.id, publicPort: 27100,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    await createIngressEndpoint({
+      workloadId: projectB.id, targetPort: 7100, exposureType: "UDP", publicAddressId: address.id, publicPort: 27100,
+      actor: sessionFor(world.adminA), clientAccountId: world.clientB.id
+    });
+
+    await expect(updatePublicAddress({
+      id: address.id, allocation: "DEDICATED", reservedForOrgId: world.clientA.id, actor: sessionFor(world.adminA)
+    })).rejects.toThrow("RESERVATION_CONFLICTS_WITH_EXISTING_ENDPOINTS");
+  });
+
+  it("a disable that lands while verification is in flight is not overwritten by the verification result", async () => {
+    const domain = await createDomain({ hostname: "race-disable.example.com", actor: sessionFor(world.clientAAdmin) });
+    let resolveTxt!: (records: string[][]) => void;
+    setDomainTxtResolverForTests(() => new Promise((resolve) => { resolveTxt = resolve; }));
+
+    const verifyPromise = verifyDomain({ id: domain.id, actor: sessionFor(world.clientAAdmin) });
+    // Let verifyDomain actually start (past its DB reads, into the pending DNS lookup) before racing the disable.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await setDomainEnabled({ id: domain.id, enabled: false, actor: sessionFor(world.clientAAdmin) });
+    resolveTxt([[verificationTxtValue(domain.verificationToken)]]);
+    await verifyPromise;
+
+    const final = await getDomain(domain.id, sessionFor(world.clientAAdmin));
+    expect(final.status).toBe("DISABLED");
+  });
 });
