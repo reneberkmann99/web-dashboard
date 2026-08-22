@@ -55,6 +55,9 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "MANAGED_CONTAINER") {
       return fail("MANAGED_CONTAINER", "This container is a managed workload service — edit the workload revision instead of deleting it directly", 409);
     }
+    if (error.message === "CONTAINER_HAS_INGRESS_ENDPOINT") {
+      return fail("CONTAINER_HAS_INGRESS_ENDPOINT", "This container backs an ingress endpoint — delete or repoint that endpoint before deleting it", 409);
+    }
     if (error.message === "ATTENTION_NOT_ACTIVE") {
       return fail("ATTENTION_NOT_ACTIVE", "The attention condition is no longer active", 409);
     }

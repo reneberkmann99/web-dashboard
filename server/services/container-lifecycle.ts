@@ -76,6 +76,17 @@ export async function deleteContainer(
     throw new ContainerLifecycleError("MANAGED_CONTAINER");
   }
 
+  // Deletion here is a SOFT delete (isActive: false, below) — the row and
+  // its foreign keys survive, so an IngressEndpoint.containerId relation
+  // would silently keep pointing at a backend that's gone (Docker) but
+  // still "exists" (row), with nothing to reconcile it automatically. Refuse
+  // instead, the same way a managed workload service is refused — the
+  // endpoint must be deleted or repointed first (see server/services/ingress.ts).
+  const boundEndpoint = await prisma.ingressEndpoint.findFirst({ where: { containerId }, select: { id: true } });
+  if (boundEndpoint) {
+    throw new ContainerLifecycleError("CONTAINER_HAS_INGRESS_ENDPOINT");
+  }
+
   const node = await prisma.node.findUnique({ where: { id: plan.nodeId } });
   let removed = false;
   if (node) {

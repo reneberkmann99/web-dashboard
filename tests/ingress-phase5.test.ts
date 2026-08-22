@@ -840,4 +840,62 @@ describe("Phase 5 review follow-ups", () => {
     await createDomain({ hostname, actor: sessionFor(world.clientAAdmin) });
     await expect(createDomain({ hostname, actor: sessionFor(world.clientAAdmin) })).rejects.toThrow("DOMAIN_ALREADY_CLAIMED");
   });
+
+  it("a hostname stays exclusive to its bound endpoint even after the owning domain is disabled or fails re-verification", async () => {
+    const hostname = `still-bound-${Date.now()}.example.com`;
+    const domainA = await verifiedDomain(hostname, world.clientA, world.clientAAdmin);
+    const address = await createPublicAddress({ label: "Still bound test", ipAddress: "203.0.113.165", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8090, exposureType: "HTTPS", domainId: domainA.id, publicAddressId: address.id,
+      actor: sessionFor(world.clientAAdmin)
+    });
+
+    // A is disabled, but its endpoint remains bound and live.
+    await setDomainEnabled({ id: domainA.id, enabled: false, actor: sessionFor(world.clientAAdmin) });
+
+    const clientBAdmin = await prisma.user.create({
+      data: {
+        email: `b-admin-stillbound-${Date.now()}@client-b.local`,
+        displayName: "B Admin Still Bound",
+        passwordHash: world.password,
+        role: "CLIENT_ADMIN",
+        clientAccountId: world.clientB.id,
+        isActive: true
+      }
+    });
+    const domainB = await createDomain({ hostname, actor: sessionFor(clientBAdmin) });
+    setDomainTxtResolverForTests(async () => [[verificationTxtValue(domainB.verificationToken)]]);
+    const verifiedB = await verifyDomain({ id: domainB.id, actor: sessionFor(clientBAdmin) });
+    expect(verifiedB.status).toBe("INVALID");
+    expect(verifiedB.lastCheckError).toBe("HOSTNAME_ALREADY_VERIFIED_ELSEWHERE");
+  });
+
+  it("refuses to delete a container that still backs a live ingress endpoint", async () => {
+    const { deleteContainer } = await import("@/server/services/container-lifecycle");
+    const container = await prisma.container.create({
+      data: { nodeId: world.node1.id, projectId: world.projectA.id, dockerContainerId: `ingress-backed-${Date.now()}`, dockerName: "ingress-backed", isActive: true }
+    });
+    const address = await createPublicAddress({ label: "Container delete test", ipAddress: "203.0.113.166", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await createIngressEndpoint({
+      workloadId: world.projectA.id, containerId: container.id, targetPort: 8100, exposureType: "TCP", publicAddressId: address.id, publicPort: 28100,
+      actor: sessionFor(world.clientAAdmin)
+    });
+
+    await expect(deleteContainer(sessionFor(world.adminA), container.id, null)).rejects.toThrow("CONTAINER_HAS_INGRESS_ENDPOINT");
+  });
+
+  it("recognizes common compound-TLD apexes (example.co.uk) and still allows a CNAME for a genuine subdomain under them", async () => {
+    const cnameProvider = await createIngressProvider({ name: "Compound apex gw", gatewayHostname: "compound.gw.test", actor: sessionFor(world.adminA) });
+    const address = await createPublicAddress({ label: "Compound apex address", ipAddress: "203.0.113.167", ipVersion: "V4", providerId: cnameProvider.id, actor: sessionFor(world.adminA) });
+
+    const apexDomain = await createDomain({ hostname: "compound-apex-test.co.uk", actor: sessionFor(world.clientAAdmin) });
+    const apexInstructions = await dnsInstructionsForDomain(apexDomain.id, sessionFor(world.clientAAdmin));
+    const apexCandidate = apexInstructions.routingAlternatives.find((r) => r.publicAddressId === address.id);
+    expect(apexCandidate).toMatchObject({ type: "A", value: "203.0.113.167" });
+
+    const subdomain = await createDomain({ hostname: "www.compound-apex-test.co.uk", actor: sessionFor(world.clientAAdmin) });
+    const subInstructions = await dnsInstructionsForDomain(subdomain.id, sessionFor(world.clientAAdmin));
+    const subCandidate = subInstructions.routingAlternatives.find((r) => r.publicAddressId === address.id);
+    expect(subCandidate).toMatchObject({ type: "CNAME", value: "compound.gw.test" });
+  });
 });

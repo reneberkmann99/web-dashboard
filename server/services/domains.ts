@@ -271,8 +271,22 @@ export async function verifyDomain(input: { id: string; actor: AuthSession; sour
     let finalVerified = verified;
     let finalError = checkError;
     if (verified) {
+      // A domain that's DISABLED or has since failed re-verification can
+      // still have a live IngressEndpoint bound to it (nothing tears that
+      // binding down automatically when status moves away from VERIFIED —
+      // that's a deliberate, explicit admin action, see deleteDomain).  That
+      // endpoint keeps routing real traffic for the hostname regardless of
+      // this row's current status, so the exclusivity check must key off
+      // "is anything actually bound to this hostname", not just "is
+      // anything currently VERIFIED" — otherwise a second organization could
+      // verify and bind the same hostname while the first's endpoint is
+      // still live.
       const conflicting = await tx.domain.findFirst({
-        where: { hostname: existing.hostname, status: "VERIFIED", id: { not: existing.id } },
+        where: {
+          hostname: existing.hostname,
+          id: { not: existing.id },
+          OR: [{ status: "VERIFIED" }, { ingressEndpoints: { some: {} } }]
+        },
         select: { id: true }
       });
       if (conflicting) {
@@ -342,16 +356,48 @@ export type DnsInstructions = {
 type RoutingCandidate = { id: string; ipAddress: string; ipVersion: "V4" | "V6"; provider: { gatewayHostname: string | null } | null };
 
 /**
+ * Common multi-label public suffixes (e.g. "example.co.uk" is an apex —
+ * "co.uk" isn't a real registrable domain on its own). NOT the full IANA
+ * Public Suffix List (thousands of entries, out of scope here) — just
+ * enough of the ones an operator is actually likely to use so the plain
+ * label-count heuristic below doesn't misclassify them as a subdomain.
+ */
+const COMPOUND_PUBLIC_SUFFIXES = new Set([
+  "co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk", "sch.uk", "ac.uk", "gov.uk", "nhs.uk", "police.uk",
+  "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au",
+  "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz",
+  "co.za", "org.za", "net.za", "gov.za", "ac.za",
+  "co.in", "net.in", "org.in", "gov.in", "ac.in", "firm.in", "res.in",
+  "co.jp", "or.jp", "ne.jp", "ac.jp", "go.jp",
+  "co.kr", "or.kr", "ne.kr", "go.kr", "ac.kr",
+  "com.br", "net.br", "org.br", "gov.br",
+  "com.cn", "net.cn", "org.cn", "gov.cn",
+  "com.mx", "net.mx", "org.mx", "gob.mx",
+  "com.sg", "net.sg", "org.sg", "gov.sg", "edu.sg",
+  "com.hk", "net.hk", "org.hk", "gov.hk", "edu.hk",
+  "com.tw", "net.tw", "org.tw", "gov.tw", "edu.tw",
+  "co.il", "org.il", "net.il", "gov.il", "ac.il",
+  "com.ar", "net.ar", "org.ar", "gob.ar",
+  "co.id", "or.id", "go.id", "ac.id",
+  "com.tr", "net.tr", "org.tr", "gov.tr",
+  "com.my", "net.my", "org.my", "gov.my", "edu.my"
+]);
+
+/**
  * A CNAME record cannot coexist with a zone's mandatory SOA/NS records at
- * the zone apex (e.g. "example.com" itself) — only a subdomain
- * ("app.example.com") can ever use one. Determining the TRUE apex requires
- * the public suffix list (co.uk, com.au, ...), which is out of scope here;
- * this is a conservative approximation (2 labels = treat as apex) that only
- * ever errs toward the always-DNS-valid A/AAAA fallback, never toward
+ * the zone apex (e.g. "example.com" or "example.co.uk" itself) — only a
+ * genuine subdomain ("app.example.com", "app.example.co.uk") can ever use
+ * one. Determining the TRUE apex requires the full public suffix list,
+ * which is out of scope here (see COMPOUND_PUBLIC_SUFFIXES above); this
+ * combines that partial list with a plain label-count fallback, and always
+ * errs toward the always-DNS-valid A/AAAA fallback, never toward
  * recommending an invalid CNAME.
  */
 function isLikelyApex(hostname: string): boolean {
-  return hostname.split(".").length <= 2;
+  const labels = hostname.split(".");
+  if (labels.length <= 2) return true;
+  if (labels.length === 3 && COMPOUND_PUBLIC_SUFFIXES.has(labels.slice(1).join("."))) return true;
+  return false;
 }
 
 function dnsRecordFor(hostname: string, address: RoutingCandidate): DnsRecord {
