@@ -206,6 +206,8 @@ Important values:
 - `DATABASE_URL`
 - `SESSION_TTL_HOURS`
 - `NODE_CREDENTIALS_KEY` (64-char hex for AES-256-GCM secret encryption)
+- `SMTP_CREDENTIALS_KEY` (64-char hex for AES-256-GCM encryption of the platform SMTP password)
+- `PLATFORM_PUBLIC_BASE_URL` (HTTPS activation-link origin; defaults to `https://platform.noderaft.ee`)
 - `NODE_AGENT_TIMEOUT_MS`
 - `AGENT_PORT`
 - `AGENT_API_KEY`

@@ -16,6 +16,8 @@ process.env.DATABASE_URL = TEST_DATABASE_URL;
 process.env.NODE_CREDENTIALS_KEY = process.env.NODE_CREDENTIALS_KEY ?? "a".repeat(64);
 process.env.DEPLOYMENT_SECRETS_KEY = process.env.DEPLOYMENT_SECRETS_KEY ?? "b".repeat(64);
 process.env.NOTIFICATION_DESTINATIONS_KEY = process.env.NOTIFICATION_DESTINATIONS_KEY ?? "c".repeat(64);
+process.env.SMTP_CREDENTIALS_KEY = process.env.SMTP_CREDENTIALS_KEY ?? "d".repeat(64);
+process.env.PLATFORM_PUBLIC_BASE_URL = "https://platform.noderaft.ee";
 // Vitest loads the repository .env before setup; force the deterministic test
 // origin so production's VPN URL can never leak into payload assertions.
 process.env.HOSTPANEL_PUBLIC_BASE_URL = "https://hostpanel.test";

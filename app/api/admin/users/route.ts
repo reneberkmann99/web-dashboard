@@ -5,6 +5,7 @@ import { createUserSchema } from "@/server/validation/admin";
 import { fromError, fail, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
+import { sendInvitationEmail } from "@/server/services/mail";
 
 const ACTIVATION_TTL_HOURS = 72;
 
@@ -103,12 +104,22 @@ export async function POST(request: Request): Promise<Response> {
       sourceIp
     });
 
-    // The activation URL is shown exactly once (returned to the admin).
+    const activationUrl = `/activate?token=${rawToken}`;
+    const emailDelivery = await sendInvitationEmail({
+      to: created.email,
+      displayName: created.displayName,
+      activationUrl,
+      activationExpiresAt: expiresAt.toISOString()
+    });
+
+    // The manual activation URL is always returned even if delivery is off or
+    // the SMTP server rejects a message.
     return ok(
       {
         id: created.id,
-        activationUrl: `/activate?token=${rawToken}`,
-        activationExpiresAt: expiresAt.toISOString()
+        activationUrl,
+        activationExpiresAt: expiresAt.toISOString(),
+        emailDelivery
       },
       201
     );

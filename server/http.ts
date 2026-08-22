@@ -64,6 +64,15 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "NOTIFICATION_ENCRYPTION_NOT_CONFIGURED") {
       return fail(error.message, "Notification credential encryption is not configured", 503);
     }
+    if (error.message === "SMTP_ENCRYPTION_NOT_CONFIGURED") {
+      return fail(error.message, "SMTP credential encryption is not configured", 503);
+    }
+    if (error.message === "SMTP_CONFIGURATION_INVALID") {
+      return fail(error.message, "SMTP settings are incomplete or invalid", 422);
+    }
+    if (error.message === "SMTP_DISABLED") {
+      return fail(error.message, "Email delivery is disabled", 409);
+    }
     if (
       error.message.startsWith("WEBHOOK_") ||
       error.message === "INVALID_AUTH_HEADER" ||

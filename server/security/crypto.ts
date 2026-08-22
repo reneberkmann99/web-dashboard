@@ -8,18 +8,24 @@ import crypto from "node:crypto";
  *   - NODE_CREDENTIALS         -> NODE_CREDENTIALS_KEY         (encrypts Node.apiKeyEncrypted)
  *   - DEPLOYMENT_SECRETS       -> DEPLOYMENT_SECRETS_KEY       (encrypts SecretVersion.ciphertext)
  *   - NOTIFICATION_DESTINATIONS -> NOTIFICATION_DESTINATIONS_KEY (encrypts NotificationDestination webhook URL/auth header/signing secret)
+ *   - SMTP_CREDENTIALS         -> SMTP_CREDENTIALS_KEY         (encrypts PlatformEmailSettings.passwordEncrypted)
  *
  * Each encryption uses a unique 12-byte IV; GCM auth tag is verified on
  * decrypt. A wrong/missing/malformed key fails closed (throws) rather than
  * silently producing a bad result.
  */
 
-export type EncryptionPurpose = "NODE_CREDENTIALS" | "DEPLOYMENT_SECRETS" | "NOTIFICATION_DESTINATIONS";
+export type EncryptionPurpose =
+  | "NODE_CREDENTIALS"
+  | "DEPLOYMENT_SECRETS"
+  | "NOTIFICATION_DESTINATIONS"
+  | "SMTP_CREDENTIALS";
 
 const PURPOSE_ENV: Record<EncryptionPurpose, string> = {
   NODE_CREDENTIALS: "NODE_CREDENTIALS_KEY",
   DEPLOYMENT_SECRETS: "DEPLOYMENT_SECRETS_KEY",
-  NOTIFICATION_DESTINATIONS: "NOTIFICATION_DESTINATIONS_KEY"
+  NOTIFICATION_DESTINATIONS: "NOTIFICATION_DESTINATIONS_KEY",
+  SMTP_CREDENTIALS: "SMTP_CREDENTIALS_KEY"
 };
 
 function getKey(purpose: EncryptionPurpose): Buffer {

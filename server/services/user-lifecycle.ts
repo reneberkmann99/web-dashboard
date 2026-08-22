@@ -259,12 +259,12 @@ export async function resendUserActivation(
   session: AuthSession,
   targetId: string,
   sourceIp: string | null
-): Promise<{ activationUrl: string; activationExpiresAt: string }> {
+): Promise<{ activationUrl: string; activationExpiresAt: string; recipient: { email: string; displayName: string } }> {
   assertAdmin(session);
 
   const target = await prisma.user.findUnique({
     where: { id: targetId },
-    select: { id: true, isActive: true, authSource: true }
+    select: { id: true, isActive: true, authSource: true, email: true, displayName: true }
   });
   if (!target) {
     throw new UserLifecycleError("NOT_FOUND");
@@ -296,6 +296,7 @@ export async function resendUserActivation(
 
   return {
     activationUrl: `/activate?token=${rawToken}`,
-    activationExpiresAt: expiresAt.toISOString()
+    activationExpiresAt: expiresAt.toISOString(),
+    recipient: { email: target.email, displayName: target.displayName }
   };
 }

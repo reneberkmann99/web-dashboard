@@ -173,6 +173,17 @@ enum NotificationDeliveryStatus {
   SUPPRESSED
 }
 
+enum SmtpEncryption {
+  STARTTLS
+  TLS
+  NONE
+}
+
+enum SmtpTestStatus {
+  SUCCEEDED
+  FAILED
+}
+
 model ClientAccount {
   id          String                @id @default(cuid())
   name        String
@@ -235,6 +246,7 @@ model User {
   maintenanceWindowsCreated          MaintenanceWindow[]                 @relation("MaintenanceWindowCreatedBy")
   maintenanceWindowsCancelled        MaintenanceWindow[]                 @relation("MaintenanceWindowCancelledBy")
   notificationDestinationsCreated    NotificationDestination[]
+  platformEmailSettingsUpdated       PlatformEmailSettings[]              @relation("PlatformEmailSettingsUpdatedBy")
   createdAt                          DateTime                            @default(now())
   updatedAt                          DateTime                            @updatedAt
 
@@ -511,6 +523,32 @@ model AuditLog {
   @@index([clientAccountId])
   @@index([clientAccountId, createdAt])
   @@index([result, createdAt])
+}
+
+/**
+ * Singleton, platform-wide SMTP configuration. The password is AES-256-GCM
+ * encrypted using SMTP_CREDENTIALS_KEY and is intentionally omitted from all
+ * application read models and API responses.
+ */
+model PlatformEmailSettings {
+  id                  String          @id @default("default")
+  enabled             Boolean         @default(false)
+  host                String?
+  port                Int?
+  encryption          SmtpEncryption  @default(STARTTLS)
+  username            String?
+  passwordEncrypted   String?
+  fromName            String?
+  fromEmail           String?
+  replyTo             String?
+  lastTestStatus      SmtpTestStatus?
+  lastTestAt          DateTime?
+  lastTestSummary     String?
+  lastTestDetail      String?
+  updatedById         String?
+  updatedBy           User?           @relation("PlatformEmailSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 }
 
 /**

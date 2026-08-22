@@ -7,6 +7,7 @@ import {
 import { inviteClientUserSchema } from "@/server/validation/admin";
 import { fromError, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
+import { sendInvitationEmail } from "@/server/services/mail";
 
 /** CLIENT_ADMIN: list own client's users. */
 export async function GET(): Promise<Response> {
@@ -31,7 +32,13 @@ export async function POST(request: Request): Promise<Response> {
       { email: body.email, displayName: body.displayName, role: body.role },
       sourceIp
     );
-    return ok(result, 201);
+    const emailDelivery = await sendInvitationEmail({
+      to: body.email,
+      displayName: body.displayName,
+      activationUrl: result.activationUrl,
+      activationExpiresAt: result.activationExpiresAt
+    });
+    return ok({ ...result, emailDelivery }, 201);
   } catch (error) {
     if (error instanceof ClientTeamForbiddenError) {
       return fromError(new Error("FORBIDDEN"));

@@ -66,8 +66,8 @@ export default function AdminUserDetailPage(): React.JSX.Element {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Update failed")
   });
   const reinvite = useMutation({
-    mutationFn: () => apiFetch<{ activationUrl: string }>(`/api/admin/users/${id}/resend-activation`, { method: "POST" }),
-    onSuccess: async (data) => { await navigator.clipboard.writeText(`${window.location.origin}${data.activationUrl}`); toast.success("New activation link copied"); refresh(); },
+    mutationFn: () => apiFetch<{ activationUrl: string; emailDelivery: { status: "SENT" | "DISABLED" | "FAILED"; message: string } }>(`/api/admin/users/${id}/resend-activation`, { method: "POST" }),
+    onSuccess: async (data) => { await navigator.clipboard.writeText(`${window.location.origin}${data.activationUrl}`); data.emailDelivery.status === "SENT" ? toast.success("Activation email reissued; link copied") : toast.error("Activation link copied — email was not sent"); refresh(); },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not reissue invitation")
   });
   const remove = useMutation({

@@ -3,6 +3,7 @@ import { cuidParamSchema } from "@/server/validation/admin";
 import { fromError, fail, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
 import { reissueInvite, removeTeamMembership, setTeamUserActive, setTeamUserRole } from "@/server/services/client-team";
+import { sendInvitationEmail } from "@/server/services/mail";
 
 /**
  * CLIENT_ADMIN per-user operations on their own client:
@@ -70,7 +71,17 @@ export async function POST(
     if (!result) {
       return fail("NOT_FOUND", "User not found or already active", 404);
     }
-    return ok(result);
+    const emailDelivery = await sendInvitationEmail({
+      to: result.recipient.email,
+      displayName: result.recipient.displayName,
+      activationUrl: result.activationUrl,
+      activationExpiresAt: result.activationExpiresAt
+    });
+    return ok({
+      activationUrl: result.activationUrl,
+      activationExpiresAt: result.activationExpiresAt,
+      emailDelivery
+    });
   } catch (error) {
     return fromError(error);
   }

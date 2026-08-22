@@ -27,6 +27,7 @@ type CreateUserResponse = {
   id: string;
   activationUrl: string;
   activationExpiresAt: string;
+  emailDelivery: { status: "SENT" | "DISABLED" | "FAILED"; message: string };
 };
 
 const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
@@ -44,6 +45,7 @@ export default function AdminUsersPage(): React.JSX.Element {
   const [role, setRole] = useState<UserRole>("CLIENT_OPERATOR");
   const [clientAccountId, setClientAccountId] = useState("");
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
+  const [emailDelivery, setEmailDelivery] = useState<CreateUserResponse["emailDelivery"] | null>(null);
   const [confirmDisable, setConfirmDisable] = useState<UserRecord | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserRecord | null>(null);
 
@@ -85,8 +87,11 @@ export default function AdminUsersPage(): React.JSX.Element {
         })
       }),
     onSuccess: (data) => {
-      toast.success("User created — pending activation");
+      data.emailDelivery.status === "SENT"
+        ? toast.success("User created and invitation email sent")
+        : toast.error("User created — invitation email was not sent");
       setActivationUrl(data.activationUrl);
+      setEmailDelivery(data.emailDelivery);
       setEmail("");
       setDisplayName("");
       setClientAccountId("");
@@ -107,12 +112,15 @@ export default function AdminUsersPage(): React.JSX.Element {
 
   const resendMutation = useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ activationUrl: string; activationExpiresAt: string }>(`/api/admin/users/${id}/resend-activation`, {
+      apiFetch<{ activationUrl: string; activationExpiresAt: string; emailDelivery: CreateUserResponse["emailDelivery"] }>(`/api/admin/users/${id}/resend-activation`, {
         method: "POST"
       }),
     onSuccess: (data) => {
-      toast.success("Activation link regenerated");
+      data.emailDelivery.status === "SENT"
+        ? toast.success("Activation email reissued")
+        : toast.error("Activation link regenerated — email was not sent");
       setActivationUrl(data.activationUrl);
+      setEmailDelivery(data.emailDelivery);
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Resend failed")
@@ -182,6 +190,7 @@ export default function AdminUsersPage(): React.JSX.Element {
           {activationUrl && (
             <div className="rounded border border-border bg-panelAlt p-3 text-sm">
               <p className="font-medium">Activation link (shown once — copy it now)</p>
+              {emailDelivery && <p className={emailDelivery.status === "SENT" ? "mt-1 text-success-foreground" : "mt-1 text-warning-foreground"}>{emailDelivery.status === "SENT" ? "Invitation email sent." : `Email was not sent: ${emailDelivery.message}. Share this link manually.`}</p>}
               <p className="mt-1 break-all text-muted">
                 {window.location.origin}
                 {activationUrl}

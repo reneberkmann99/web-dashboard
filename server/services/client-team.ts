@@ -142,12 +142,12 @@ export async function reissueInvite(
   session: AuthSession,
   userId: string,
   sourceIp: string | null
-): Promise<{ activationUrl: string; activationExpiresAt: string } | null> {
+): Promise<{ activationUrl: string; activationExpiresAt: string; recipient: { email: string; displayName: string } } | null> {
   const clientId = assertClientAdmin(session);
 
   const target = await prisma.user.findFirst({
     where: { id: userId, clientAccountId: clientId },
-    select: { id: true, isActive: true, role: true }
+    select: { id: true, isActive: true, role: true, email: true, displayName: true }
   });
   if (!target || target.isActive) {
     return null;
@@ -180,7 +180,11 @@ export async function reissueInvite(
     sourceIp
   });
 
-  return { activationUrl: `/activate?token=${rawToken}`, activationExpiresAt: expiresAt.toISOString() };
+  return {
+    activationUrl: `/activate?token=${rawToken}`,
+    activationExpiresAt: expiresAt.toISOString(),
+    recipient: { email: target.email, displayName: target.displayName }
+  };
 }
 
 /** Deactivate (or reactivate) an operator/viewer of the same client. */

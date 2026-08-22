@@ -146,3 +146,31 @@ export const inviteClientUserSchema = z.object({
   displayName: z.string().min(2).max(100),
   role: z.enum(["CLIENT_OPERATOR", "CLIENT_VIEWER"])
 });
+
+const smtpHostSchema = z.string().trim().min(1).max(255).refine(
+  (value) => !/[\s/:@]/.test(value),
+  "Must be a hostname or IP address without a protocol or port"
+);
+
+const smtpOptionalText = z.string().trim().max(255).nullable().optional();
+
+/**
+ * Password is deliberately optional: a blank/missing value retains an already
+ * configured credential. The service enforces that a new username has a
+ * matching password and that enabled delivery is complete.
+ */
+export const updatePlatformEmailSettingsSchema = z.object({
+  enabled: z.boolean(),
+  host: smtpHostSchema.nullable(),
+  port: z.number().int().min(1).max(65535).nullable(),
+  encryption: z.enum(["STARTTLS", "TLS", "NONE"]),
+  username: smtpOptionalText,
+  password: z.string().min(1).max(1024).optional(),
+  fromName: z.string().trim().min(1).max(120).nullable(),
+  fromEmail: z.string().trim().email().max(320).nullable(),
+  replyTo: z.string().trim().email().max(320).nullable().optional()
+});
+
+export const smtpTestEmailSchema = z.object({
+  to: z.string().trim().email().max(320)
+});

@@ -61,7 +61,7 @@ type ClientDetailPayload = {
   activity: Array<{ id: string; action: string; humanized: string; actorEmail: string | null; result: string; createdAt: string }>;
 };
 
-type CreateUserResponse = { id: string; activationUrl: string; activationExpiresAt: string };
+type CreateUserResponse = { id: string; activationUrl: string; activationExpiresAt: string; emailDelivery: { status: "SENT" | "DISABLED" | "FAILED"; message: string } };
 
 const ROLE_OPTIONS = [
   { value: "CLIENT_VIEWER", label: "Organization Viewer (read-only)" },
@@ -84,6 +84,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
   const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState("CLIENT_OPERATOR");
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
+  const [emailDelivery, setEmailDelivery] = useState<CreateUserResponse["emailDelivery"] | null>(null);
 
   const [deactivateUser, setDeactivateUser] = useState<{ id: string; name: string } | null>(null);
   const [deactivateClient, setDeactivateClient] = useState(false);
@@ -111,8 +112,9 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         })
       }),
     onSuccess: (data) => {
-      toast.success("Invitation generated");
+      data.emailDelivery.status === "SENT" ? toast.success("Invitation email sent") : toast.error("Invitation created — email was not sent");
       setActivationUrl(data.activationUrl);
+      setEmailDelivery(data.emailDelivery);
       queryClient.invalidateQueries({ queryKey: ["client", params.id] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Invite failed")
@@ -333,6 +335,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         onClose={() => {
           setInviteOpen(false);
           setActivationUrl(null);
+          setEmailDelivery(null);
         }}
         title={`Invite member to ${client.name}`}
         description="The user receives a one-time activation link and sets their own password."
@@ -348,7 +351,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
               >
                 Copy link
               </Button>
-              <Button onClick={() => { setInviteOpen(false); setActivationUrl(null); setInviteEmail(""); setInviteName(""); }}>Done</Button>
+              <Button onClick={() => { setInviteOpen(false); setActivationUrl(null); setEmailDelivery(null); setInviteEmail(""); setInviteName(""); }}>Done</Button>
             </>
           ) : (
             <>
@@ -361,7 +364,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         }
       >
         {activationUrl ? (
-          <p className="break-all text-sm text-muted">{window.location.origin}{activationUrl}</p>
+          <div className="space-y-2"><p className={emailDelivery?.status === "SENT" ? "text-sm text-success-foreground" : "text-sm text-warning-foreground"}>{emailDelivery?.status === "SENT" ? "Invitation email sent." : `Email was not sent${emailDelivery ? `: ${emailDelivery.message}` : ""}. Share this link manually.`}</p><p className="break-all text-sm text-muted">{window.location.origin}{activationUrl}</p></div>
         ) : (
           <div className="space-y-4">
             <div className="space-y-1">

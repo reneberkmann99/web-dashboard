@@ -28,7 +28,7 @@ type TeamUser = {
   pending: boolean;
 };
 
-type InviteResponse = { id: string; activationUrl: string; activationExpiresAt: string };
+type InviteResponse = { id: string; activationUrl: string; activationExpiresAt: string; emailDelivery: { status: "SENT" | "DISABLED" | "FAILED"; message: string } };
 type TeamPayload = { users: TeamUser[] };
 
 const ROLE_OPTIONS = [
@@ -43,6 +43,7 @@ export default function ClientTeamPage(): React.JSX.Element {
   const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState("CLIENT_OPERATOR");
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
+  const [emailDelivery, setEmailDelivery] = useState<InviteResponse["emailDelivery"] | null>(null);
   const [confirm, setConfirm] = useState<{ id: string; name: string; isActive: boolean } | null>(null);
   const [removeMember, setRemoveMember] = useState<TeamUser | null>(null);
   const [reissueFor, setReissueFor] = useState<TeamUser | null>(null);
@@ -59,8 +60,9 @@ export default function ClientTeamPage(): React.JSX.Element {
         body: JSON.stringify({ email: inviteEmail, displayName: inviteName, role: inviteRole })
       }),
     onSuccess: (data) => {
-      toast.success("Invitation generated");
+      data.emailDelivery.status === "SENT" ? toast.success("Invitation email sent") : toast.error("Invitation created — email was not sent");
       setActivationUrl(data.activationUrl);
+      setEmailDelivery(data.emailDelivery);
       queryClient.invalidateQueries({ queryKey: ["client-team"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Invite failed")
@@ -86,9 +88,10 @@ export default function ClientTeamPage(): React.JSX.Element {
         body: JSON.stringify({ action: "reinvite" })
       }),
     onSuccess: (data) => {
-      toast.success("Invitation reissued");
+      data.emailDelivery.status === "SENT" ? toast.success("Invitation email reissued") : toast.error("Invitation reissued — email was not sent");
       setReissueFor(null);
       setActivationUrl(data.activationUrl);
+      setEmailDelivery(data.emailDelivery);
       setInviteOpen(true);
       queryClient.invalidateQueries({ queryKey: ["client-team"] });
     },
@@ -230,7 +233,7 @@ export default function ClientTeamPage(): React.JSX.Element {
 
       <Modal
         open={inviteOpen}
-        onClose={() => { setInviteOpen(false); setActivationUrl(null); }}
+        onClose={() => { setInviteOpen(false); setActivationUrl(null); setEmailDelivery(null); }}
         title={reissueFor ? "Reissue invitation" : "Invite a team member"}
         description="The user receives a one-time activation link and sets their own password."
         footer={
@@ -245,7 +248,7 @@ export default function ClientTeamPage(): React.JSX.Element {
               >
                 Copy link
               </Button>
-              <Button onClick={() => { setInviteOpen(false); setActivationUrl(null); setReissueFor(null); }}>Done</Button>
+              <Button onClick={() => { setInviteOpen(false); setActivationUrl(null); setEmailDelivery(null); setReissueFor(null); }}>Done</Button>
             </>
           ) : (
             <>
@@ -261,7 +264,7 @@ export default function ClientTeamPage(): React.JSX.Element {
         }
       >
         {activationUrl ? (
-          <p className="break-all text-sm text-muted">{window.location.origin}{activationUrl}</p>
+          <div className="space-y-2"><p className={emailDelivery?.status === "SENT" ? "text-sm text-success-foreground" : "text-sm text-warning-foreground"}>{emailDelivery?.status === "SENT" ? "Invitation email sent." : `Email was not sent${emailDelivery ? `: ${emailDelivery.message}` : ""}. Share this link manually.`}</p><p className="break-all text-sm text-muted">{window.location.origin}{activationUrl}</p></div>
         ) : (
           <div className="space-y-4">
             <div className="space-y-1">
