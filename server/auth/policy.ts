@@ -71,6 +71,11 @@ export type Capability =
   | "container.delete"
   // Secrets
   | "secrets.manage"
+  // Alerting (Phase 4): destinations/rules. ADMIN manages platform-wide and
+  // any organization's; CLIENT_ADMIN manages only their own organization's
+  // (server/services/notifications.ts is the sole scope-enforcement point —
+  // this capability alone does not imply platform scope).
+  | "alerting.manage"
   // Legacy aliases (kept for existing call sites)
   | "project.view"
   | "project.create"
@@ -115,6 +120,7 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "user.manage",
     "node.manage",
     "workload.adopt",
+    "alerting.manage",
     ...VIEWER_CAPABILITIES,
     ...OPERATOR_RUNTIME_CAPABILITIES,
     ...EDITOR_CAPABILITIES
@@ -125,6 +131,7 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   CLIENT_ADMIN: [
     "client.manage",
     "user.manage",
+    "alerting.manage",
     ...VIEWER_CAPABILITIES,
     ...OPERATOR_RUNTIME_CAPABILITIES,
     ...EDITOR_CAPABILITIES

@@ -155,6 +155,7 @@ enum MaintenanceNotificationBehavior {
 
 enum NotificationDestinationType {
   WEBHOOK
+  EMAIL
 }
 
 enum NotificationEventType {
@@ -163,6 +164,32 @@ enum NotificationEventType {
   CONDITION_RESOLVED
   SILENCE_EXPIRED_STILL_ACTIVE
   TEST_NOTIFICATION
+  DEPLOYMENT_FAILED
+  DEPLOYMENT_SUCCEEDED
+}
+
+/**
+ * Phase 4 (Alerting): a NotificationRule's routing scope. PLATFORM rules see
+ * every event platform-wide and may only be created by ADMIN; ORGANIZATION
+ * rules are pinned to one ClientAccount and only ever match events resolved
+ * to that same organization (see NotificationEvent.clientAccountId) — a
+ * structural guarantee against cross-organization delivery, not just a UI
+ * filter.
+ */
+enum NotificationRuleScope {
+  PLATFORM
+  ORGANIZATION
+}
+
+/**
+ * Phase 4: classifies an EMAIL delivery failure for the delivery history UI.
+ */
+enum EmailDeliveryFailureClass {
+  AUTH_FAILURE
+  RECIPIENT_REJECTED
+  TIMEOUT
+  TRANSIENT_SMTP_ERROR
+  UNKNOWN
 }
 
 enum NotificationDeliveryStatus {
@@ -185,19 +212,21 @@ enum SmtpTestStatus {
 }
 
 model ClientAccount {
-  id          String                @id @default(cuid())
-  name        String
-  slug        String                @unique
-  isActive    Boolean               @default(true)
-  users       User[]
-  projects    Project[]
-  assignments ContainerAssignment[]
-  grants      AccessGrant[]
-  operations  Operation[]
-  auditLogs   AuditLog[]
-  nodeAccess  ClientNodeAccess[]
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  id                       String                    @id @default(cuid())
+  name                     String
+  slug                     String                    @unique
+  isActive                 Boolean                   @default(true)
+  users                    User[]
+  projects                 Project[]
+  assignments              ContainerAssignment[]
+  grants                   AccessGrant[]
+  operations               Operation[]
+  auditLogs                AuditLog[]
+  nodeAccess               ClientNodeAccess[]
+  notificationDestinations NotificationDestination[]
+  notificationRules        NotificationRule[]
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
 
   @@index([isActive])
 }
@@ -246,7 +275,8 @@ model User {
   maintenanceWindowsCreated          MaintenanceWindow[]                 @relation("MaintenanceWindowCreatedBy")
   maintenanceWindowsCancelled        MaintenanceWindow[]                 @relation("MaintenanceWindowCancelledBy")
   notificationDestinationsCreated    NotificationDestination[]
-  platformEmailSettingsUpdated       PlatformEmailSettings[]              @relation("PlatformEmailSettingsUpdatedBy")
+  notificationRulesCreated           NotificationRule[]
+  platformEmailSettingsUpdated       PlatformEmailSettings[]             @relation("PlatformEmailSettingsUpdatedBy")
   createdAt                          DateTime                            @default(now())
   updatedAt                          DateTime                            @updatedAt
 
@@ -531,24 +561,24 @@ model AuditLog {
  * application read models and API responses.
  */
 model PlatformEmailSettings {
-  id                  String          @id @default("default")
-  enabled             Boolean         @default(false)
-  host                String?
-  port                Int?
-  encryption          SmtpEncryption  @default(STARTTLS)
-  username            String?
-  passwordEncrypted   String?
-  fromName            String?
-  fromEmail           String?
-  replyTo             String?
-  lastTestStatus      SmtpTestStatus?
-  lastTestAt          DateTime?
-  lastTestSummary     String?
-  lastTestDetail      String?
-  updatedById         String?
-  updatedBy           User?           @relation("PlatformEmailSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  id                String          @id @default("default")
+  enabled           Boolean         @default(false)
+  host              String?
+  port              Int?
+  encryption        SmtpEncryption  @default(STARTTLS)
+  username          String?
+  passwordEncrypted String?
+  fromName          String?
+  fromEmail         String?
+  replyTo           String?
+  lastTestStatus    SmtpTestStatus?
+  lastTestAt        DateTime?
+  lastTestSummary   String?
+  lastTestDetail    String?
+  updatedById       String?
+  updatedBy         User?           @relation("PlatformEmailSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 }
 
 /**
@@ -1026,47 +1056,99 @@ model MaintenanceWindow {
 }
 
 /**
- * Notification destination (Phase 6E). URL and any auth token are stored
- * encrypted (AES-256-GCM via server/security/crypto.ts, a new
- * NOTIFICATION_DESTINATIONS purpose) and are never returned in full by any
- * API response after creation (see server/services/notifications.ts —
- * responses only ever include a masked suffix).
+ * Notification destination (Phase 6E; split from routing in Phase 4). A
+ * destination is purely "where" — WEBHOOK (URL/auth/signing secret,
+ * encrypted, AES-256-GCM via server/security/crypto.ts NOTIFICATION_DESTINATIONS
+ * purpose — never returned in full after creation, only a masked suffix) or
+ * EMAIL (a recipient list, delivered through the shared platform SMTP
+ * transport in server/services/mail.ts). "What triggers it" now lives
+ * entirely on NotificationRule.
+ * `clientAccountId` null = a platform-owned destination, manageable only by
+ * ADMIN. Non-null = owned by that organization, manageable by its own
+ * CLIENT_ADMIN (and visible to ADMIN for oversight) — never by any other
+ * organization. NotificationRule enforces that an ORGANIZATION-scope rule may
+ * only point at a destination with a matching clientAccountId, and a
+ * PLATFORM-scope rule only at a platform-owned (null) destination, which is
+ * what makes cross-organization delivery structurally impossible rather than
+ * just a UI-level filter.
  */
 model NotificationDestination {
   id                     String                      @id @default(cuid())
   name                   String
   type                   NotificationDestinationType @default(WEBHOOK)
   enabled                Boolean                     @default(true)
-  urlEncrypted           String
-  urlMasked              String // safe-to-display masked form, e.g. https://hooks.example.com/••••••
+  clientAccountId        String?
+  clientAccount          ClientAccount?              @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  // WEBHOOK-only fields (null for EMAIL destinations).
+  urlEncrypted           String?
+  urlMasked              String? // safe-to-display masked form, e.g. https://hooks.example.com/••••••
   authHeaderEncrypted    String?
-  signingSecretEncrypted String
-  minSeverity            AttentionSeverity           @default(WARNING)
-  eventTypes             NotificationEventType[]
-  scopeNodeIds           String[]                    @default([])
-  scopeWorkloadIds       String[]                    @default([])
+  signingSecretEncrypted String?
+  // EMAIL-only field (empty for WEBHOOK destinations).
+  emailRecipients        String[]                    @default([])
   consecutiveFailures    Int                         @default(0)
   lastDeliveryStatus     NotificationDeliveryStatus?
   lastDeliveryAt         DateTime?
   lastSuccessAt          DateTime?
   createdById            String?
   createdBy              User?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  rules                  NotificationRule[]
   deliveries             NotificationDelivery[]
   createdAt              DateTime                    @default(now())
   updatedAt              DateTime                    @updatedAt
 
   @@index([enabled])
+  @@index([clientAccountId])
+}
+
+/**
+ * Routing rule (Phase 4): separates "what triggers a notification" from the
+ * destination it fires to. `scope` PLATFORM means the rule evaluates every
+ * matching event platform-wide (ADMIN only); ORGANIZATION pins it to one
+ * `clientAccountId` — it only ever matches events whose own resolved
+ * `clientAccountId` is the same organization (see NotificationEvent), and per
+ * the NotificationDestination doc comment its `destination` must belong to
+ * that same organization. A CLIENT_ADMIN may only create/edit ORGANIZATION
+ * rules scoped to their own organization (server/services/notifications.ts is
+ * the sole enforcement point — never trust a client-supplied clientAccountId).
+ */
+model NotificationRule {
+  id              String                  @id @default(cuid())
+  name            String
+  scope           NotificationRuleScope   @default(PLATFORM)
+  clientAccountId String?
+  clientAccount   ClientAccount?          @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  eventTypes      NotificationEventType[]
+  minSeverity     AttentionSeverity       @default(WARNING)
+  destinationId   String
+  destination     NotificationDestination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  enabled         Boolean                 @default(true)
+  createdById     String?
+  createdBy       User?                   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([enabled])
+  @@index([clientAccountId])
+  @@index([destinationId])
 }
 
 /**
  * A logical notification-worthy event, derived from one attention transition
- * (brief §11-13). `dedupeKey` is the idempotency anchor — deterministic from
- * the attention transition itself (e.g. `${attentionStateId}:OPENED:${firstObservedAt}`),
- * never from wall-clock "now", so a duplicate sync pass, worker restart, or
- * retried HTTP request can never create a second logical event for the same
- * transition (unique constraint, migration-enforced upsert-or-skip).
+ * (brief §11-13) or (Phase 4) one terminal deployment operation. `dedupeKey`
+ * is the idempotency anchor — deterministic from the transition itself (e.g.
+ * `${attentionStateId}:OPENED:${firstObservedAt}` or
+ * `deployment:${operationId}:${state}`), never from wall-clock "now", so a
+ * duplicate sync pass, worker restart, or retried HTTP request can never
+ * create a second logical event for the same transition (unique constraint,
+ * migration-enforced upsert-or-skip).
  * `payload` is the exact versioned structured payload later sent to every
  * matching destination — computed once here, not re-derived per delivery.
+ * `nodeId`/`workloadId`/`clientAccountId` are resolved once at creation time
+ * (never re-derived per rule match) — `clientAccountId` in particular is the
+ * sole input to ORGANIZATION-rule matching and tenant-isolated delivery
+ * history, so it is null for any event with no single owning organization
+ * (e.g. a node-level condition on a shared multi-tenant node).
  */
 model NotificationEvent {
   id               String                 @id @default(cuid())
@@ -1077,6 +1159,9 @@ model NotificationEvent {
   severity         AttentionSeverity?
   resourceType     String?
   resourceId       String?
+  nodeId           String?
+  workloadId       String?
+  clientAccountId  String?
   summary          String
   payload          Json
   occurredAt       DateTime               @default(now())
@@ -1085,6 +1170,7 @@ model NotificationEvent {
 
   @@index([attentionStateId])
   @@index([occurredAt])
+  @@index([clientAccountId])
 }
 
 /**
@@ -1106,6 +1192,11 @@ model NotificationDelivery {
   status              NotificationDeliveryStatus @default(PENDING)
   httpStatus          Int?
   error               String?
+  // EMAIL deliveries only — best-effort classification of the SMTP failure
+  // for the delivery history UI (brief: "For Email, classify failures where
+  // possible"). Null for WEBHOOK deliveries and for any delivery that hasn't
+  // failed.
+  emailFailureClass   EmailDeliveryFailureClass?
   isTest              Boolean                    @default(false)
   isManualRetry       Boolean                    @default(false)
   requestedAt         DateTime                   @default(now())

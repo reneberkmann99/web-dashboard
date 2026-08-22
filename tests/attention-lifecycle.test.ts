@@ -10,8 +10,12 @@ import {
   scheduleMaintenance,
   unacknowledgeAttention
 } from "@/server/services/attention-lifecycle";
-import { createConditionNotificationEvent, sweepNotificationPolicyTransitions } from "@/server/services/notifications";
-import { encryptSecret } from "@/server/security/crypto";
+import {
+  createConditionNotificationEvent,
+  createNotificationDestination,
+  createNotificationRule,
+  sweepNotificationPolicyTransitions
+} from "@/server/services/notifications";
 
 let world: Awaited<ReturnType<typeof seedWorld>>;
 
@@ -42,17 +46,24 @@ async function openCondition(suffix: string, severity: "warning" | "critical" = 
   });
 }
 
+/** Destination + PLATFORM-scope rule routing every attention event type to it (Phase 4 split destinations from routing). */
 async function createDestination(name: string) {
-  return prisma.notificationDestination.create({
-    data: {
-      name,
-      urlEncrypted: encryptSecret("http://127.0.0.1:9/hook", "NOTIFICATION_DESTINATIONS"),
-      urlMasked: "http://127.0.0.1:9/••••••",
-      signingSecretEncrypted: encryptSecret("test-signing-secret-123", "NOTIFICATION_DESTINATIONS"),
-      minSeverity: "WARNING",
-      eventTypes: ["CONDITION_OPENED", "SEVERITY_ESCALATED", "CONDITION_RESOLVED", "SILENCE_EXPIRED_STILL_ACTIVE"]
-    }
+  const destination = await createNotificationDestination({
+    type: "WEBHOOK",
+    name,
+    url: "http://127.0.0.1:9/hook",
+    signingSecret: "test-signing-secret-123456",
+    actor: sessionFor(world.adminA)
   });
+  await createNotificationRule({
+    name: `${name} rule`,
+    scope: "PLATFORM",
+    eventTypes: ["CONDITION_OPENED", "SEVERITY_ESCALATED", "CONDITION_RESOLVED", "SILENCE_EXPIRED_STILL_ACTIVE"],
+    minSeverity: "WARNING",
+    destinationId: destination.id,
+    actor: sessionFor(world.adminA)
+  });
+  return destination;
 }
 
 describe("attention acknowledgement lifecycle", () => {

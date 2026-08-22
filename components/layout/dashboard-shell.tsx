@@ -66,6 +66,7 @@ const CLIENT_NAV: NavItem[] = [
 
 const CLIENT_ADMIN_NAV: NavItem[] = [
   { key: "members", href: "/organization/members", label: "Members", icon: Users },
+  { key: "alerting", href: "/organization/settings/notifications", label: "Alerting", icon: BellRing },
   { key: "settings", href: "/organization/settings", label: "Settings", icon: Settings }
 ];
 
@@ -105,12 +106,14 @@ export function layoutVariantFor(pathname: string): LayoutVariant {
     "/organization/activity",
     "/organization/members",
     "/organization/settings",
+    "/organization/settings/notifications",
     // Legacy paths remain supported for bookmarked sessions.
     "/client",
     "/client/workloads",
     "/client/containers",
     "/client/activity",
-    "/client/team"
+    "/client/team",
+    "/client/settings/notifications"
   ]);
   return wideRoutes.has(pathname) ? "wide" : "standard";
 }

@@ -7,6 +7,7 @@ import { seedWorld, sessionFor } from "./helpers/fixtures";
 import {
   createConditionNotificationEvent,
   createNotificationDestination,
+  createNotificationRule,
   enqueueDueNotificationRetries,
   executeNotificationDelivery,
   listNotificationDestinations,
@@ -15,6 +16,7 @@ import {
   sendTestNotification
 } from "@/server/services/notifications";
 import { syncAttentionState } from "@/server/services/attention";
+import type { AttentionSeverity, NotificationEventType } from "@prisma/client";
 
 let world: Awaited<ReturnType<typeof seedWorld>>;
 let server: http.Server;
@@ -58,17 +60,37 @@ async function createState(suffix: string, severity: "WARNING" | "CRITICAL" = "W
   });
 }
 
-async function destination(suffix: string, options?: { enabled?: boolean }) {
+/** A bare WEBHOOK destination with no routing — used by tests that only exercise the destination itself (send-test, secret masking). */
+async function webhookDestination(suffix: string, options?: { enabled?: boolean }) {
   return createNotificationDestination({
+    type: "WEBHOOK",
     name: `Operations ${suffix}`,
     url: receiverUrl,
     signingSecret: "fixture-signing-secret-123456",
     authHeader: "Bearer fixture-auth-token",
     enabled: options?.enabled,
-    minSeverity: "WARNING",
-    eventTypes: ["CONDITION_OPENED", "SEVERITY_ESCALATED", "CONDITION_RESOLVED", "SILENCE_EXPIRED_STILL_ACTIVE"],
     actor: sessionFor(world.adminA)
   });
+}
+
+/** A destination plus one PLATFORM-scope rule routing to it — the Phase 4 equivalent of the old single-entity webhook destination. */
+async function destination(suffix: string, options?: {
+  enabled?: boolean;
+  ruleEnabled?: boolean;
+  minSeverity?: AttentionSeverity;
+  eventTypes?: NotificationEventType[];
+}) {
+  const dest = await webhookDestination(suffix, { enabled: options?.enabled });
+  await createNotificationRule({
+    name: `Rule ${suffix}`,
+    scope: "PLATFORM",
+    eventTypes: options?.eventTypes ?? ["CONDITION_OPENED", "SEVERITY_ESCALATED", "CONDITION_RESOLVED", "SILENCE_EXPIRED_STILL_ACTIVE"],
+    minSeverity: options?.minSeverity ?? "WARNING",
+    destinationId: dest.id,
+    enabled: options?.ruleEnabled,
+    actor: sessionFor(world.adminA)
+  });
+  return dest;
 }
 
 describe("notification event generation", () => {
@@ -115,6 +137,25 @@ describe("notification event generation", () => {
     expect(new Set(events.map((event) => event.attentionStateId))).toEqual(new Set([state.id]));
   });
 
+  it("a resolved condition delivers a CONDITION_RESOLVED notification to the matching destination", async () => {
+    const suffix = `resolution-${Date.now()}`;
+    const resourceId = `${world.node1.id}:${suffix}`;
+    const dest = await destination(suffix);
+    await syncAttentionState([{
+      resourceType: "CONTAINER",
+      resourceId,
+      conditionType: "CONTAINER_UNHEALTHY",
+      severity: "critical",
+      title: `${suffix} unhealthy`,
+      detail: "critical",
+      nodeId: world.node1.id
+    }]);
+    await syncAttentionState([]);
+    const resolvedEvent = await prisma.notificationEvent.findFirstOrThrow({ where: { type: "CONDITION_RESOLVED", resourceId } });
+    const delivery = await prisma.notificationDelivery.findFirstOrThrow({ where: { notificationEventId: resolvedEvent.id, destinationId: dest.id } });
+    expect(delivery.status).toBe("PENDING");
+  });
+
   it("disabled destinations receive no newly queued operational deliveries", async () => {
     const state = await createState(`disabled-${Date.now()}`);
     const dest = await destination(`disabled-${Date.now()}`, { enabled: false });
@@ -123,6 +164,34 @@ describe("notification event generation", () => {
       type: "CONDITION_OPENED",
       dedupeKey: `disabled:${state.id}`
     });
+    expect(await prisma.notificationDelivery.count({ where: { destinationId: dest.id } })).toBe(0);
+  });
+
+  it("disabled rules receive no newly queued deliveries even though the destination itself is enabled", async () => {
+    const state = await createState(`rule-disabled-${Date.now()}`);
+    const dest = await destination(`rule-disabled-${Date.now()}`, { ruleEnabled: false });
+    await createConditionNotificationEvent({
+      state,
+      type: "CONDITION_OPENED",
+      dedupeKey: `rule-disabled:${state.id}`
+    });
+    expect(await prisma.notificationDelivery.count({ where: { destinationId: dest.id } })).toBe(0);
+  });
+
+  it("a rule's minimum severity filters which conditions reach the destination", async () => {
+    const dest = await destination(`severity-${Date.now()}`, { minSeverity: "CRITICAL" });
+    const warningState = await createState(`severity-warn-${Date.now()}`, "WARNING");
+    const criticalState = await createState(`severity-crit-${Date.now()}`, "CRITICAL");
+    await createConditionNotificationEvent({ state: warningState, type: "CONDITION_OPENED", dedupeKey: `sev-warn:${warningState.id}` });
+    await createConditionNotificationEvent({ state: criticalState, type: "CONDITION_OPENED", dedupeKey: `sev-crit:${criticalState.id}` });
+    expect(await prisma.notificationDelivery.count({ where: { destinationId: dest.id, notificationEvent: { resourceId: warningState.resourceId } } })).toBe(0);
+    expect(await prisma.notificationDelivery.count({ where: { destinationId: dest.id, notificationEvent: { resourceId: criticalState.resourceId } } })).toBe(1);
+  });
+
+  it("a rule's event types filter which transitions reach the destination", async () => {
+    const dest = await destination(`events-${Date.now()}`, { eventTypes: ["CONDITION_RESOLVED"] });
+    const state = await createState(`events-${Date.now()}`, "CRITICAL");
+    await createConditionNotificationEvent({ state, type: "CONDITION_OPENED", dedupeKey: `events-opened:${state.id}` });
     expect(await prisma.notificationDelivery.count({ where: { destinationId: dest.id } })).toBe(0);
   });
 });
@@ -162,7 +231,7 @@ describe("signed webhook delivery", () => {
   it("send test is explicitly TEST_NOTIFICATION and creates no fake condition", async () => {
     received.length = 0;
     responseStatus = 200;
-    const dest = await destination(`test-${Date.now()}`);
+    const dest = await webhookDestination(`test-${Date.now()}`);
     const conditionCount = await prisma.attentionState.count();
     const delivery = await sendTestNotification({ destinationId: dest.id, actor: sessionFor(world.adminA) });
     expect(delivery.status).toBe("DELIVERED");
@@ -172,8 +241,8 @@ describe("signed webhook delivery", () => {
   });
 
   it("never returns encrypted URL, auth token, or signing secret from destination reads", async () => {
-    await destination(`secret-view-${Date.now()}`);
-    const json = JSON.stringify(await listNotificationDestinations());
+    await webhookDestination(`secret-view-${Date.now()}`);
+    const json = JSON.stringify(await listNotificationDestinations(sessionFor(world.adminA)));
     expect(json).not.toContain("urlEncrypted");
     expect(json).not.toContain("fixture-auth-token");
     expect(json).not.toContain("fixture-signing-secret");
@@ -216,5 +285,6 @@ describe("bounded retry and restart persistence", () => {
     expect(retry.attemptNumber).toBe(2);
     expect(retry.isManualRetry).toBe(true);
     expect(await prisma.notificationEvent.count({ where: { id: event.eventId } })).toBe(1);
+    responseStatus = 204;
   });
 });

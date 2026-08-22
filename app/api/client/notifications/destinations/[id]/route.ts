@@ -1,4 +1,4 @@
-import { requireApiRole } from "@/server/auth/guards";
+import { requireApiCapability } from "@/server/auth/guards";
 import { fromError, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
 import { deleteNotificationDestination, updateNotificationDestination } from "@/server/services/notifications";
@@ -7,7 +7,7 @@ import { notificationDestinationUpdateSchema } from "@/server/validation/attenti
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
-    const actor = await requireApiRole("ADMIN");
+    const actor = await requireApiCapability("alerting.manage");
     const id = cuidParamSchema.parse((await params).id);
     const body = notificationDestinationUpdateSchema.parse(await request.json());
     const destination = await updateNotificationDestination({
@@ -24,7 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
-    const actor = await requireApiRole("ADMIN");
+    const actor = await requireApiCapability("alerting.manage");
     const id = cuidParamSchema.parse((await params).id);
     await deleteNotificationDestination({ id, actor, sourceIp: getSourceIpFromRequest(request) });
     return ok({ success: true });

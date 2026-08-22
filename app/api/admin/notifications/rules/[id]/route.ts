@@ -1,22 +1,22 @@
 import { requireApiRole } from "@/server/auth/guards";
 import { fromError, ok } from "@/server/http";
 import { getSourceIpFromRequest } from "@/server/request";
-import { deleteNotificationDestination, updateNotificationDestination } from "@/server/services/notifications";
+import { deleteNotificationRule, updateNotificationRule } from "@/server/services/notifications";
 import { cuidParamSchema } from "@/server/validation/admin";
-import { notificationDestinationUpdateSchema } from "@/server/validation/attention-lifecycle";
+import { notificationRuleUpdateSchema } from "@/server/validation/attention-lifecycle";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const actor = await requireApiRole("ADMIN");
     const id = cuidParamSchema.parse((await params).id);
-    const body = notificationDestinationUpdateSchema.parse(await request.json());
-    const destination = await updateNotificationDestination({
+    const body = notificationRuleUpdateSchema.parse(await request.json());
+    const rule = await updateNotificationRule({
       id,
       ...body,
       actor,
       sourceIp: getSourceIpFromRequest(request)
     });
-    return ok({ destination });
+    return ok({ rule });
   } catch (error) {
     return fromError(error);
   }
@@ -26,7 +26,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const actor = await requireApiRole("ADMIN");
     const id = cuidParamSchema.parse((await params).id);
-    await deleteNotificationDestination({ id, actor, sourceIp: getSourceIpFromRequest(request) });
+    await deleteNotificationRule({ id, actor, sourceIp: getSourceIpFromRequest(request) });
     return ok({ success: true });
   } catch (error) {
     return fromError(error);
