@@ -33,7 +33,7 @@ const PURPOSE_ENV: Record<EncryptionPurpose, string> = {
 function getKey(purpose: EncryptionPurpose): Buffer {
   const envVar = PURPOSE_ENV[purpose];
   const rawKey = process.env[envVar];
-  if (!rawKey || rawKey.length !== 64) {
+  if (!rawKey || !/^[0-9a-fA-F]{64}$/.test(rawKey)) {
     throw new Error(`${envVar} must be a 64-char hex string (32 bytes)`);
   }
   return Buffer.from(rawKey, "hex");
@@ -46,7 +46,7 @@ function getKey(purpose: EncryptionPurpose): Buffer {
  */
 export function isEncryptionKeyConfigured(purpose: EncryptionPurpose): boolean {
   const rawKey = process.env[PURPOSE_ENV[purpose]];
-  return Boolean(rawKey && rawKey.length === 64);
+  return Boolean(rawKey && /^[0-9a-fA-F]{64}$/.test(rawKey));
 }
 
 export function encryptSecret(value: string, purpose: EncryptionPurpose = "NODE_CREDENTIALS"): string {

@@ -12,7 +12,7 @@ const root = path.resolve(__dirname, "..");
 describe("VPN HTTPS deployment", () => {
   it("publishes only nginx TLS on 1337 and keeps Next.js private", () => {
     const compose = parse(fs.readFileSync(path.join(root, "docker-compose.yml"), "utf8")) as {
-      services: Record<string, { ports?: string[]; expose?: string[]; volumes?: string[]; healthcheck?: unknown }>;
+      services: Record<string, { ports?: string[]; expose?: string[]; volumes?: string[]; healthcheck?: unknown; environment?: Record<string, string> }>;
     };
     expect(compose.services.web.ports).toBeUndefined();
     expect(compose.services.web.expose).toContain("3000");
@@ -20,6 +20,7 @@ describe("VPN HTTPS deployment", () => {
     expect(compose.services.proxy.ports).toContain("1337:8443");
     expect(compose.services.proxy.volumes?.some((mount) => mount.includes("/etc/nginx/tls:ro"))).toBe(true);
     expect(compose.services.proxy.healthcheck).toBeTruthy();
+    expect(compose.services.web.environment?.SMTP_CREDENTIALS_KEY).toBe("${SMTP_CREDENTIALS_KEY:-}");
   });
 
   it("uses modern TLS/security headers and explicitly disables SSE buffering", () => {

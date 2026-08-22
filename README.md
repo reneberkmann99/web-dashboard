@@ -215,6 +215,47 @@ Important values:
 - `DOCKER_HOST`
 - `XDG_RUNTIME_DIR`
 
+### SMTP setup with Docker Compose
+
+Generate the SMTP encryption key once and keep it stable for the lifetime of
+the installation (changing it makes an already-saved SMTP password
+undecryptable):
+
+```bash
+printf 'SMTP_CREDENTIALS_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
+docker compose up -d --force-recreate web
+docker compose exec web sh -lc 'test "${#SMTP_CREDENTIALS_KEY}" -eq 64 && echo SMTP key loaded'
+```
+
+`docker compose restart` does **not** apply changed environment variables;
+the `web` container must be recreated. The key must be exactly 64 hexadecimal
+characters with no quotes embedded in the value. Then open **Admin → Settings
+→ Email**, enter the SMTP host, port, encryption mode, username, password,
+From name/address, save, and run **Send test email**. Common combinations are
+port 587 with STARTTLS and port 465 with TLS.
+
+### Domain and publishing setup
+
+1. A platform administrator creates an enabled Caddy ingress provider and an
+   enabled Public Address assigned to it under **Admin → Infrastructure →
+   Ingress**. The public address must reach the Caddy gateway on ports 80/443.
+2. An organization administrator opens **Organization → Domains**, adds the
+   exact hostname to publish (for example `app.example.com`), and opens **DNS
+   instructions**.
+3. At the authoritative DNS provider, publish the displayed TXT verification
+   record exactly as shown. After it propagates, click **Verify** until the
+   domain is `VERIFIED`.
+4. Open the workload, click **Publish service**, choose its service and target
+   port, HTTPS, the verified hostname, and **Automatic** Public Address, then
+   activate it.
+5. Return to **DNS instructions** and publish the single displayed routing
+   record (A, AAAA, or CNAME). Do not publish every alternative. Once DNS and
+   Caddy ACME issuance converge, the endpoint becomes reachable at the chosen
+   hostname.
+
+Deleting an ingress endpoint removes only its public route; it does not delete
+the workload, container, volume, or domain.
+
 ## API groups
 
 - `/api/auth/*`
