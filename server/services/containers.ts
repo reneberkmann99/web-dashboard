@@ -72,6 +72,7 @@ function toContainerView(
 ): ContainerView {
   return {
     assignmentId: assignment.id,
+    databaseId: assignment.containerId,
     containerId: assignment.dockerContainerId,
     name: assignment.friendlyLabel ?? runtime?.name ?? assignment.dockerName,
     image: runtime?.image ?? assignment.image ?? "unknown",
@@ -427,6 +428,7 @@ export async function getContainerDirect(
   return {
     container: {
       assignmentId: "",
+      databaseId: containerRow?.id ?? null,
       containerId: live.id,
       name: live.name,
       image: live.image,
@@ -550,6 +552,7 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
       } else {
         results.push({
           assignmentId: "",
+          databaseId: null,
           containerId: live.id,
           name: live.name,
           image: live.image,

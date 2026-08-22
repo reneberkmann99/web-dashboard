@@ -21,16 +21,15 @@ export class CaddyIngressProvider implements ManagedIngressProvider {
 
   async upsert(route: ManagedRoute): Promise<void> {
     if (route.exposure === "TCP" || route.exposure === "UDP") throw new Error("PROVIDER_PROTOCOL_UNSUPPORTED");
-    await this.remove(route.id).catch(() => undefined);
-    await this.request("/config/apps/http/servers/noderaft/routes", {
-      method: "POST",
-      body: JSON.stringify({
-        "@id": `noderaft-${route.id}`,
-        match: [{ host: [route.hostname] }],
-        handle: [{ handler: "reverse_proxy", upstreams: [{ dial: new URL(route.backendUrl).host }] }],
-        terminal: true
-      })
+    const body = JSON.stringify({
+      "@id": `noderaft-${route.id}`,
+      match: [{ host: [route.hostname] }],
+      handle: [{ handler: "reverse_proxy", upstreams: [{ dial: new URL(route.backendUrl).host }] }],
+      terminal: true
     });
+    // PUT replaces an existing @id atomically. Only a missing route needs an append.
+    const existing = await this.fetchImpl(`${this.options.adminUrl.replace(/\/$/, "")}/id/noderaft-${route.id}`, { headers: this.options.bearerToken ? { authorization: `Bearer ${this.options.bearerToken}` } : undefined });
+    await this.request(existing.ok ? `/id/noderaft-${route.id}` : "/config/apps/http/servers/noderaft/routes", { method: existing.ok ? "PUT" : "POST", body });
   }
 
   async remove(routeId: string): Promise<void> {
@@ -47,6 +46,19 @@ export class CaddyIngressProvider implements ManagedIngressProvider {
       return { ok: response.status < 500, detail: `Backend returned HTTP ${response.status}` };
     } catch (error) {
       return { ok: false, detail: error instanceof Error ? error.message : "Backend unavailable" };
+    }
+  }
+
+  async verifyTls(route: ManagedRoute): Promise<{ status: "ISSUED" | "PENDING" | "DNS_INVALID" | "FAILED"; detail?: string }> {
+    if (route.exposure !== "HTTPS" || !route.hostname) return { status: "ISSUED" };
+    try {
+      const response = await this.fetchImpl(`https://${route.hostname}`, { redirect: "manual", signal: AbortSignal.timeout(5000) });
+      return response.status > 0 ? { status: "ISSUED", detail: `HTTPS returned ${response.status}` } : { status: "PENDING" };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "TLS verification failed";
+      if (/ENOTFOUND|EAI_AGAIN|name.*resolve|dns/i.test(detail)) return { status: "DNS_INVALID", detail };
+      if (/certificate|tls|ssl|acme/i.test(detail)) return { status: "FAILED", detail };
+      return { status: "PENDING", detail };
     }
   }
 }

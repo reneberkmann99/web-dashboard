@@ -16,10 +16,10 @@ import { TabBar } from "@/components/ui/tab-bar";
 import { StatePanel } from "@/components/ui/state-panel";
 
 type ExposureType = "HTTPS" | "HTTP" | "TCP" | "UDP";
-type EndpointStatus = "PENDING" | "ACTIVE" | "ERROR" | "DISABLED";
+type EndpointStatus = "PENDING" | "ACTIVE" | "BACKEND_UNAVAILABLE" | "DNS_INVALID" | "TLS_FAILED" | "DISABLED";
 type IpVersion = "V4" | "V6";
 type Allocation = "SHARED" | "DEDICATED";
-type ProviderKind = "MANUAL" | "NGINX_PROXY_MANAGER";
+type ProviderKind = "MANUAL" | "NGINX_PROXY_MANAGER" | "CADDY";
 
 type ClientRef = { id: string; name: string };
 
@@ -57,7 +57,7 @@ type WorkloadRef = { id: string; name: string; containers: { id: string; dockerN
 
 function statusVariant(status: EndpointStatus): "success" | "danger" | "warning" | "default" {
   if (status === "ACTIVE") return "success";
-  if (status === "ERROR") return "danger";
+  if (status === "BACKEND_UNAVAILABLE" || status === "DNS_INVALID" || status === "TLS_FAILED") return "danger";
   if (status === "PENDING") return "warning";
   return "default";
 }
@@ -486,15 +486,17 @@ function ProvidersPanel({ providers, loading, refresh }: { providers: Provider[]
   const [name, setName] = useState("");
   const [kind, setKind] = useState<ProviderKind>("MANUAL");
   const [gatewayHostname, setGatewayHostname] = useState("");
+  const [adminUrl, setAdminUrl] = useState("");
+  const [credential, setCredential] = useState("");
 
   function resetForm(): void {
-    setName(""); setKind("MANUAL"); setGatewayHostname("");
+    setName(""); setKind("MANUAL"); setGatewayHostname(""); setAdminUrl(""); setCredential("");
   }
 
   const create = useMutation({
     mutationFn: () => apiFetch("/api/admin/ingress/providers", {
       method: "POST",
-      body: JSON.stringify({ name, kind, gatewayHostname: gatewayHostname || null })
+      body: JSON.stringify({ name, kind, gatewayHostname: gatewayHostname || null, config: kind === "CADDY" ? { adminUrl } : null, credential: kind === "CADDY" && credential ? credential : null })
     }),
     onSuccess: async () => { setCreateOpen(false); resetForm(); toast.success("Provider added"); await refresh(); },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not add provider")
@@ -570,8 +572,20 @@ function ProvidersPanel({ providers, loading, refresh }: { providers: Provider[]
             <Select value={kind} onChange={(e) => setKind(e.target.value as ProviderKind)}>
               <option value="MANUAL">Manual (routing configured outside Noderaft)</option>
               <option value="NGINX_PROXY_MANAGER">Nginx Proxy Manager</option>
+              <option value="CADDY">Caddy (managed)</option>
             </Select>
           </label>
+          {kind === "CADDY" && <>
+            <label className="block text-sm">
+              <span className="mb-1 block text-text-muted">Caddy Admin API URL</span>
+              <Input value={adminUrl} onChange={(e) => setAdminUrl(e.target.value)} placeholder="http://caddy:2019" />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block text-text-muted">Bearer credential (optional)</span>
+              <Input type="password" value={credential} onChange={(e) => setCredential(e.target.value)} autoComplete="new-password" />
+              <span className="mt-1 block text-xs text-text-subtle">Encrypted before storage and never returned by the API.</span>
+            </label>
+          </>}
           <label className="block text-sm">
             <span className="mb-1 block text-text-muted">Gateway hostname (optional)</span>
             <Input value={gatewayHostname} onChange={(e) => setGatewayHostname(e.target.value)} placeholder="gw.example.net" />
@@ -580,7 +594,7 @@ function ProvidersPanel({ providers, loading, refresh }: { providers: Provider[]
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button onClick={() => create.mutate()} disabled={!name.trim() || create.isPending}>Add provider</Button>
+          <Button onClick={() => create.mutate()} disabled={!name.trim() || (kind === "CADDY" && !adminUrl.trim()) || create.isPending}>Add provider</Button>
         </div>
       </Modal>
 

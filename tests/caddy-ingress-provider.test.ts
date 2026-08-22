@@ -8,12 +8,20 @@ describe("Caddy managed ingress provider", () => {
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
     const provider = new CaddyIngressProvider({ adminUrl: "http://gateway.internal:2019", fetchImpl });
     await provider.upsert({ id: "endpoint-1", exposure: "HTTPS", hostname: "app.example.ee", backendUrl: "http://frontend.node-a.internal:8080" });
-    expect(fetchImpl).toHaveBeenNthCalledWith(1, "http://gateway.internal:2019/id/noderaft-endpoint-1", expect.objectContaining({ method: "DELETE" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "http://gateway.internal:2019/id/noderaft-endpoint-1", expect.any(Object));
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toMatchObject({
       "@id": "noderaft-endpoint-1",
       match: [{ host: ["app.example.ee"] }],
       handle: [{ handler: "reverse_proxy", upstreams: [{ dial: "frontend.node-a.internal:8080" }] }]
     });
+  });
+
+  it("atomically replaces an existing route with PUT", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 200 })).mockResolvedValueOnce(new Response(null, { status: 200 }));
+    const provider = new CaddyIngressProvider({ adminUrl: "http://gateway.internal:2019", fetchImpl });
+    await provider.upsert({ id: "existing", exposure: "HTTP", hostname: "app.example.ee", backendUrl: "http://frontend.node-b.internal:8080" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "http://gateway.internal:2019/id/noderaft-existing", expect.objectContaining({ method: "PUT" }));
+    expect(fetchImpl).not.toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ method: "DELETE" }));
   });
 
   it("fails closed for TCP and UDP without the layer4 plugin", async () => {
