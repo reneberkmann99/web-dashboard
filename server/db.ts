@@ -43,3 +43,18 @@ export async function lockClientAccountForQuota(tx: Prisma.TransactionClient, cl
 export async function lockPublicAddressForUpdate(tx: Prisma.TransactionClient, publicAddressId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM "PublicAddress" WHERE id = ${publicAddressId} FOR UPDATE`;
 }
+
+/**
+ * Locks a Container row for the rest of the current transaction. Container
+ * deletion (server/services/container-lifecycle.ts) is a soft delete
+ * (isActive: false, row survives) with no DB constraint reconciling
+ * IngressEndpoint.containerId automatically — this lock is what serializes
+ * that deletion against a concurrent createIngressEndpoint/
+ * updateIngressEndpoint attaching the SAME container, so one always sees the
+ * other's committed result (a freshly-inactive container is rejected as a
+ * backend; a freshly-attached endpoint blocks the deletion) instead of both
+ * racing past a stale isActive read.
+ */
+export async function lockContainerForUpdate(tx: Prisma.TransactionClient, containerId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "Container" WHERE id = ${containerId} FOR UPDATE`;
+}

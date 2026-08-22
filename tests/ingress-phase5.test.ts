@@ -898,4 +898,76 @@ describe("Phase 5 review follow-ups", () => {
     const subCandidate = subInstructions.routingAlternatives.find((r) => r.publicAddressId === address.id);
     expect(subCandidate).toMatchObject({ type: "CNAME", value: "compound.gw.test" });
   });
+
+  it("excludes an address whose associated provider is disabled from routing alternatives", async () => {
+    const disabledProvider = await createIngressProvider({ name: "Disabled alt gw", gatewayHostname: "disabled-alt.gw.test", enabled: false, actor: sessionFor(world.adminA) });
+    const addressWithDisabledProvider = await createPublicAddress({
+      label: "Disabled provider alt", ipAddress: "203.0.113.169", ipVersion: "V4", providerId: disabledProvider.id, actor: sessionFor(world.adminA)
+    });
+    const plainAddress = await createPublicAddress({ label: "Plain alt", ipAddress: "203.0.113.170", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const domain = await createDomain({ hostname: `alt-provider-filter-${Date.now()}.example.com`, actor: sessionFor(world.clientAAdmin) });
+
+    const instructions = await dnsInstructionsForDomain(domain.id, sessionFor(world.clientAAdmin));
+    expect(instructions.routingAlternatives.some((r) => r.publicAddressId === addressWithDisabledProvider.id)).toBe(false);
+    expect(instructions.routingAlternatives.some((r) => r.publicAddressId === plainAddress.id)).toBe(true);
+  });
+
+  it("serializes endpoint creation against a concurrent verification of the same hostname by another organization — never both bound", async () => {
+    const hostname = `race-bind-${Date.now()}.example.com`;
+    const domainA = await verifiedDomain(hostname, world.clientA, world.clientAAdmin);
+    const address = await createPublicAddress({ label: "Race bind test", ipAddress: "203.0.113.171", ipVersion: "V4", actor: sessionFor(world.adminA) });
+
+    const clientBAdmin = await prisma.user.create({
+      data: {
+        email: `b-admin-racebind-${Date.now()}@client-b.local`,
+        displayName: "B Admin Race Bind",
+        passwordHash: world.password,
+        role: "CLIENT_ADMIN",
+        clientAccountId: world.clientB.id,
+        isActive: true
+      }
+    });
+    const domainB = await createDomain({ hostname, actor: sessionFor(clientBAdmin) });
+    setDomainTxtResolverForTests(async () => [[verificationTxtValue(domainB.verificationToken)]]);
+
+    await Promise.allSettled([
+      createIngressEndpoint({
+        workloadId: world.projectA.id, serviceName: "svc", targetPort: 8200, exposureType: "HTTPS", domainId: domainA.id, publicAddressId: address.id,
+        actor: sessionFor(world.clientAAdmin)
+      }),
+      verifyDomain({ id: domainB.id, actor: sessionFor(clientBAdmin) })
+    ]);
+
+    const endpointBoundToA = await prisma.ingressEndpoint.count({ where: { domainId: domainA.id } });
+    const domainBFresh = await prisma.domain.findUniqueOrThrow({ where: { id: domainB.id } });
+    const aBound = endpointBoundToA > 0;
+    const bVerified = domainBFresh.status === "VERIFIED";
+    // The whole point of the hostname advisory lock: these can never both be true.
+    expect(aBound && bVerified).toBe(false);
+  });
+
+  it("serializes an endpoint attach against a concurrent container deletion — never both succeed", async () => {
+    const { deleteContainer } = await import("@/server/services/container-lifecycle");
+    const container = await prisma.container.create({
+      data: { nodeId: world.node1.id, projectId: world.projectA.id, dockerContainerId: `race-container-${Date.now()}`, dockerName: "race-container", isActive: true }
+    });
+    const address = await createPublicAddress({ label: "Container race test", ipAddress: "203.0.113.172", ipVersion: "V4", actor: sessionFor(world.adminA) });
+
+    const [attachResult, deleteResult] = await Promise.allSettled([
+      createIngressEndpoint({
+        workloadId: world.projectA.id, containerId: container.id, targetPort: 8300, exposureType: "TCP", publicAddressId: address.id, publicPort: 28300,
+        actor: sessionFor(world.clientAAdmin)
+      }),
+      deleteContainer(sessionFor(world.adminA), container.id, null)
+    ]);
+
+    const boundEndpointCount = await prisma.ingressEndpoint.count({ where: { containerId: container.id } });
+    const containerFresh = await prisma.container.findUniqueOrThrow({ where: { id: container.id } });
+    const attached = boundEndpointCount > 0;
+    const deleted = !containerFresh.isActive;
+    // Never both: an attached endpoint on a container that also got deleted.
+    expect(attached && deleted).toBe(false);
+    // Exactly one side should have won (the other rejected).
+    expect([attachResult.status, deleteResult.status].filter((s) => s === "fulfilled")).toHaveLength(1);
+  });
 });

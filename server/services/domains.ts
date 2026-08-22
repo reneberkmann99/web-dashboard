@@ -442,7 +442,15 @@ export async function dnsInstructionsForDomain(id: string, actor: AuthSession): 
   const candidates = await prisma.publicAddress.findMany({
     where: {
       enabled: true,
-      OR: [{ allocation: "SHARED" }, { reservedForOrgId: domain.clientAccountId }]
+      AND: [
+        { OR: [{ allocation: "SHARED" }, { reservedForOrgId: domain.clientAccountId }] },
+        // A candidate whose associated provider is disabled isn't currently
+        // a viable choice — createIngressEndpoint would reject binding to it
+        // (INGRESS_PROVIDER_UNAVAILABLE) without an explicit override this
+        // generic listing can't predict, so advertising its CNAME here would
+        // be a route that can't actually be created.
+        { OR: [{ providerId: null }, { provider: { enabled: true } }] }
+      ]
     },
     include: { provider: true },
     orderBy: { label: "asc" }

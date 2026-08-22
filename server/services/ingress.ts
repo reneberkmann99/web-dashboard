@@ -1,6 +1,6 @@
 import net from "node:net";
 import { Prisma, type IngressExposureType, type PublicAddressAllocation, type IngressProviderKind, type IngressEndpointStatus } from "@prisma/client";
-import { lockClientAccountForQuota, lockPublicAddressForUpdate, prisma } from "@/server/db";
+import { lockClientAccountForQuota, lockContainerForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
 
@@ -531,47 +531,54 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
 
   // The workload (and, if given, the container) must belong to this exact
   // organization — never trust the client to only submit its own ids. A
-  // deactivated workload (server/services/workload-lifecycle.ts) or a
-  // deleted (soft: isActive false, server/services/container-lifecycle.ts)
-  // container can never back an endpoint — a stale picker submission or a
-  // direct API call must not be able to bind to something the platform
-  // considers inactive.
+  // deactivated workload (server/services/workload-lifecycle.ts) can never
+  // back an endpoint. A container's isActive is re-checked under lock inside
+  // the transaction below (see server/db.ts's lockContainerForUpdate doc
+  // comment) rather than here — a plain pre-transaction read would leave a
+  // window where a concurrent deleteContainer could deactivate it after this
+  // check but before the insert.
   const workload = await prisma.project.findUnique({ where: { id: input.workloadId }, select: { id: true, clientAccountId: true, isActive: true } });
   if (!workload || workload.clientAccountId !== clientAccountId || !workload.isActive) throw new Error("NOT_FOUND");
   if (input.containerId) {
-    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true, isActive: true } });
-    if (!container || container.projectId !== input.workloadId || !container.isActive) throw new Error("NOT_FOUND");
+    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true } });
+    if (!container || container.projectId !== input.workloadId) throw new Error("NOT_FOUND");
   }
 
   const tcpUdp = isTcpUdp(input.exposureType);
 
+  // Only the workload/container OWNERSHIP check happens here — VERIFIED
+  // status and "not already bound" are re-checked under the hostname
+  // advisory lock inside the transaction below (see verifyDomain's doc
+  // comment on that same lock), otherwise the domain could be disabled or
+  // rebound between this read and the insert.
   let domainId: string | null = null;
+  let domainHostnameForLock: string | null = null;
   if (tcpUdp) {
     if (input.domainId) throw new Error("TCP_UDP_ENDPOINT_CANNOT_HAVE_DOMAIN");
     if (!input.publicPort) throw new Error("PUBLIC_PORT_REQUIRED");
   } else {
     if (!input.domainId) throw new Error("DOMAIN_REQUIRED");
     if (input.publicPort) throw new Error("HTTP_ENDPOINT_CANNOT_SET_PUBLIC_PORT");
-    const domain = await prisma.domain.findUnique({ where: { id: input.domainId }, select: { id: true, clientAccountId: true, status: true, ingressEndpoints: { select: { id: true } } } });
-    if (!domain || domain.clientAccountId !== clientAccountId) throw new Error("NOT_FOUND");
-    if (domain.status !== "VERIFIED") throw new Error("DOMAIN_NOT_VERIFIED");
-    if (domain.ingressEndpoints.length > 0) throw new Error("DOMAIN_ALREADY_BOUND");
-    domainId = domain.id;
+    const domainRef = await prisma.domain.findUnique({ where: { id: input.domainId }, select: { id: true, clientAccountId: true, hostname: true } });
+    if (!domainRef || domainRef.clientAccountId !== clientAccountId) throw new Error("NOT_FOUND");
+    domainId = domainRef.id;
+    domainHostnameForLock = domainRef.hostname;
   }
 
   if (!input.containerId && !input.serviceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
 
-  // The row locks serialize this against both a concurrent updatePublicAddress
-  // reservation change (without the PublicAddress lock, acquired FIRST for
-  // consistency with that function — see server/db.ts's
-  // lockPublicAddressForUpdate doc comment — and re-reading it under that
-  // lock, this could still bind to an address an admin is simultaneously
-  // reserving to a different organization) and concurrent quota checks for
-  // this organization (maxIngressEndpoints/maxTcpUdpEndpoints — without the
-  // ClientAccount lock, two concurrent requests with one slot remaining
-  // could both observe headroom and both insert). The port-conflict check
-  // runs in here too (consistent read within the same transaction); it's
-  // additionally backstopped by the table's own unique constraint regardless.
+  // The row locks serialize this against: a concurrent updatePublicAddress
+  // reservation change (PublicAddress lock, acquired FIRST for consistency
+  // with that function — see server/db.ts's lockPublicAddressForUpdate doc
+  // comment); a concurrent deleteContainer (Container lock, see
+  // lockContainerForUpdate); a concurrent verifyDomain/another organization
+  // binding the same hostname (the hostname advisory lock, same key
+  // verifyDomain itself takes); and concurrent quota checks for this
+  // organization (ClientAccount lock — without it, two concurrent requests
+  // with one slot remaining could both observe headroom and both insert).
+  // The port-conflict check runs in here too (consistent read within the
+  // same transaction); it's additionally backstopped by the table's own
+  // unique constraint regardless.
   let endpoint;
   try {
     endpoint = await prisma.$transaction(async (tx) => {
@@ -581,6 +588,19 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
       if (!publicAddress || !publicAddress.enabled) throw new Error("PUBLIC_ADDRESS_UNAVAILABLE");
       if (publicAddress.allocation === "DEDICATED" && publicAddress.reservedForOrgId !== clientAccountId) {
         throw new Error("PUBLIC_ADDRESS_RESERVED");
+      }
+
+      if (input.containerId) {
+        await lockContainerForUpdate(tx, input.containerId);
+        const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true } });
+        if (!container.isActive) throw new Error("NOT_FOUND");
+      }
+
+      if (domainHostnameForLock) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${domainHostnameForLock}))`;
+        const freshDomain = await tx.domain.findUniqueOrThrow({ where: { id: domainId! }, select: { status: true, ingressEndpoints: { select: { id: true } } } });
+        if (freshDomain.status !== "VERIFIED") throw new Error("DOMAIN_NOT_VERIFIED");
+        if (freshDomain.ingressEndpoints.length > 0) throw new Error("DOMAIN_ALREADY_BOUND");
       }
 
       // A disabled provider must never be freshly bound to — whether
@@ -699,8 +719,8 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
   assertOwnsClientAccountId(input.actor, existing.clientAccountId);
 
   if (input.containerId) {
-    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true, isActive: true } });
-    if (!container || container.projectId !== existing.workloadId || !container.isActive) throw new Error("NOT_FOUND");
+    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true } });
+    if (!container || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
   }
 
   // An endpoint with neither a container nor a service name has nothing for
@@ -712,17 +732,28 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
 
   if (input.providerId) await assertProviderUsable(prisma, input.providerId);
 
-  const endpoint = await prisma.ingressEndpoint.update({
-    where: { id: input.id },
-    data: {
-      containerId: input.containerId,
-      serviceName: input.serviceName,
-      targetPort: input.targetPort,
-      providerId: input.providerId,
-      status: input.status,
-      statusDetail: input.statusDetail
-    },
-    select: ingressEndpointSelect
+  // Locks the newly-attached container (if any) against a concurrent
+  // deleteContainer the same way createIngressEndpoint does — a
+  // pre-transaction isActive read would leave the same TOCTOU window open on
+  // this path too (see server/db.ts's lockContainerForUpdate doc comment).
+  const endpoint = await prisma.$transaction(async (tx) => {
+    if (input.containerId) {
+      await lockContainerForUpdate(tx, input.containerId);
+      const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true } });
+      if (!container.isActive) throw new Error("NOT_FOUND");
+    }
+    return tx.ingressEndpoint.update({
+      where: { id: input.id },
+      data: {
+        containerId: input.containerId,
+        serviceName: input.serviceName,
+        targetPort: input.targetPort,
+        providerId: input.providerId,
+        status: input.status,
+        statusDetail: input.statusDetail
+      },
+      select: ingressEndpointSelect
+    });
   });
   await logAuditEvent({
     actorUserId: input.actor.userId,
