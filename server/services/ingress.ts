@@ -652,8 +652,9 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
   // concurrent updatePublicAddress reservation change (PublicAddress lock,
   // acquired next for consistency with that function — see
   // lockPublicAddressForUpdate's doc comment); a concurrent deleteContainer
-  // (Container lock, see lockContainerForUpdate); a concurrent
-  // verifyDomain/another organization binding the same hostname (the
+  // or adoptComposeProject reparent (Container lock, see
+  // lockContainerForUpdate — re-read includes projectId, not just isActive);
+  // a concurrent verifyDomain/another organization binding the same hostname (the
   // hostname advisory lock, same key verifyDomain itself takes); and
   // concurrent quota checks for this organization (ClientAccount lock —
   // without it, two concurrent requests with one slot remaining could both
@@ -680,8 +681,15 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
 
       if (input.containerId) {
         await lockContainerForUpdate(tx, input.containerId);
-        const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true } });
-        if (!container.isActive) throw new Error("NOT_FOUND");
+        // Re-checks BOTH isActive and projectId fresh under the lock, not
+        // just isActive — a container-reparenting move (e.g.
+        // adoptComposeProject's moveConflictingContainers, which locks this
+        // same Container row) could otherwise commit between the
+        // pre-transaction ownership check above and here, leaving this
+        // insert bind an endpoint whose workloadId no longer matches its own
+        // backend container's actual workload.
+        const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true, projectId: true } });
+        if (!container.isActive || container.projectId !== input.workloadId) throw new Error("NOT_FOUND");
       }
 
       if (domainHostnameForLock) {
@@ -834,8 +842,11 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
 
     if (input.containerId) {
       await lockContainerForUpdate(tx, input.containerId);
-      const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true } });
-      if (!container.isActive) throw new Error("NOT_FOUND");
+      // Re-checks BOTH isActive and projectId fresh under the lock — see
+      // createIngressEndpoint's identical re-check for why projectId must
+      // be re-validated here too, not just isActive.
+      const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true, projectId: true } });
+      if (!container.isActive || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
     }
     return tx.ingressEndpoint.update({
       where: { id: input.id },

@@ -937,6 +937,21 @@ describe("Phase 5 review follow-ups", () => {
     expect(subCandidate).toMatchObject({ type: "CNAME", value: "compound.gw.test" });
   });
 
+  it("recognizes apexes under compound TLDs beyond any hand-maintained list (real public-suffix-list lookup, e.g. example.co.at)", async () => {
+    const cnameProvider = await createIngressProvider({ name: "PSL apex gw", gatewayHostname: "psl.gw.test", actor: sessionFor(world.adminA) });
+    const address = await createPublicAddress({ label: "PSL apex address", ipAddress: "203.0.113.168", ipVersion: "V4", providerId: cnameProvider.id, actor: sessionFor(world.adminA) });
+
+    const apexDomain = await createDomain({ hostname: "psl-apex-test.co.at", actor: sessionFor(world.clientAAdmin) });
+    const apexInstructions = await dnsInstructionsForDomain(apexDomain.id, sessionFor(world.clientAAdmin));
+    const apexCandidate = apexInstructions.routingAlternatives.find((r) => r.publicAddressId === address.id);
+    expect(apexCandidate).toMatchObject({ type: "A", value: "203.0.113.168" });
+
+    const subdomain = await createDomain({ hostname: "www.psl-apex-test.co.at", actor: sessionFor(world.clientAAdmin) });
+    const subInstructions = await dnsInstructionsForDomain(subdomain.id, sessionFor(world.clientAAdmin));
+    const subCandidate = subInstructions.routingAlternatives.find((r) => r.publicAddressId === address.id);
+    expect(subCandidate).toMatchObject({ type: "CNAME", value: "psl.gw.test" });
+  });
+
   it("excludes an address whose associated provider is disabled from routing alternatives", async () => {
     const disabledProvider = await createIngressProvider({ name: "Disabled alt gw", gatewayHostname: "disabled-alt.gw.test", enabled: false, actor: sessionFor(world.adminA) });
     const addressWithDisabledProvider = await createPublicAddress({

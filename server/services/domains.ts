@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
+import psl from "psl";
 import { Prisma } from "@prisma/client";
 import { lockClientAccountForQuota, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
@@ -367,48 +368,22 @@ export type DnsInstructions = {
 type RoutingCandidate = { id: string; ipAddress: string; ipVersion: "V4" | "V6"; provider: { gatewayHostname: string | null } | null };
 
 /**
- * Common multi-label public suffixes (e.g. "example.co.uk" is an apex —
- * "co.uk" isn't a real registrable domain on its own). NOT the full IANA
- * Public Suffix List (thousands of entries, out of scope here) — just
- * enough of the ones an operator is actually likely to use so the plain
- * label-count heuristic below doesn't misclassify them as a subdomain.
- */
-const COMPOUND_PUBLIC_SUFFIXES = new Set([
-  "co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk", "sch.uk", "ac.uk", "gov.uk", "nhs.uk", "police.uk",
-  "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au",
-  "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz",
-  "co.za", "org.za", "net.za", "gov.za", "ac.za",
-  "co.in", "net.in", "org.in", "gov.in", "ac.in", "firm.in", "res.in",
-  "co.jp", "or.jp", "ne.jp", "ac.jp", "go.jp",
-  "co.kr", "or.kr", "ne.kr", "go.kr", "ac.kr",
-  "com.br", "net.br", "org.br", "gov.br",
-  "com.cn", "net.cn", "org.cn", "gov.cn",
-  "com.mx", "net.mx", "org.mx", "gob.mx",
-  "com.sg", "net.sg", "org.sg", "gov.sg", "edu.sg",
-  "com.hk", "net.hk", "org.hk", "gov.hk", "edu.hk",
-  "com.tw", "net.tw", "org.tw", "gov.tw", "edu.tw",
-  "co.il", "org.il", "net.il", "gov.il", "ac.il",
-  "com.ar", "net.ar", "org.ar", "gob.ar",
-  "co.id", "or.id", "go.id", "ac.id",
-  "com.tr", "net.tr", "org.tr", "gov.tr",
-  "com.my", "net.my", "org.my", "gov.my", "edu.my"
-]);
-
-/**
  * A CNAME record cannot coexist with a zone's mandatory SOA/NS records at
  * the zone apex (e.g. "example.com" or "example.co.uk" itself) — only a
  * genuine subdomain ("app.example.com", "app.example.co.uk") can ever use
- * one. Determining the TRUE apex requires the full public suffix list,
- * which is out of scope here (see COMPOUND_PUBLIC_SUFFIXES above); this
- * combines that partial list with a plain label-count fallback, and always
- * errs toward the always-DNS-valid A/AAAA fallback, never toward
- * recommending an invalid CNAME.
+ * one. Determining the TRUE apex requires the real Mozilla Public Suffix
+ * List (compound TLDs like "co.uk"/"com.au"/"co.at" are arbitrary and can't
+ * be reliably hand-maintained) — `psl` bundles it. `psl.get` returns the
+ * registrable domain for a hostname (null for a bare public suffix like
+ * "co.uk", or an unparsable input); the hostname is an apex exactly when it
+ * equals its own registrable domain. Errs toward the always-DNS-valid
+ * A/AAAA fallback (never toward recommending an invalid CNAME) whenever
+ * that can't be established either way.
  */
 function isLikelyApex(hostname: string): boolean {
-  const labels = hostname.split(".");
-  if (labels.length <= 2) return true;
-  if (labels.length === 3 && COMPOUND_PUBLIC_SUFFIXES.has(labels.slice(1).join("."))) return true;
-  return false;
+  const registrable = psl.get(hostname);
+  if (!registrable) return true;
+  return registrable === hostname;
 }
 
 function dnsRecordFor(hostname: string, address: RoutingCandidate): DnsRecord {

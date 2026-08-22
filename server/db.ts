@@ -54,9 +54,36 @@ export async function lockPublicAddressForUpdate(tx: Prisma.TransactionClient, p
  * other's committed result (a freshly-inactive container is rejected as a
  * backend; a freshly-attached endpoint blocks the deletion) instead of both
  * racing past a stale isActive read.
+ *
+ * The same lock also serializes against adoptComposeProject
+ * (server/services/compose.ts) reparenting a container to a different
+ * workload via lockContainersForUpdate below — which is why
+ * createIngressEndpoint/updateIngressEndpoint re-read BOTH isActive AND
+ * projectId fresh under this lock, not just isActive: a reparent that
+ * commits between their pre-transaction ownership check and this lock would
+ * otherwise let them bind an endpoint whose workloadId no longer matches
+ * its own backend container's actual (post-reparent) workload.
  */
 export async function lockContainerForUpdate(tx: Prisma.TransactionClient, containerId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM "Container" WHERE id = ${containerId} FOR UPDATE`;
+}
+
+/**
+ * Same as lockContainerForUpdate, but locks a whole set of Container rows at
+ * once — used by adoptComposeProject (server/services/compose.ts) when
+ * reparenting every member of a Compose project to a (possibly
+ * differently-owned) workload, so the endpoint-binding recheck and the
+ * reparenting update happen atomically instead of leaving the same gap
+ * lockContainerForUpdate closes for a single container. Always locked in
+ * ascending id order (ORDER BY id) so two transactions that each lock an
+ * overlapping set of containers can never deadlock against each other by
+ * acquiring them in different orders; this is also consistent with
+ * lockContainerForUpdate's single-row lock, which is trivially "ordered"
+ * with only one row.
+ */
+export async function lockContainersForUpdate(tx: Prisma.TransactionClient, containerIds: string[]): Promise<void> {
+  if (containerIds.length === 0) return;
+  await tx.$queryRaw`SELECT id FROM "Container" WHERE id = ANY(${containerIds}) ORDER BY id FOR UPDATE`;
 }
 
 /**

@@ -2,13 +2,14 @@ import crypto from "node:crypto";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "./helpers/db";
 import { resetDatabase } from "./setup";
-import { seedWorld } from "./helpers/fixtures";
+import { seedWorld, sessionFor } from "./helpers/fixtures";
 import {
   adoptComposeProject,
   previewConvertToCompose,
   convertToComposeManaged,
   detachComposeTracking
 } from "@/server/services/compose";
+import { createIngressEndpoint, createPublicAddress } from "@/server/services/ingress";
 import { ProjectSource } from "@prisma/client";
 
 let world: Awaited<ReturnType<typeof seedWorld>>;
@@ -163,6 +164,90 @@ describe("Compose adoption", () => {
     const moved = await prisma.container.findUnique({ where: { id: m1[0].id } });
     expect(moved?.projectId).toBe(result.id);
     expect(moved?.isActive).toBe(true);
+  });
+
+  it("refuses to move a container that still backs an ingress endpoint, even with moveConflictingContainers", async () => {
+    const s = suffix();
+    const manual = await prisma.project.create({
+      data: {
+        name: `Manual3 ${s}`,
+        slug: `manual3-${s}`,
+        clientAccountId: world.clientA.id,
+        nodeId: world.node1.id,
+        source: ProjectSource.MANUAL,
+        isActive: true
+      }
+    });
+    const m1 = await createComposeContainers(world.node1.id, `stack-${s}`, [`e1-${s}`]);
+    await prisma.container.update({ where: { id: m1[0].id }, data: { projectId: manual.id } });
+
+    const address = await createPublicAddress({
+      label: `Compose endpoint guard ${s}`, ipAddress: `203.0.114.${(Date.now() % 200) + 1}`, ipVersion: "V4", actor: sessionFor(world.adminA)
+    });
+    const endpoint = await createIngressEndpoint({
+      workloadId: manual.id, containerId: m1[0].id, targetPort: 9100, exposureType: "TCP",
+      publicAddressId: address.id, publicPort: 29100, actor: sessionFor(world.clientAAdmin)
+    });
+
+    const result = await adoptComposeProject({
+      nodeId: world.node1.id, composeProject: `stack-${s}`, clientAccountId: world.clientB.id, moveConflictingContainers: true
+    });
+    expect(result.status).toBe("container_has_ingress_endpoint");
+
+    // Nothing moved and the endpoint is untouched.
+    const still = await prisma.container.findUnique({ where: { id: m1[0].id } });
+    expect(still?.projectId).toBe(manual.id);
+    const endpointStill = await prisma.ingressEndpoint.findUnique({ where: { id: endpoint.id } });
+    expect(endpointStill?.containerId).toBe(m1[0].id);
+  });
+
+  it("serializes a Compose move against a concurrent endpoint attach on the same container — never both succeed", async () => {
+    const s = suffix();
+    const manual = await prisma.project.create({
+      data: {
+        name: `Manual4 ${s}`,
+        slug: `manual4-${s}`,
+        clientAccountId: world.clientA.id,
+        nodeId: world.node1.id,
+        source: ProjectSource.MANUAL,
+        isActive: true
+      }
+    });
+    const m1 = await createComposeContainers(world.node1.id, `stack-${s}`, [`r1-${s}`]);
+    await prisma.container.update({ where: { id: m1[0].id }, data: { projectId: manual.id } });
+
+    const address = await createPublicAddress({
+      label: `Compose race address ${s}`, ipAddress: `203.0.115.${(Date.now() % 200) + 1}`, ipVersion: "V4", actor: sessionFor(world.adminA)
+    });
+
+    const adoptPromise = adoptComposeProject({
+      nodeId: world.node1.id, composeProject: `stack-${s}`, clientAccountId: world.clientB.id, moveConflictingContainers: true
+    });
+    const createPromise = createIngressEndpoint({
+      workloadId: manual.id, containerId: m1[0].id, targetPort: 9200, exposureType: "TCP",
+      publicAddressId: address.id, publicPort: 29200, actor: sessionFor(world.clientAAdmin)
+    });
+
+    const [adoptResult, createResult] = await Promise.allSettled([adoptPromise, createPromise]);
+
+    const finalContainer = await prisma.container.findUniqueOrThrow({ where: { id: m1[0].id } });
+    const boundEndpoint = await prisma.ingressEndpoint.findFirst({ where: { containerId: m1[0].id } });
+
+    if (boundEndpoint) {
+      // The endpoint won the race — the container must still belong to its
+      // original workload, and adoption must have refused to move it.
+      expect(finalContainer.projectId).toBe(manual.id);
+      expect(adoptResult.status).toBe("fulfilled");
+      if (adoptResult.status === "fulfilled") {
+        expect(adoptResult.value.status).toBe("container_has_ingress_endpoint");
+      }
+    } else {
+      // Adoption won the race — the container was reparented, so endpoint
+      // creation must have been rejected (its containerId no longer
+      // resolves under the workload it was asked to attach to).
+      expect(finalContainer.projectId).not.toBe(manual.id);
+      expect(createResult.status).toBe("rejected");
+    }
   });
 
   it("re-adopting after detach (stale MANUAL remnant) generates a unique slug instead of failing", async () => {
