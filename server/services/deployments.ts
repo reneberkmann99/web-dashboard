@@ -342,7 +342,17 @@ export async function createDeployment(input: {
   const result = await prisma.$transaction(async (tx) => {
     if (adoptingExisting && existingProject) {
       await lockProjectForUpdate(tx, existingProject.id);
-      if (isReassignment) await assertWorkloadReassignable(existingProject.id, tx);
+      // The snapshot above is only an early rejection. The authoritative
+      // decision must use the locked row: a concurrent reassignment can make
+      // a request that originally looked like a no-op become a reassignment.
+      const freshProject = await tx.project.findUniqueOrThrow({
+        where: { id: existingProject.id },
+        select: { clientAccountId: true }
+      });
+      const requestedClientAccountId = input.clientAccountId ?? null;
+      if (input.clientAccountId !== undefined && requestedClientAccountId !== freshProject.clientAccountId) {
+        await assertWorkloadReassignable(existingProject.id, tx);
+      }
     }
 
     const project = adoptingExisting && existingProject

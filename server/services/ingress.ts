@@ -843,7 +843,10 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
   // lockContainerForUpdate).
   const endpoint = await prisma.$transaction(async (tx) => {
     await lockIngressEndpointForUpdate(tx, input.id);
-    const fresh = await tx.ingressEndpoint.findUniqueOrThrow({ where: { id: input.id }, select: { containerId: true, serviceName: true } });
+    const fresh = await tx.ingressEndpoint.findUniqueOrThrow({
+      where: { id: input.id },
+      select: { containerId: true, serviceName: true, workloadId: true }
+    });
 
     // An endpoint with neither a container nor a service name has nothing
     // for a gateway to route to — reject a patch that would leave it that
@@ -852,12 +855,23 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
     const resultingServiceName = input.serviceName !== undefined ? input.serviceName : fresh.serviceName;
     if (!resultingContainerId && !resultingServiceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
 
-    if (input.containerId) {
-      await lockContainerForUpdate(tx, input.containerId);
+    // An ERROR endpoint must not be manually revived while the lifecycle
+    // state that caused reconciliation remains invalid. Validate the current
+    // workload and the resulting container (not merely a newly supplied one)
+    // while holding their row locks.
+    if (input.status === "ACTIVE") {
+      await lockProjectForUpdate(tx, fresh.workloadId);
+      const workload = await tx.project.findUniqueOrThrow({ where: { id: fresh.workloadId }, select: { isActive: true } });
+      if (!workload.isActive) throw new Error("WORKLOAD_UNAVAILABLE");
+    }
+
+    const containerIdToValidate = input.status === "ACTIVE" ? resultingContainerId : input.containerId;
+    if (containerIdToValidate) {
+      await lockContainerForUpdate(tx, containerIdToValidate);
       // Re-checks BOTH isActive and projectId fresh under the lock — see
       // createIngressEndpoint's identical re-check for why projectId must
       // be re-validated here too, not just isActive.
-      const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true, projectId: true } });
+      const container = await tx.container.findUniqueOrThrow({ where: { id: containerIdToValidate }, select: { isActive: true, projectId: true } });
       if (!container.isActive || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
     }
     if (input.providerId) {
