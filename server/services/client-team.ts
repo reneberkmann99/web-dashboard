@@ -211,7 +211,10 @@ export async function setTeamUserActive(
     return false;
   }
 
-  await prisma.user.update({ where: { id: target.id }, data: { isActive } });
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: target.id }, data: { isActive } });
+    if (!isActive) await tx.session.deleteMany({ where: { userId: target.id } });
+  });
 
   await logAuditEvent({
     actorUserId: session.userId,
@@ -226,5 +229,87 @@ export async function setTeamUserActive(
     sourceIp
   });
 
+  return true;
+}
+
+/** Change the organization role of an operator/viewer in the caller's own organization. */
+export async function setTeamUserRole(
+  session: AuthSession,
+  userId: string,
+  role: ClientInvitableRole,
+  sourceIp: string | null
+): Promise<boolean> {
+  const clientId = assertClientAdmin(session);
+  if (!CLIENT_INVITABLE_ROLES.includes(role)) throw new ClientTeamForbiddenError();
+
+  const target = await prisma.user.findFirst({
+    where: { id: userId, clientAccountId: clientId },
+    select: { id: true, role: true, authSource: true }
+  });
+  if (!target || target.role === Role.ADMIN || target.role === Role.CLIENT_ADMIN || target.authSource === AuthSource.PAM) {
+    return false;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: target.id }, data: { role } });
+    // A changed role must take effect immediately, not after a 12h session TTL.
+    await tx.session.deleteMany({ where: { userId: target.id } });
+  });
+
+  await logAuditEvent({
+    actorUserId: session.userId,
+    actorEmail: session.email,
+    actorRole: session.role,
+    clientAccountId: clientId,
+    action: "MEMBERSHIP_ROLE_CHANGED",
+    targetType: "USER",
+    targetId: target.id,
+    metadata: { previousRole: target.role, role },
+    result: "SUCCESS",
+    sourceIp
+  });
+  return true;
+}
+
+/**
+ * Remove (rather than delete) an organization membership. The identity and
+ * its audit history remain for platform administrators. Removing access also
+ * disables the account until it is assigned to an organization again.
+ */
+export async function removeTeamMembership(
+  session: AuthSession,
+  userId: string,
+  sourceIp: string | null
+): Promise<boolean> {
+  const clientId = assertClientAdmin(session);
+  const target = await prisma.user.findFirst({
+    where: { id: userId, clientAccountId: clientId },
+    select: { id: true, role: true, authSource: true, email: true }
+  });
+  if (!target || target.role === Role.ADMIN || target.role === Role.CLIENT_ADMIN || target.authSource === AuthSource.PAM) {
+    return false;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: target.id },
+      data: { clientAccountId: null, isActive: false }
+    });
+    await tx.session.deleteMany({ where: { userId: target.id } });
+    await tx.activationToken.deleteMany({ where: { userId: target.id } });
+  });
+
+  await logAuditEvent({
+    actorUserId: session.userId,
+    actorEmail: session.email,
+    actorRole: session.role,
+    clientAccountId: clientId,
+    action: "MEMBERSHIP_REMOVED",
+    targetType: "USER",
+    targetId: target.id,
+    metadata: { removedEmail: target.email, previousRole: target.role },
+    result: "SUCCESS",
+    sourceIp
+  });
   return true;
 }

@@ -21,6 +21,9 @@ export async function GET(): Promise<Response> {
           displayName: true,
           role: true,
           isActive: true,
+          lastLoginAt: true,
+          authSource: true,
+          createdAt: true,
           clientAccountId: true,
           clientAccount: { select: { id: true, name: true } },
           activationToken: { select: { createdAt: true, expiresAt: true, usedAt: true } }

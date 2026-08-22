@@ -46,6 +46,13 @@ export type DeletedUserSnapshot = {
   role: Role;
 };
 
+export type PlatformUserUpdate = {
+  displayName?: string;
+  role?: Role;
+  clientAccountId?: string | null;
+  isActive?: boolean;
+};
+
 /**
  * Counts ACTIVE ADMIN users. Used to enforce the "never leave the platform
  * without an administrator" invariant before a deactivation or delete.
@@ -146,7 +153,14 @@ export async function setUserActive(
     }
   }
 
-  await prisma.user.update({ where: { id: targetId }, data: { isActive } });
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: targetId }, data: { isActive } });
+    // A disabled account must not retain a usable browser session. The
+    // session guard is defence in depth; deleting rows invalidates tokens now.
+    if (!isActive) {
+      await tx.session.deleteMany({ where: { userId: targetId } });
+    }
+  });
 
   await logAuditEvent({
     actorUserId: session.userId,
@@ -161,6 +175,79 @@ export async function setUserActive(
   });
 
   return { id: target.id, role: target.role };
+}
+
+/**
+ * Update a platform identity's profile/access from its detail page. Keeping
+ * this here (rather than a generic Prisma PATCH) makes role changes obey the
+ * same last-platform-admin invariant as deactivate/delete. Any material
+ * access change invalidates existing sessions so old privileges cannot linger.
+ */
+export async function updatePlatformUser(
+  session: AuthSession,
+  targetId: string,
+  input: PlatformUserUpdate,
+  sourceIp: string | null
+): Promise<{ id: string; role: Role; clientAccountId: string | null; isActive: boolean }> {
+  assertAdmin(session);
+
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) throw new UserLifecycleError("NOT_FOUND");
+
+  const nextRole = input.role ?? target.role;
+  const nextActive = input.isActive ?? target.isActive;
+  if (target.role === Role.ADMIN && target.isActive && (nextRole !== Role.ADMIN || !nextActive)) {
+    if (await countActiveAdmins() <= 1) throw new UserLifecycleError("LAST_ADMIN");
+  }
+
+  const nextClientAccountId = nextRole === Role.ADMIN
+    ? null
+    : input.clientAccountId === undefined
+      ? target.clientAccountId
+      : input.clientAccountId;
+
+  if (nextRole !== Role.ADMIN && !nextClientAccountId && nextActive) {
+    throw new UserLifecycleError("ORGANIZATION_REQUIRED");
+  }
+
+  const accessChanged = nextRole !== target.role ||
+    nextClientAccountId !== target.clientAccountId ||
+    nextActive !== target.isActive;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.update({
+      where: { id: targetId },
+      data: {
+        displayName: input.displayName,
+        role: nextRole,
+        clientAccountId: nextClientAccountId,
+        isActive: nextActive
+      }
+    });
+    if (accessChanged) await tx.session.deleteMany({ where: { userId: targetId } });
+    return user;
+  });
+
+  await logAuditEvent({
+    actorUserId: session.userId,
+    actorEmail: session.email,
+    actorRole: session.role,
+    action: "USER_UPDATE",
+    targetType: "USER",
+    targetId,
+    metadata: {
+      changed: Object.keys(input),
+      previousRole: target.role,
+      role: updated.role,
+      previousOrganizationId: target.clientAccountId,
+      organizationId: updated.clientAccountId,
+      isActive: updated.isActive
+    },
+    result: "SUCCESS",
+    sourceIp
+  });
+
+  return { id: updated.id, role: updated.role, clientAccountId: updated.clientAccountId, isActive: updated.isActive };
 }
 
 /**

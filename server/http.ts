@@ -46,6 +46,9 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "ALREADY_ACTIVE") {
       return fail("ALREADY_ACTIVE", "This account is already active", 409);
     }
+    if (error.message === "ORGANIZATION_REQUIRED") {
+      return fail("ORGANIZATION_REQUIRED", "An organization role requires an organization membership", 400);
+    }
     if (error.message === "MANAGED_WORKLOAD") {
       return fail("MANAGED_WORKLOAD", "This workload is managed by Noderaft — remove it from management before deleting", 409);
     }

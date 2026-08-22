@@ -296,6 +296,8 @@ export type UserRecord = {
   role: UserRole;
   isActive: boolean;
   pending: boolean;
+  lastLoginAt?: string | null;
+  authSource?: string;
   clientAccountId: string | null;
   clientAccount: { id: string; name: string } | null;
 };

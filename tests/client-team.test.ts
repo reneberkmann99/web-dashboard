@@ -7,6 +7,8 @@ import {
   inviteTeamUser,
   reissueInvite,
   setTeamUserActive,
+  setTeamUserRole,
+  removeTeamMembership,
   ClientTeamForbiddenError
 } from "@/server/services/client-team";
 
@@ -102,6 +104,39 @@ describe("client team management", () => {
 
     const target = await prisma.user.findUnique({ where: { id: world.clientAOperator.id } });
     expect(target?.isActive).toBe(false);
+  });
+
+  it("CLIENT_ADMIN can change only own organization operator/viewer roles and sessions are invalidated", async () => {
+    const world = await seedWorld();
+    const adminA = sessionFor(world.clientAAdmin);
+    await prisma.session.create({ data: { userId: world.clientAOperator.id, tokenHash: `member-role-${world.clientAOperator.id}`, expiresAt: new Date(Date.now() + 100000) } });
+
+    expect(await setTeamUserRole(adminA, world.clientAOperator.id, "CLIENT_VIEWER", null)).toBe(true);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: world.clientAOperator.id } })).role).toBe("CLIENT_VIEWER");
+    expect(await prisma.session.count({ where: { userId: world.clientAOperator.id } })).toBe(0);
+
+    expect(await setTeamUserRole(adminA, world.clientBOperator.id, "CLIENT_VIEWER", null)).toBe(false);
+    await expectForbidden(() => setTeamUserRole(adminA, world.clientAOperator.id, "ADMIN" as never, null));
+  });
+
+  it("CLIENT_ADMIN can remove an own membership without deleting the platform identity", async () => {
+    const world = await seedWorld();
+    const adminA = sessionFor(world.clientAAdmin);
+    await prisma.session.create({ data: { userId: world.clientAOperator.id, tokenHash: `member-remove-${world.clientAOperator.id}`, expiresAt: new Date(Date.now() + 100000) } });
+
+    expect(await removeTeamMembership(adminA, world.clientAOperator.id, null)).toBe(true);
+    const removed = await prisma.user.findUniqueOrThrow({ where: { id: world.clientAOperator.id } });
+    expect(removed.clientAccountId).toBeNull();
+    expect(removed.isActive).toBe(false);
+    expect(await prisma.session.count({ where: { userId: removed.id } })).toBe(0);
+    expect(await prisma.auditLog.findFirst({ where: { targetId: removed.id, action: "MEMBERSHIP_REMOVED" } })).not.toBeNull();
+  });
+
+  it("CLIENT_ADMIN cannot remove another organization member or an organization admin", async () => {
+    const world = await seedWorld();
+    const adminA = sessionFor(world.clientAAdmin);
+    expect(await removeTeamMembership(adminA, world.clientBOperator.id, null)).toBe(false);
+    expect(await removeTeamMembership(adminA, world.clientAAdmin.id, null)).toBe(false);
   });
 
   it("CLIENT_OPERATOR and CLIENT_VIEWER cannot manage users", async () => {

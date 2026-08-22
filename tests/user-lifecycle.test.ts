@@ -7,6 +7,7 @@ import {
   setUserActive,
   resendUserActivation,
   countActiveAdmins,
+  updatePlatformUser,
   UserLifecycleError
 } from "@/server/services/user-lifecycle";
 import { hashPassword } from "@/server/auth/password";
@@ -128,11 +129,38 @@ describe("admin user lifecycle — delete / deactivate / resend activation", () 
     await expectError(() => setUserActive(admin, world.adminA.id, false, null), "LAST_ADMIN");
 
     // Deactivate + reactivate a normal operator is fine.
+    await prisma.session.create({ data: { userId: world.clientAOperator.id, tokenHash: `live-${world.clientAOperator.id}`, expiresAt: new Date(Date.now() + 100000) } });
     await setUserActive(admin, world.clientAOperator.id, false, null);
     expect((await prisma.user.findUnique({ where: { id: world.clientAOperator.id } }))?.isActive).toBe(false);
+    expect(await prisma.session.count({ where: { userId: world.clientAOperator.id } })).toBe(0);
 
     await setUserActive(admin, world.clientAOperator.id, true, null);
     expect((await prisma.user.findUnique({ where: { id: world.clientAOperator.id } }))?.isActive).toBe(true);
+  });
+
+  it("refuses to demote the last active platform admin", async () => {
+    const world = await seedWorld();
+    await ensureSoleActiveAdmin(world.adminA.id);
+    const admin = sessionFor(world.adminA);
+
+    await expectError(() => updatePlatformUser(admin, world.adminA.id, {
+      role: Role.CLIENT_ADMIN,
+      clientAccountId: world.clientA.id
+    }, null), "LAST_ADMIN");
+  });
+
+  it("invalidates sessions when platform access or organization changes", async () => {
+    const world = await seedWorld();
+    const admin = sessionFor(world.adminA);
+    await prisma.session.create({ data: { userId: world.clientAOperator.id, tokenHash: `role-change-${world.clientAOperator.id}`, expiresAt: new Date(Date.now() + 100000) } });
+
+    const updated = await updatePlatformUser(admin, world.clientAOperator.id, {
+      role: Role.CLIENT_VIEWER,
+      clientAccountId: world.clientA.id
+    }, null);
+
+    expect(updated.role).toBe(Role.CLIENT_VIEWER);
+    expect(await prisma.session.count({ where: { userId: world.clientAOperator.id } })).toBe(0);
   });
 
   it("resend activation regenerates the token for a pending user", async () => {

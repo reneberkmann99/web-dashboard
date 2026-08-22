@@ -2,9 +2,47 @@ import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { fromError, fail, ok } from "@/server/http";
 import { updateUserSchema, cuidParamSchema } from "@/server/validation/admin";
-import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
-import { deleteUser } from "@/server/services/user-lifecycle";
+import { deleteUser, updatePlatformUser } from "@/server/services/user-lifecycle";
+
+/** Platform-admin identity detail. Membership/access is deliberately shown
+ * here, but changed only from this detail surface — never inline in All Users. */
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<Response> {
+  try {
+    await requireApiRole("ADMIN");
+    const id = cuidParamSchema.parse((await params).id);
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true, email: true, displayName: true, role: true, isActive: true,
+        authSource: true, pamUsername: true, lastLoginAt: true, createdAt: true,
+        clientAccountId: true, clientAccount: { select: { id: true, name: true } },
+        activationToken: { select: { expiresAt: true, usedAt: true } },
+        sessions: { select: { id: true, createdAt: true, lastUsedAt: true, expiresAt: true }, orderBy: { lastUsedAt: "desc" } }
+      }
+    });
+    if (!user) return fail("NOT_FOUND", "User not found", 404);
+    const activity = await prisma.auditLog.findMany({
+      where: { OR: [{ actorUserId: id }, { targetType: "USER", targetId: id }] },
+      select: { id: true, action: true, actorEmail: true, targetType: true, targetId: true, result: true, createdAt: true, metadata: true },
+      orderBy: { createdAt: "desc" },
+      take: 50
+    });
+    return ok({
+      user: {
+        ...user,
+        pending: !user.isActive && user.activationToken?.usedAt == null,
+        sessions: user.sessions.map((session) => ({ ...session, isCurrent: false }))
+      },
+      activity
+    });
+  } catch (error) {
+    return fromError(error);
+  }
+}
 
 export async function PATCH(
   request: Request,
@@ -16,51 +54,8 @@ export async function PATCH(
     const id = cuidParamSchema.parse((await params).id);
 
     const body = updateUserSchema.parse(await request.json());
-    const target = await prisma.user.findUnique({ where: { id } });
-    if (!target) {
-      return fail("NOT_FOUND", "User not found", 404);
-    }
-
-    // Role-change invariant: a client role requires a client account.
-    // Setting role to ADMIN always clears the client link; setting a client
-    // role without providing a clientAccountId keeps the existing link when
-    // present, and is rejected when there is none (prevents the historical
-    // "CLIENT role with no client" data corruption bug).
-    let nextClientAccountId: string | null | undefined = body.clientAccountId;
-    if (body.role !== undefined) {
-      if (body.role === "ADMIN") {
-        nextClientAccountId = null;
-      } else if (body.clientAccountId === undefined) {
-        if (!target.clientAccountId) {
-          return fail("VALIDATION_ERROR", "A client role requires a client account", 400);
-        }
-        nextClientAccountId = target.clientAccountId; // keep existing
-      }
-    }
-
-    await prisma.user.update({
-      where: { id },
-      data: {
-        displayName: body.displayName,
-        role: body.role,
-        isActive: body.isActive,
-        clientAccountId: nextClientAccountId
-      }
-    });
-
-    await logAuditEvent({
-      actorUserId: session.userId,
-      actorEmail: session.email,
-      actorRole: session.role,
-      action: "USER_UPDATE",
-      targetType: "USER",
-      targetId: id,
-      metadata: { ...body, password: undefined },
-      result: "SUCCESS",
-      sourceIp
-    });
-
-    return ok({ success: true });
+    const updated = await updatePlatformUser(session, id, body, sourceIp);
+    return ok({ success: true, user: updated });
   } catch (error) {
     return fromError(error);
   }

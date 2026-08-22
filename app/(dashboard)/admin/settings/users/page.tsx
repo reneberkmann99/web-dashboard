@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
@@ -14,6 +15,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { userCard } from "@/components/mobile/mobile-resource-cards";
+import { roleLabel } from "@/types/domain";
+import { timeAgo } from "@/lib/format";
 
 type UsersPayload = {
   users: UserRecord[];
@@ -27,7 +30,6 @@ type CreateUserResponse = {
 };
 
 const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
-  { value: "CLIENT", label: "Organization Admin (legacy role)" },
   { value: "CLIENT_VIEWER", label: "Organization Viewer (read-only)" },
   { value: "CLIENT_OPERATOR", label: "Organization Operator (operate assigned workloads)" },
   { value: "CLIENT_ADMIN", label: "Organization Admin (manage organization members)" },
@@ -35,6 +37,7 @@ const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
 ];
 
 export default function AdminUsersPage(): React.JSX.Element {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -45,6 +48,7 @@ export default function AdminUsersPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState<UserRecord | null>(null);
 
   const userActions = (u: UserRecord): Array<{ label: string; tone?: "default" | "danger"; onSelect: () => void }> => [
+    { label: "Open user detail", onSelect: () => router.push(`/admin/settings/users/${u.id}`) },
     ...(u.pending
       ? [{ label: "Resend activation", onSelect: () => resendMutation.mutate(u.id) }]
       : []),
@@ -53,7 +57,9 @@ export default function AdminUsersPage(): React.JSX.Element {
       onSelect: () =>
         u.isActive
           ? setConfirmDisable(u)
-          : updateMutation.mutate({ id: u.id, role: u.role, isActive: true, clientAccountId: u.clientAccountId })
+          : !u.clientAccountId && u.role !== "ADMIN"
+            ? router.push(`/admin/settings/users/${u.id}`)
+            : updateMutation.mutate({ id: u.id, isActive: true })
     },
     {
       label: "Delete user",
@@ -90,7 +96,7 @@ export default function AdminUsersPage(): React.JSX.Element {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (input: { id: string; role: UserRole; isActive: boolean; clientAccountId: string | null }) =>
+    mutationFn: (input: { id: string; isActive: boolean }) =>
       apiFetch<{ success: boolean }>(`/api/admin/users/${input.id}`, {
         method: "PATCH",
         body: JSON.stringify(input)
@@ -198,7 +204,7 @@ export default function AdminUsersPage(): React.JSX.Element {
       <Card className="panel">
         <CardHeader>
           <CardTitle>Users</CardTitle>
-          <CardDescription>Disable to revoke access reversibly; delete to permanently remove the account.</CardDescription>
+          <CardDescription>Select a user to manage identity, organization access, security, and lifecycle.</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable
@@ -218,53 +224,13 @@ export default function AdminUsersPage(): React.JSX.Element {
                 key: "client",
                 header: "Organization",
                 sortValue: (u: UserRecord) => u.clientAccount?.name ?? "",
-                render: (u: UserRecord) =>
-                  u.role === "ADMIN" ? (
-                    <span className="text-muted">—</span>
-                  ) : (
-                    <Select
-                      value={u.clientAccountId ?? ""}
-                      onChange={(event) =>
-                        updateMutation.mutate({
-                          id: u.id,
-                          role: u.role,
-                          isActive: u.isActive,
-                          clientAccountId: event.target.value || null
-                        })
-                      }
-                    >
-                      <option value="">Unassigned</option>
-                      {(query.data?.clients ?? []).map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name}
-                        </option>
-                      ))}
-                    </Select>
-                  )
+                render: (u: UserRecord) => <span className="text-sm text-muted">{u.clientAccount?.name ?? "—"}</span>
               },
               {
                 key: "role",
                 header: "Role",
                 sortValue: (u: UserRecord) => u.role,
-                render: (u: UserRecord) => (
-                  <Select
-                    value={u.role}
-                    onChange={(event) =>
-                      updateMutation.mutate({
-                        id: u.id,
-                        role: event.target.value as UserRole,
-                        isActive: u.isActive,
-                        clientAccountId: u.clientAccountId
-                      })
-                    }
-                  >
-                    {ROLE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                )
+                render: (u: UserRecord) => <span className="text-sm">{roleLabel(u.role)}</span>
               },
               {
                 key: "status",
@@ -280,8 +246,15 @@ export default function AdminUsersPage(): React.JSX.Element {
                   )
               },
               {
+                key: "lastSignIn",
+                header: "Last sign-in",
+                sortValue: (u: UserRecord) => u.lastLoginAt ?? "",
+                render: (u: UserRecord) => <span className="text-xs text-muted">{timeAgo(u.lastLoginAt)}</span>,
+                hideBelow: "sm"
+              },
+              {
                 key: "actions",
-                header: "",
+                header: "Actions",
                 render: (u: UserRecord) => (
                   <div className="flex justify-end">
                     <Menu label={`Actions for ${u.displayName}`} items={userActions(u)} />
@@ -300,6 +273,7 @@ export default function AdminUsersPage(): React.JSX.Element {
             stateKey="admin-users"
             ariaLabel="Users"
             rowKey={(u: UserRecord) => u.id}
+            onRowClick={(u: UserRecord) => router.push(`/admin/settings/users/${u.id}`)}
             mobileCard={(u: UserRecord) =>
               userCard(
                 u,
@@ -314,7 +288,7 @@ export default function AdminUsersPage(): React.JSX.Element {
         open={confirmDisable !== null}
         onClose={() => setConfirmDisable(null)}
         onConfirm={() => {
-          if (confirmDisable) updateMutation.mutate({ id: confirmDisable.id, role: confirmDisable.role, isActive: false, clientAccountId: confirmDisable.clientAccountId });
+          if (confirmDisable) updateMutation.mutate({ id: confirmDisable.id, isActive: false });
           setConfirmDisable(null);
         }}
         title={`Disable ${confirmDisable?.displayName ?? "this user"}?`}

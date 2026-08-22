@@ -44,6 +44,7 @@ export default function ClientTeamPage(): React.JSX.Element {
   const [inviteRole, setInviteRole] = useState("CLIENT_OPERATOR");
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ id: string; name: string; isActive: boolean } | null>(null);
+  const [removeMember, setRemoveMember] = useState<TeamUser | null>(null);
   const [reissueFor, setReissueFor] = useState<TeamUser | null>(null);
 
   const query = useQuery({
@@ -94,6 +95,22 @@ export default function ClientTeamPage(): React.JSX.Element {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to reissue")
   });
 
+  const roleMutation = useMutation({
+    mutationFn: (input: { id: string; role: string }) =>
+      apiFetch<{ success: boolean }>(`/api/client/team/${input.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: input.role })
+      }),
+    onSuccess: () => { toast.success("Member role updated; their sessions were invalidated"); queryClient.invalidateQueries({ queryKey: ["client-team"] }); },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not change role")
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => apiFetch<{ removed: boolean }>(`/api/client/team/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast.success("Membership removed"); setRemoveMember(null); queryClient.invalidateQueries({ queryKey: ["client-team"] }); },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not remove membership")
+  });
+
   const users = query.data?.users ?? [];
 
   const columns: Column<TeamUser>[] = [
@@ -111,7 +128,11 @@ export default function ClientTeamPage(): React.JSX.Element {
       key: "role",
       header: "Role",
       sortValue: (u) => u.role,
-      render: (u) => <span className="text-sm">{roleLabel(u.role)}</span>
+      render: (u) => u.role === "CLIENT_OPERATOR" || u.role === "CLIENT_VIEWER" ? (
+        <Select value={u.role} aria-label={`Role for ${u.displayName}`} onChange={(event) => roleMutation.mutate({ id: u.id, role: event.target.value })}>
+          {ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </Select>
+      ) : <span className="text-sm">{roleLabel(u.role)}</span>
     },
     {
       key: "status",
@@ -140,11 +161,17 @@ export default function ClientTeamPage(): React.JSX.Element {
               Reissue invite
             </Button>
           )}
-          {!u.pending && <Menu label={`Actions for ${u.displayName}`} items={[{
-            label: u.isActive ? "Deactivate user" : "Activate user",
-            tone: u.isActive ? "danger" : "default",
-            onSelect: () => setConfirm({ id: u.id, name: u.displayName, isActive: !u.isActive })
-          }]} />}
+          {!u.pending && (u.role === "CLIENT_OPERATOR" || u.role === "CLIENT_VIEWER") && <Menu label={`Actions for ${u.displayName}`} items={[
+            {
+              label: u.isActive ? "Deactivate member" : "Reactivate member",
+              tone: u.isActive ? ("danger" as const) : ("default" as const),
+              onSelect: () => setConfirm({ id: u.id, name: u.displayName, isActive: !u.isActive })
+            }, {
+              label: "Remove membership",
+              tone: "danger" as const,
+              onSelect: () => setRemoveMember(u)
+            }]}/>
+          }
         </div>
       )
     }
@@ -182,17 +209,19 @@ export default function ClientTeamPage(): React.JSX.Element {
               isActive: u.isActive,
               pending: u.pending,
               clientAccountId: null,
-              clientAccount: null
+              clientAccount: null,
+              lastLoginAt: u.lastLoginAt,
+              authSource: u.authSource
             },
             <Menu
               label={`Actions for ${u.displayName}`}
               items={[
                 ...(u.pending ? [{ label: "Reissue invite", onSelect: () => reissueMutation.mutate(u.id) }] : []),
-                {
+                ...(u.role === "CLIENT_OPERATOR" || u.role === "CLIENT_VIEWER" ? [{
                   label: u.isActive ? "Deactivate user" : "Activate user",
                   tone: u.isActive ? ("danger" as const) : ("default" as const),
                   onSelect: () => setConfirm({ id: u.id, name: u.displayName, isActive: !u.isActive })
-                }
+                }, { label: "Remove membership", tone: "danger" as const, onSelect: () => setRemoveMember(u) }] : [])
               ]}
             />
           )
@@ -269,6 +298,16 @@ export default function ClientTeamPage(): React.JSX.Element {
             : "This user will immediately lose access to your workloads."
         }
         confirmLabel={confirm?.isActive ? "Activate" : "Deactivate"}
+      />
+
+      <ConfirmDialog
+        open={removeMember !== null}
+        onClose={() => setRemoveMember(null)}
+        onConfirm={() => { if (removeMember) removeMutation.mutate(removeMember.id); }}
+        title={`Remove ${removeMember?.displayName ?? "this member"} from the organization?`}
+        impact="Their organization access, sessions, and unused activation token are revoked. Their platform identity and audit history remain."
+        confirmLabel="Remove membership"
+        danger
       />
     </div>
   );
