@@ -1,6 +1,6 @@
 import net from "node:net";
 import { Prisma, type IngressExposureType, type PublicAddressAllocation, type IngressProviderKind, type IngressEndpointStatus } from "@prisma/client";
-import { lockClientAccountForQuota, lockContainerForUpdate, lockIngressEndpointForUpdate, lockProjectForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
+import { lockClientAccountForQuota, lockContainerForUpdate, lockIngressEndpointForUpdate, lockIngressProviderForUpdate, lockProjectForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
 
@@ -71,7 +71,7 @@ const publicAddressSelect = {
   reservedForOrgId: true,
   reservedForOrg: { select: { id: true, name: true } },
   providerId: true,
-  provider: { select: { id: true, name: true, kind: true } },
+  provider: { select: { id: true, name: true, kind: true, enabled: true } },
   createdAt: true,
   updatedAt: true
 } satisfies Prisma.PublicAddressSelect;
@@ -422,15 +422,18 @@ export async function updateIngressProvider(input: UpdateIngressProviderInput) {
   const existing = await prisma.ingressProvider.findUnique({ where: { id: input.id }, select: { id: true } });
   if (!existing) throw new Error("NOT_FOUND");
 
-  const provider = await prisma.ingressProvider.update({
-    where: { id: input.id },
-    data: {
-      name: input.name?.trim(),
-      enabled: input.enabled,
-      gatewayHostname: input.gatewayHostname,
-      config: input.config === undefined ? undefined : ((input.config ?? Prisma.JsonNull) as Prisma.InputJsonValue)
-    },
-    select: providerSelect
+  const provider = await prisma.$transaction(async (tx) => {
+    await lockIngressProviderForUpdate(tx, input.id);
+    return tx.ingressProvider.update({
+      where: { id: input.id },
+      data: {
+        name: input.name?.trim(),
+        enabled: input.enabled,
+        gatewayHostname: input.gatewayHostname,
+        config: input.config === undefined ? undefined : ((input.config ?? Prisma.JsonNull) as Prisma.InputJsonValue)
+      },
+      select: providerSelect
+    });
   });
   await logAuditEvent({
     actorUserId: input.actor.userId,
@@ -703,7 +706,10 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
       // explicitly chosen or inherited from the address — otherwise the
       // provider's own Disable action has no effect on new bindings.
       const resolvedProviderId = input.providerId ?? publicAddress.providerId ?? null;
-      if (resolvedProviderId) await assertProviderUsable(tx, resolvedProviderId);
+      if (resolvedProviderId) {
+        await lockIngressProviderForUpdate(tx, resolvedProviderId);
+        await assertProviderUsable(tx, resolvedProviderId);
+      }
 
       await lockClientAccountForQuota(tx, clientAccountId);
 
@@ -819,8 +825,6 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
     if (!container || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
   }
 
-  if (input.providerId) await assertProviderUsable(prisma, input.providerId);
-
   // Locks this IngressEndpoint row and re-reads it fresh before deriving the
   // resulting containerId/serviceName (see server/db.ts's
   // lockIngressEndpointForUpdate doc comment — two concurrent PATCHes each
@@ -847,6 +851,10 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
       // be re-validated here too, not just isActive.
       const container = await tx.container.findUniqueOrThrow({ where: { id: input.containerId }, select: { isActive: true, projectId: true } });
       if (!container.isActive || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
+    }
+    if (input.providerId) {
+      await lockIngressProviderForUpdate(tx, input.providerId);
+      await assertProviderUsable(tx, input.providerId);
     }
     return tx.ingressEndpoint.update({
       where: { id: input.id },

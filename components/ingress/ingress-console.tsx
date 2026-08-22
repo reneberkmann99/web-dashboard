@@ -33,7 +33,7 @@ type PublicAddress = {
   allocation: Allocation;
   enabled: boolean;
   reservedForOrg: { id: string; name: string } | null;
-  provider: { id: string; name: string } | null;
+  provider: { id: string; name: string; enabled: boolean } | null;
 };
 
 type Endpoint = {
@@ -138,7 +138,11 @@ function EndpointsPanel({ endpoints, loading, clients, domains, addresses, provi
   // an error.
   const boundDomainIds = new Set(endpoints.map((e) => e.domain?.id).filter((id): id is string => Boolean(id)));
   const orgDomains = domains.filter((d) => d.clientAccountId === orgId && d.status === "VERIFIED" && !boundDomainIds.has(d.id));
-  const orgAddresses = addresses.filter((a) => a.enabled && (a.allocation === "SHARED" || a.reservedForOrg?.id === orgId));
+  const orgAddresses = addresses.filter((a) =>
+    a.enabled &&
+    (a.allocation === "SHARED" || a.reservedForOrg?.id === orgId) &&
+    (!a.provider || a.provider.enabled)
+  );
   const tcpUdp = exposureType === "TCP" || exposureType === "UDP";
 
   function resetForm(): void {

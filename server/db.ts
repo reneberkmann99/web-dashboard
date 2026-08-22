@@ -101,6 +101,15 @@ export async function lockIngressEndpointForUpdate(tx: Prisma.TransactionClient,
 }
 
 /**
+ * Serializes a provider state transition with an endpoint binding. An
+ * endpoint must not validate a provider as enabled and then persist a
+ * reference after a concurrent disable has committed.
+ */
+export async function lockIngressProviderForUpdate(tx: Prisma.TransactionClient, providerId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "IngressProvider" WHERE id = ${providerId} FOR UPDATE`;
+}
+
+/**
  * Locks a Project (workload) row for the rest of the current transaction.
  * Both createIngressEndpoint (re-reading clientAccountId/isActive fresh
  * before binding) and every workload-reassignment path (app/api/admin/

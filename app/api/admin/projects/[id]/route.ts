@@ -29,10 +29,13 @@ export async function PATCH(
     if (body.clientAccountId !== undefined) {
       const existing = await prisma.project.findUnique({ where: { id }, select: { clientAccountId: true } });
       if (!existing) return fail("NOT_FOUND", "Workload not found", 404);
-      const isReassignment = body.clientAccountId !== existing.clientAccountId;
       await prisma.$transaction(async (tx) => {
-        if (isReassignment) {
-          await lockProjectForUpdate(tx, id);
+        // Always lock and re-read when an owner was supplied. Deciding that
+        // it is a no-op from the pre-lock snapshot lets a stale PATCH move a
+        // workload back after another request has reassigned it.
+        await lockProjectForUpdate(tx, id);
+        const fresh = await tx.project.findUniqueOrThrow({ where: { id }, select: { clientAccountId: true } });
+        if (body.clientAccountId !== fresh.clientAccountId) {
           await assertWorkloadReassignable(id, tx);
         }
         await tx.project.update({ where: { id }, data: body });
@@ -40,6 +43,11 @@ export async function PATCH(
     } else {
       await prisma.project.update({ where: { id }, data: body });
     }
+
+    // Reconciliation is idempotent, so doing it for every explicit false
+    // update also covers this route without relying on a stale pre-update
+    // isActive snapshot.
+    if (body.isActive === false) await reconcileIngressEndpointsForDeactivatedWorkload(id);
 
     await logAuditEvent({
       actorUserId: session.userId,
