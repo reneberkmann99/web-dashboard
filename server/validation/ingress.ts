@@ -48,17 +48,19 @@ export const publicAddressUpdateSchema = z.object({
 
 export const ingressProviderCreateSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  kind: z.enum(["MANUAL", "NGINX_PROXY_MANAGER"]).optional(),
+  kind: z.enum(["MANUAL", "NGINX_PROXY_MANAGER", "CADDY"]).optional(),
   enabled: z.boolean().optional(),
   gatewayHostname: hostnameSchema.nullable().optional(),
-  config: z.record(z.string(), z.unknown()).nullable().optional()
+  config: z.record(z.string(), z.unknown()).nullable().optional(),
+  credential: z.string().min(1).max(4096).nullable().optional()
 }).strict();
 
 export const ingressProviderUpdateSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   enabled: z.boolean().optional(),
   gatewayHostname: hostnameSchema.nullable().optional(),
-  config: z.record(z.string(), z.unknown()).nullable().optional()
+  config: z.record(z.string(), z.unknown()).nullable().optional(),
+  credential: z.string().min(1).max(4096).nullable().optional()
 }).strict()
   .refine((body) => Object.keys(body).length > 0, "At least one field is required");
 
@@ -84,7 +86,7 @@ export const ingressEndpointUpdateSchema = z.object({
   serviceName: z.string().trim().min(1).max(100).nullable().optional(),
   targetPort: port.optional(),
   providerId: nullableId,
-  status: z.enum(["PENDING", "ACTIVE", "ERROR", "DISABLED"]).optional(),
+  status: z.enum(["PENDING", "ACTIVE", "BACKEND_UNAVAILABLE", "DNS_INVALID", "TLS_FAILED", "DISABLED"]).optional(),
   statusDetail: z.string().trim().max(1000).nullable().optional()
 }).strict()
   .refine((body) => Object.keys(body).length > 0, "At least one field is required");

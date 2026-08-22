@@ -1052,7 +1052,7 @@ describe("Phase 5 review follow-ups", () => {
     await expect(assertWorkloadReassignable(freshProject.id)).resolves.toBeUndefined();
   });
 
-  it("reconciles a bound endpoint to ERROR when its container is deactivated by inventory sync, but never touches an already-DISABLED endpoint", async () => {
+  it("reconciles a bound endpoint to BACKEND_UNAVAILABLE when its container is deactivated by inventory sync, but never touches an already-DISABLED endpoint", async () => {
     const containerA = await prisma.container.create({
       data: { nodeId: world.node1.id, projectId: world.projectA.id, dockerContainerId: `reconcile-a-${Date.now()}`, dockerName: "reconcile-a", isActive: true }
     });
@@ -1071,11 +1071,12 @@ describe("Phase 5 review follow-ups", () => {
     });
     await updateIngressEndpoint({ id: endpointB.id, status: "DISABLED", actor: sessionFor(world.clientAAdmin) });
 
+    await prisma.container.updateMany({ where: { id: { in: [containerA.id, containerB.id] } }, data: { isActive: false } });
     await reconcileIngressEndpointsForDeactivatedContainers([containerA.id, containerB.id]);
 
     const freshA = await getIngressEndpoint(endpointA.id, sessionFor(world.clientAAdmin));
     const freshB = await getIngressEndpoint(endpointB.id, sessionFor(world.clientAAdmin));
-    expect(freshA.status).toBe("ERROR");
+    expect(freshA.status).toBe("BACKEND_UNAVAILABLE");
     expect(freshA.statusDetail).toBe("Backend container is no longer reported by the node agent");
     expect(freshB.status).toBe("DISABLED"); // untouched — an operator's explicit disable is never overwritten
   });
@@ -1163,7 +1164,7 @@ describe("Phase 5 review follow-ups", () => {
 
     const freshEndpoint = await getIngressEndpoint(endpoint.id, sessionFor(world.clientAAdmin));
     const freshDisabled = await getIngressEndpoint(disabledEndpoint.id, sessionFor(world.clientAAdmin));
-    expect(freshEndpoint.status).toBe("ERROR");
+    expect(freshEndpoint.status).toBe("BACKEND_UNAVAILABLE");
     expect(freshEndpoint.statusDetail).toBe("Workload is deactivated");
     expect(freshDisabled.status).toBe("DISABLED"); // untouched — an operator's explicit disable is never overwritten
   });

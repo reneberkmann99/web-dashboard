@@ -1,0 +1,6 @@
+ALTER TYPE "IngressProviderKind" ADD VALUE 'CADDY';
+CREATE TYPE "IngressTlsStatus" AS ENUM ('NOT_APPLICABLE', 'PENDING', 'ISSUED', 'RENEWING', 'FAILED');
+ALTER TYPE "IngressEndpointStatus" RENAME VALUE 'ERROR' TO 'BACKEND_UNAVAILABLE';
+ALTER TABLE "IngressProvider" ADD COLUMN "credentialEncrypted" TEXT;
+ALTER TABLE "IngressEndpoint" ADD COLUMN "tlsStatus" "IngressTlsStatus" NOT NULL DEFAULT 'NOT_APPLICABLE',
+ADD COLUMN "providerRouteId" TEXT;

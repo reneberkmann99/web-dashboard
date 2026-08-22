@@ -53,4 +53,14 @@ describe("deployment crypto (typed key purposes)", () => {
       process.env.DEPLOYMENT_SECRETS_KEY = saved;
     }
   });
+
+  it("rejects a 64-character SMTP key that is not hexadecimal", () => {
+    const saved = process.env.SMTP_CREDENTIALS_KEY;
+    process.env.SMTP_CREDENTIALS_KEY = "z".repeat(64);
+    try {
+      expect(isEncryptionKeyConfigured("SMTP_CREDENTIALS")).toBe(false);
+    } finally {
+      process.env.SMTP_CREDENTIALS_KEY = saved;
+    }
+  });
 });

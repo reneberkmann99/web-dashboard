@@ -51,6 +51,8 @@ export type ContainerDetailsView = {
 
 export type ContainerView = {
   assignmentId: string;
+  /** Noderaft database identity. Use this for relational API references; containerId is Docker's runtime ID. */
+  databaseId?: string | null;
   containerId: string;
   name: string;
   image: string;

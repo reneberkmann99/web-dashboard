@@ -19,19 +19,21 @@ export type EncryptionPurpose =
   | "NODE_CREDENTIALS"
   | "DEPLOYMENT_SECRETS"
   | "NOTIFICATION_DESTINATIONS"
-  | "SMTP_CREDENTIALS";
+  | "SMTP_CREDENTIALS"
+  | "INGRESS_PROVIDER_CREDENTIALS";
 
 const PURPOSE_ENV: Record<EncryptionPurpose, string> = {
   NODE_CREDENTIALS: "NODE_CREDENTIALS_KEY",
   DEPLOYMENT_SECRETS: "DEPLOYMENT_SECRETS_KEY",
   NOTIFICATION_DESTINATIONS: "NOTIFICATION_DESTINATIONS_KEY",
-  SMTP_CREDENTIALS: "SMTP_CREDENTIALS_KEY"
+  SMTP_CREDENTIALS: "SMTP_CREDENTIALS_KEY",
+  INGRESS_PROVIDER_CREDENTIALS: "INGRESS_PROVIDER_CREDENTIALS_KEY"
 };
 
 function getKey(purpose: EncryptionPurpose): Buffer {
   const envVar = PURPOSE_ENV[purpose];
   const rawKey = process.env[envVar];
-  if (!rawKey || rawKey.length !== 64) {
+  if (!rawKey || !/^[0-9a-fA-F]{64}$/.test(rawKey)) {
     throw new Error(`${envVar} must be a 64-char hex string (32 bytes)`);
   }
   return Buffer.from(rawKey, "hex");
@@ -44,7 +46,7 @@ function getKey(purpose: EncryptionPurpose): Buffer {
  */
 export function isEncryptionKeyConfigured(purpose: EncryptionPurpose): boolean {
   const rawKey = process.env[PURPOSE_ENV[purpose]];
-  return Boolean(rawKey && rawKey.length === 64);
+  return Boolean(rawKey && /^[0-9a-fA-F]{64}$/.test(rawKey));
 }
 
 export function encryptSecret(value: string, purpose: EncryptionPurpose = "NODE_CREDENTIALS"): string {
