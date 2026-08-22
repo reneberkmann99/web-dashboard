@@ -8,6 +8,7 @@ import {
   BellRing,
   Boxes,
   Container,
+  Globe,
   LayoutDashboard,
   ChevronDown,
   Search,
@@ -50,6 +51,7 @@ const ADMIN_NAV: NavItem[] = [
   { key: "attention", href: "/admin/attention", label: "Attention", icon: ShieldAlert },
   { key: "activity", href: "/admin/activity", label: "Activity", icon: Activity },
   { key: "nodes", href: "/admin/nodes", label: "Nodes", icon: Server },
+  { key: "ingress", href: "/admin/infrastructure/ingress", label: "Ingress", icon: Globe },
   { key: "organizations", href: "/organizations", label: "Organizations", icon: Users },
   { key: "users", href: "/admin/settings/users", label: "All Users", icon: Users },
   { key: "alerting", href: "/admin/settings/notifications", label: "Alerting", icon: BellRing },
@@ -60,6 +62,7 @@ const CLIENT_NAV: NavItem[] = [
   { key: "overview", href: "/organization", label: "Overview", icon: LayoutDashboard },
   { key: "workloads", href: "/organization/workloads", label: "Workloads", icon: Workflow },
   { key: "containers", href: "/organization/containers", label: "Containers", icon: Container },
+  { key: "domains", href: "/organization/domains", label: "Domains", icon: Globe },
   { key: "attention", href: "/organization/attention", label: "Attention", icon: ShieldAlert },
   { key: "activity", href: "/organization/activity", label: "Activity", icon: Activity }
 ];

@@ -36,6 +36,8 @@ export type NavRootKey =
   | "platformSettings"
   | "members"
   | "settings"
+  | "domains"
+  | "ingress"
   // Legacy keys remain readable for old sessionStorage entries.
   | "clients"
   | "notifications"
@@ -120,6 +122,7 @@ export const ADMIN_ROOTS: Record<string, RootDef> = {
   organizations: { key: "organizations", href: "/organizations", label: "Organizations" },
   users: { key: "users", href: "/admin/settings/users", label: "All Users" },
   alerting: { key: "alerting", href: "/admin/settings/notifications", label: "Alerting" },
+  ingress: { key: "ingress", href: "/admin/infrastructure/ingress", label: "Ingress" },
   platformSettings: { key: "platformSettings", href: "/admin/settings", label: "Platform Settings" }
 };
 
@@ -127,6 +130,7 @@ export const CLIENT_ROOTS: Record<string, RootDef> = {
   overview: { key: "overview", href: "/organization", label: "Overview" },
   workloads: { key: "workloads", href: "/organization/workloads", label: "Workloads" },
   containers: { key: "containers", href: "/organization/containers", label: "Containers" },
+  domains: { key: "domains", href: "/organization/domains", label: "Domains" },
   attention: { key: "attention", href: "/organization/attention", label: "Attention" },
   activity: { key: "activity", href: "/organization/activity", label: "Activity" },
   members: { key: "members", href: "/organization/members", label: "Members" },
@@ -209,6 +213,7 @@ export function deriveFallback(pathname: string, search: string): NavContextStat
     { re: /^\/admin\/settings\/users$/, root: "users" },
     { re: /^\/admin\/settings\/containers$/, root: "containers" },
     { re: /^\/admin\/settings\/notifications$/, root: "alerting" },
+    { re: /^\/admin\/infrastructure\/ingress$/, root: "ingress" },
     { re: /^\/admin\/settings$/, root: "platformSettings" }
   ] as const;
 
@@ -245,6 +250,7 @@ export function deriveFallback(pathname: string, search: string): NavContextStat
     { re: /^(?:\/client|\/organization)\/workloads$/, root: "workloads" },
     { re: /^(?:\/client|\/organization)\/containers\/[^/]+$/, root: "containers", type: "container", label: "Container" },
     { re: /^(?:\/client|\/organization)\/containers$/, root: "containers" },
+    { re: /^(?:\/client|\/organization)\/domains$/, root: "domains" },
     { re: /^(?:\/client|\/organization)\/attention$/, root: "attention" },
     { re: /^(?:\/client|\/organization)\/activity$/, root: "activity" },
     { re: /^(?:\/client|\/organization)\/(?:team|members)$/, root: "members" },

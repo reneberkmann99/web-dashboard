@@ -91,6 +91,43 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "ORGANIZATION_SCOPE_REQUIRES_CLIENT" || error.message === "DESTINATION_SCOPE_MISMATCH") {
       return fail(error.message, "This rule's scope does not match the selected destination's organization", 422);
     }
+    if (error.message === "DOMAIN_HAS_INGRESS_ENDPOINTS") {
+      return fail(error.message, "Remove this domain's ingress endpoint before deleting it", 409);
+    }
+    if (error.message === "DOMAIN_DISABLED") {
+      return fail(error.message, "This domain is disabled — enable it before verifying", 409);
+    }
+    if (error.message === "DOMAIN_QUOTA_EXCEEDED") {
+      return fail(error.message, "This organization has reached its domain limit", 422);
+    }
+    if (
+      error.message === "INVALID_IP_ADDRESS" ||
+      error.message === "SHARED_ADDRESS_CANNOT_BE_RESERVED" ||
+      error.message === "DEDICATED_IP_QUOTA_EXCEEDED"
+    ) {
+      return fail(error.message, "Invalid public address configuration", 422);
+    }
+    if (error.message === "PUBLIC_ADDRESS_IN_USE" || error.message === "INGRESS_PROVIDER_IN_USE") {
+      return fail(error.message, "This is still referenced by an ingress endpoint — remove that first", 409);
+    }
+    if (
+      error.message === "TCP_UDP_ENDPOINT_CANNOT_HAVE_DOMAIN" ||
+      error.message === "PUBLIC_PORT_REQUIRED" ||
+      error.message === "DOMAIN_REQUIRED" ||
+      error.message === "HTTP_ENDPOINT_CANNOT_SET_PUBLIC_PORT" ||
+      error.message === "DOMAIN_NOT_VERIFIED" ||
+      error.message === "DOMAIN_ALREADY_BOUND" ||
+      error.message === "PUBLIC_ADDRESS_UNAVAILABLE" ||
+      error.message === "PUBLIC_ADDRESS_RESERVED"
+    ) {
+      return fail(error.message, "This ingress endpoint configuration was rejected", 422);
+    }
+    if (error.message === "PORT_CONFLICT") {
+      return fail(error.message, "That public address/port is already reserved by another ingress endpoint", 409);
+    }
+    if (error.message === "INGRESS_ENDPOINT_QUOTA_EXCEEDED" || error.message === "TCP_UDP_ENDPOINT_QUOTA_EXCEEDED") {
+      return fail(error.message, "This organization has reached its ingress endpoint limit", 422);
+    }
   }
 
   // Security: never expose internal error details to the client.
