@@ -48,7 +48,7 @@ export default function AdminNodesPage(): React.JSX.Element {
     if (value) params.set("search", value);
     else params.delete("search");
     const searchString = params.toString();
-    router.replace(searchString ? `/admin/nodes?${searchString}` : "/admin/nodes", { scroll: false });
+    router.push(searchString ? `/admin/nodes?${searchString}` : "/admin/nodes", { scroll: false });
   };
   const updateState = (value: string): void => {
     setNodeState(value);
@@ -56,7 +56,7 @@ export default function AdminNodesPage(): React.JSX.Element {
     if (value) params.set("state", value);
     else params.delete("state");
     const searchString = params.toString();
-    router.replace(searchString ? `/admin/nodes?${searchString}` : "/admin/nodes", { scroll: false });
+    router.push(searchString ? `/admin/nodes?${searchString}` : "/admin/nodes", { scroll: false });
   };
 
   const query = useQuery({
@@ -224,7 +224,7 @@ export default function AdminNodesPage(): React.JSX.Element {
     <div className="space-y-4">
       <PageHeader eyebrow="Fleet" title="Nodes" count={allNodes.length} description="Hosts reporting runtime and resource telemetry." actions={<span className="max-md:hidden"><Button onClick={() => setEnrollOpen(true)}>Add node</Button></span>} />
 
-      <DesktopFilterBar search={search} onSearchChange={updateSearch} searchPlaceholder="Search nodes…" dimensions={[{ id: "state", label: "State", value: nodeState, options: [{ value: "online", label: "Online" }, { value: "offline", label: "Offline" }, { value: "unknown", label: "Unknown" }, { value: "inactive", label: "Inactive" }], onChange: updateState }]} resultCount={visibleNodes.length} totalCount={allNodes.length} onClearAll={() => { setSearch(""); setNodeState(""); router.replace("/admin/nodes", { scroll: false }); }} />
+      <DesktopFilterBar search={search} onSearchChange={updateSearch} searchPlaceholder="Search nodes…" dimensions={[{ id: "state", label: "State", value: nodeState, options: [{ value: "online", label: "Online" }, { value: "offline", label: "Offline" }, { value: "unknown", label: "Unknown" }, { value: "inactive", label: "Inactive" }], onChange: updateState }]} resultCount={visibleNodes.length} totalCount={allNodes.length} onClearAll={() => { setSearch(""); setNodeState(""); router.push("/admin/nodes", { scroll: false }); }} />
       <div className="md:hidden"><Input type="search" value={search} onChange={(event) => updateSearch(event.target.value)} placeholder="Search nodes…" aria-label="Search nodes…" /></div>
 
       <DataTable

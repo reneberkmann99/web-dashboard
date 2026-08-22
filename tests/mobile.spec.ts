@@ -180,7 +180,7 @@ test.describe("Noderaft mobile design gate @390x844", () => {
   test("attention: compact tabs, condition list high in viewport, filters", async ({ context, page }) => {
     await useSession(context, adminToken);
     await gotoMobile(page, "/admin/attention");
-    await expect(page.getByRole("button", { name: "Active", exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Active", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /Open filters/ })).toBeVisible();
     await assertNoHorizontalOverflow(page);
   });
@@ -211,7 +211,7 @@ test.describe("Noderaft mobile design gate @390x844", () => {
     // Logs tab default; LogViewer present.
     await expect(page.getByRole("tab", { name: "logs" })).toBeVisible();
     await page.getByRole("tab", { name: "config" }).click();
-    await expect(page.getByText("Details", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Details" }).filter({ visible: true })).toBeVisible();
     await assertNoHorizontalOverflow(page);
   });
 

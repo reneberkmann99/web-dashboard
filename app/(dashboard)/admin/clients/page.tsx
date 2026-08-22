@@ -58,7 +58,7 @@ export default function AdminClientsPage(): React.JSX.Element {
         if (value) params.set(key, value);
         else params.delete(key);
       }
-      router.replace(`/admin/clients?${params.toString()}`, { scroll: false });
+      router.push(`/admin/clients?${params.toString()}`, { scroll: false });
     },
     [router, searchParams]
   );

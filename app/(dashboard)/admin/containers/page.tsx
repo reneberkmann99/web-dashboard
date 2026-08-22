@@ -71,7 +71,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
         else params.delete(key);
       }
       const query = params.toString();
-      router.replace(query ? `/admin/containers?${query}` : "/admin/containers", { scroll: false });
+      router.push(query ? `/admin/containers?${query}` : "/admin/containers", { scroll: false });
     },
     [router, searchParams]
   );

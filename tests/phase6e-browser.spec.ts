@@ -110,16 +110,18 @@ test.describe.serial("Phase 6E attention lifecycle UI", () => {
 
     await page.reload();
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("link", { name: "Attention", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Attention", exact: true })).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Logout" }).click();
+    await page.getByRole("link", { name: /^Attention/ }).click();
+    await expect(page.getByRole("heading", { name: /^Attention/ })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Open account menu" }).click();
+    await page.getByRole("menuitem", { name: "Log out" }).click();
     await expect(page).toHaveURL(/\/login$/);
 
     await page.getByLabel("Email or Linux username").fill(browserAdminEmail);
     await page.getByLabel("Password").fill(browserAdminPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/admin$/);
-    await page.getByRole("button", { name: "Logout" }).click();
+    await page.getByRole("button", { name: "Open account menu" }).click();
+    await page.getByRole("menuitem", { name: "Log out" }).click();
     await expect(page).toHaveURL(/\/login$/);
     expect(insecureBrowserRequests).toEqual([]);
     expect(mixedContentErrors).toEqual([]);
@@ -136,7 +138,7 @@ test.describe.serial("Phase 6E attention lifecycle UI", () => {
     });
     await useAdminSession(context);
     await page.goto(`/admin/attention?conditionId=${conditionId}`);
-    await expect(page.getByRole("heading", { name: "Attention", exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: /^Attention/ })).toBeVisible({ timeout: 30_000 });
 
     const detail = page.getByRole("dialog", { name: title });
     await expect(detail).toBeVisible();

@@ -91,7 +91,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     if (next.sourceFilter) params.set("source", next.sourceFilter);
     if (next.needsAttentionOnly) params.set("needsAttention", "1");
     const query = params.toString();
-    router.replace(query ? `/admin/workloads?${query}` : "/admin/workloads", { scroll: false });
+    router.push(query ? `/admin/workloads?${query}` : "/admin/workloads", { scroll: false });
   }, [router]);
 
   const updateFilters = useCallback((patch: Partial<Filters>) => {

@@ -240,8 +240,8 @@ samp,
   }
 
   main table tbody td {
-    padding-top: 8px;
-    padding-bottom: 8px;
+    padding-top: 6px;
+    padding-bottom: 6px;
   }
 
   main table tbody tr[role="link"]:hover {

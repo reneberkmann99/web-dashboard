@@ -298,7 +298,7 @@ export function MobileFiltersRow({
   chips?: Array<{ label: string }>;
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1" data-mobile-filters-row>
+    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1" data-mobile-filters-row data-testid="mobile-filters-row">
       <button
         type="button"
         onClick={onOpen}

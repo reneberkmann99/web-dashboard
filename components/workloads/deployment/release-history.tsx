@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/lib/format";
 import type { ReleaseDetailPayload, ReleaseListItem, ReleasesListPayload } from "./types";
 import { RELEASE_HEALTH_LABELS } from "./labels";
+import { Pagination } from "@/components/ui/pagination";
+
+const PAGE_SIZE = 10;
 
 /**
  * Release history timeline. Badges never rely on color alone: CURRENT,
@@ -25,10 +29,14 @@ export function ReleaseHistory({
   emptyState?: React.ReactNode;
 }): React.JSX.Element {
   const [selected, setSelected] = useState<ReleaseListItem | null>(null);
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const page = Math.max(1, Number(searchParams.get("releasePage") ?? "1"));
 
   const query = useQuery({
-    queryKey: ["deployment-releases", apiBase, deploymentId],
-    queryFn: () => apiFetch<ReleasesListPayload>(`${apiBase}/${deploymentId}/releases?limit=100`),
+    queryKey: ["deployment-release-history", apiBase, deploymentId, page],
+    queryFn: () => apiFetch<ReleasesListPayload>(`${apiBase}/${deploymentId}/releases?limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`),
     refetchInterval: 15000
   });
 
@@ -82,8 +90,21 @@ export function ReleaseHistory({
           </li>
         ))}
       </ol>
-      {query.data.total > query.data.data.length && (
-        <p className="mt-2 text-xs text-muted">Showing the {query.data.data.length} most recent of {query.data.total} releases.</p>
+      {query.data.total > PAGE_SIZE && (
+        <Pagination
+          start={(page - 1) * PAGE_SIZE + 1}
+          end={Math.min(page * PAGE_SIZE, query.data.total)}
+          total={query.data.total}
+          page={page}
+          pageCount={Math.ceil(query.data.total / PAGE_SIZE)}
+          onPageChange={(nextPage) => {
+            const params = new URLSearchParams(searchParams.toString());
+            if (nextPage <= 1) params.delete("releasePage");
+            else params.set("releasePage", String(nextPage));
+            const suffix = params.toString();
+            router.push(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
+          }}
+        />
       )}
       {selected && (
         <ReleaseDetailModal deploymentId={deploymentId} apiBase={apiBase} release={selected} onClose={() => setSelected(null)} onRollback={onRollback} />

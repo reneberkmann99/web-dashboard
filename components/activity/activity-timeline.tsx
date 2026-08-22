@@ -69,7 +69,23 @@ function rollupSentence(value: string, count: number): string {
   return `${match[1]} ${count} ${match[2].toLowerCase()}s`;
 }
 
-type Group = { key: string; day: string; events: TimelineEvent[] };
+export type ActivityGroup = { key: string; day: string; events: TimelineEvent[] };
+
+export function groupActivityEvents(events: TimelineEvent[]): ActivityGroup[] {
+  const output: ActivityGroup[] = [];
+  for (const event of events) {
+    const day = dayKey(event.createdAt);
+    const key = `${day}:${event.action}:${event.actorEmail ?? "system"}:${event.result ?? ""}`;
+    const previous = output[output.length - 1];
+    if (previous?.key === key) previous.events.push(event);
+    else output.push({ key, day, events: [event] });
+  }
+  return output;
+}
+
+export function activityRollupSentence(event: TimelineEvent, count: number): string {
+  return rollupSentence(event.humanized || humanizeAction(event.action), count);
+}
 
 export function ActivityTimeline({
   events,
@@ -93,17 +109,7 @@ export function ActivityTimeline({
   emptyBody?: string;
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const groups = useMemo(() => {
-    const output: Group[] = [];
-    for (const event of events) {
-      const day = dayKey(event.createdAt);
-      const key = `${day}:${event.action}:${event.actorEmail ?? "system"}:${event.result ?? ""}`;
-      const previous = output[output.length - 1];
-      if (previous?.key === key) previous.events.push(event);
-      else output.push({ key, day, events: [event] });
-    }
-    return output;
-  }, [events]);
+  const groups = useMemo(() => groupActivityEvents(events), [events]);
 
   if (loading) return <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-deck" />;
   if (error) return <StatePanel tone="error" title="Unable to load activity" description={error} />;
@@ -130,12 +136,12 @@ export function ActivityTimeline({
                     {progress ? <Loader2 size={14} className="animate-spin" /> : failed ? <AlertTriangle size={14} /> : <Activity size={14} />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] text-text">{group.events.length > 1 ? rollupSentence(baseSentence, group.events.length) : baseSentence}</span>
+                    <span className="block truncate text-[13.5px] text-text">{group.events.length > 1 ? activityRollupSentence(first, group.events.length) : baseSentence}</span>
                     <span className="mt-0.5 block truncate text-xs text-text-muted">{first.actorEmail ?? "System"}</span>
                   </span>
                 </button>
                 {group.events.length > 1 && (
-                  <button type="button" onClick={() => { setExpanded((current) => { const next = new Set(current); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next; }); }} className="shrink-0 rounded-control px-2 py-1 text-xs text-brand hover:bg-surface-overlay hover:text-brand-hover">
+                  <button type="button" onClick={() => { setExpanded((current) => { const next = new Set(current); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next; }); }} className="shrink-0 rounded-control px-2 py-1 text-xs text-text-muted hover:bg-surface-overlay hover:text-text">
                     {isExpanded ? "Collapse" : "Expand"}
                   </button>
                 )}

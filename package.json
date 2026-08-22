@@ -22,6 +22,7 @@
     "test:browser:phase6e": "playwright test phase6e-browser.spec.ts",
     "test:browser:correction": "playwright test ui-correction.spec.ts",
     "test:browser:polish": "playwright test tests/ui-navigation-polish.spec.ts",
+    "test:browser:desktop": "playwright test tests/desktop-review.spec.ts",
     "test:landing": "node scripts/qualify-landing.mjs",
     "test:public-cutover": "node scripts/qualify-public-cutover.mjs"
   },

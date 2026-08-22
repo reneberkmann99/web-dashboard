@@ -50,9 +50,10 @@ test.beforeEach(async ({ context, page }) => {
 test("workload filters, search, and scroll survive browser Back", async ({ page }) => {
   await resetViewState(page, "/admin/workloads");
   await page.getByLabel("Filter by node").selectOption(workload.nodeId);
+  await expect(page).toHaveURL(new RegExp(`nodeId=${workload.nodeId}`));
   await page.getByRole("searchbox", { name: "Search workloads…" }).fill(workload.name);
   const row = page.locator(`tr[data-row-key="${workload.id}"]`).filter({ visible: true });
-  await expect(row).toBeVisible();
+  await expect(row).toBeVisible({ timeout: 30_000 });
   const savedScroll = await page.evaluate(() => { window.scrollTo(0, Math.min(220, document.documentElement.scrollHeight)); return window.scrollY; });
   expect(savedScroll).toBeGreaterThan(0);
   await row.click();

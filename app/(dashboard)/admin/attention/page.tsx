@@ -140,7 +140,7 @@ export default function AttentionPage(): React.JSX.Element {
     }
     if (next.get("view") === "active") next.delete("view");
     const query = next.toString();
-    router.replace(query ? `/admin/attention?${query}` : "/admin/attention", { scroll: false });
+    router.push(query ? `/admin/attention?${query}` : "/admin/attention", { scroll: false });
   }, [router, searchParams]);
 
   useEffect(() => {

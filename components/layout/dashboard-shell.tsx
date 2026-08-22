@@ -19,6 +19,7 @@ import {
   PanelLeftOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { deriveFreshness } from "@/lib/freshness";
 import { isClientRole } from "@/types/domain";
 import { apiFetch } from "@/lib/fetcher";
 import { CommandPalette } from "@/components/search/command-palette";
@@ -188,13 +189,12 @@ function DashboardShellInner({
     ? (attentionQuery.data as FleetSummaryPayload).fleetSummary
     : null;
   const freshnessAge = attentionQuery.dataUpdatedAt > 0 ? Math.max(0, Math.floor((freshnessNow - attentionQuery.dataUpdatedAt) / 1000)) : null;
-  const agentUnavailable = attentionQuery.isError || Boolean(fleetSummary && fleetSummary.nodesTotal > 0 && fleetSummary.nodesOnline === 0);
-  const stale = !agentUnavailable && (freshnessAge === null || freshnessAge > 45 || Boolean(fleetSummary && fleetSummary.nodesOnline < fleetSummary.nodesTotal));
-  const freshnessLabel = agentUnavailable
-    ? "agent unavailable"
-    : stale
-      ? `stale${freshnessAge !== null ? ` · ${freshnessAge}s ago` : ""}`
-      : `live · ${freshnessAge ?? 0}s ago`;
+  const freshness = deriveFreshness({
+    ageSeconds: freshnessAge,
+    queryError: attentionQuery.isError,
+    nodesTotal: fleetSummary?.nodesTotal ?? null,
+    nodesOnline: fleetSummary?.nodesOnline ?? null
+  });
 
   const setCollapsed = (value: boolean): void => {
     setSidebarCollapsed(value);
@@ -325,9 +325,9 @@ function DashboardShellInner({
               <span>Search</span>
               <kbd className="rounded-sm border border-border px-1.5 text-[10px]">⌘K</kbd>
             </button>
-            <span className={cn("inline-flex items-center gap-1.5 font-mono text-[11px]", agentUnavailable ? "text-critical-foreground" : stale ? "text-warning-foreground" : "text-success-foreground")} data-freshness-state={agentUnavailable ? "unavailable" : stale ? "stale" : "live"}>
-              <span className={cn("h-1.5 w-1.5 rounded-full", agentUnavailable ? "bg-critical" : stale ? "bg-warning" : "bg-success")} />
-              {freshnessLabel}
+            <span className={cn("inline-flex items-center gap-1.5 font-mono text-[11px]", freshness.state === "unavailable" ? "text-critical-foreground" : freshness.state === "stale" ? "text-warning-foreground" : "text-success-foreground")} data-freshness-state={freshness.state}>
+              <span className={cn("h-1.5 w-1.5 rounded-full", freshness.state === "unavailable" ? "bg-critical" : freshness.state === "stale" ? "bg-warning" : "bg-success")} />
+              {freshness.label}
             </span>
           </div>
         </header>

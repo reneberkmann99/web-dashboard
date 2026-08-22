@@ -61,7 +61,7 @@ export default function AdminActivityPage(): React.JSX.Element {
         if (value) params.set(key, value);
         else params.delete(key);
       }
-      router.replace(`/admin/activity?${params.toString()}`, { scroll: false });
+      router.push(`/admin/activity?${params.toString()}`, { scroll: false });
     },
     [router, searchParams]
   );

@@ -141,7 +141,7 @@ export function ServerDataTable<T>({
                   <td
                     key={col.key}
                     className={cn(
-                      "px-3 py-2 align-middle",
+                      "px-3 py-1.5 align-middle",
                       col.className,
                       col.hideBelow === "sm" && "max-md:hidden",
                       col.hideBelow === "md" && "max-lg:hidden",

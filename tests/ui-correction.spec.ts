@@ -39,11 +39,12 @@ test.beforeEach(async ({ context, page }) => {
 test("sidebar navigation always opens the destination at the top", async ({ page }) => {
   // Scroll down on Workloads, then use the sidebar to open Nodes — the new
   // page must start at the top, not restore the previous scroll.
-  await page.goto("/admin/workloads");
+  await page.goto("/admin/containers");
+  await expect(page.locator("[data-desktop-table] tbody tr").first()).toBeVisible({ timeout: 30_000 });
   await page.evaluate(() => window.scrollTo(0, Math.min(400, document.documentElement.scrollHeight)));
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 
-  await page.getByRole("link", { name: "Nodes" }).click();
+  await page.getByRole("link", { name: /^Nodes/ }).click();
   await expect(page).toHaveURL(/\/admin\/nodes$/);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 });
