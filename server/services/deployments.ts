@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import { DeploymentSource, ProjectSource, Prisma } from "@prisma/client";
 import { parse, stringify } from "yaml";
-import { prisma } from "@/server/db";
+import { lockProjectForUpdate, prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { logAuditEvent } from "@/server/audit";
+import { assertWorkloadReassignable } from "@/server/services/ingress";
 import type { AuthSession } from "@/server/auth/session";
 import {
   ANALYZER_VERSION,
@@ -306,7 +307,7 @@ export async function createDeployment(input: {
   // IS that row, so the managed definition is authored onto it instead.
   const existingProject = await prisma.project.findFirst({
     where: { nodeId: input.nodeId, composeProject: input.composeProjectName },
-    select: { id: true, name: true }
+    select: { id: true, name: true, clientAccountId: true }
   });
   if (existingProject && existingProject.id !== input.adoptExistingProjectId) {
     return { status: "compose_project_taken", existingName: existingProject.name };
@@ -314,6 +315,21 @@ export async function createDeployment(input: {
   const adoptingExisting = Boolean(input.adoptExistingProjectId && existingProject);
   if (input.adoptExistingProjectId && !existingProject) {
     return { status: "invalid", findings: [], composeErrors: ["Adoption target project not found on this node"] };
+  }
+  // Adoption authors the definition onto an EXISTING project row and may
+  // reassign its clientAccountId in the same call — same reassignment guard
+  // as app/api/admin/workloads/[id]/route.ts (see assertWorkloadReassignable's
+  // doc comment): that existing project could already have a bound ingress
+  // endpoint, and reassigning it here would be just as unsafe as reassigning
+  // it through the workload settings form. This is a cheap pre-transaction
+  // rejection only — the authoritative re-check happens again below, under
+  // the Project row lock, inside the transaction that performs the
+  // reassignment itself (see server/db.ts's lockProjectForUpdate doc
+  // comment).
+  const isReassignment =
+    adoptingExisting && existingProject && (input.clientAccountId ?? null) !== existingProject.clientAccountId;
+  if (isReassignment && existingProject) {
+    await assertWorkloadReassignable(existingProject.id);
   }
 
   const slug = input.slug?.trim()
@@ -324,6 +340,21 @@ export async function createDeployment(input: {
   const envSnapshot = sortObjectEntries(input.environment);
 
   const result = await prisma.$transaction(async (tx) => {
+    if (adoptingExisting && existingProject) {
+      await lockProjectForUpdate(tx, existingProject.id);
+      // The snapshot above is only an early rejection. The authoritative
+      // decision must use the locked row: a concurrent reassignment can make
+      // a request that originally looked like a no-op become a reassignment.
+      const freshProject = await tx.project.findUniqueOrThrow({
+        where: { id: existingProject.id },
+        select: { clientAccountId: true }
+      });
+      const requestedClientAccountId = input.clientAccountId ?? null;
+      if (input.clientAccountId !== undefined && requestedClientAccountId !== freshProject.clientAccountId) {
+        await assertWorkloadReassignable(existingProject.id, tx);
+      }
+    }
+
     const project = adoptingExisting && existingProject
       ? await tx.project.update({
           where: { id: existingProject.id },

@@ -33,6 +33,11 @@ import type { AuthSession } from "@/server/auth/session";
  *
  *   secrets.manage            — create/rotate deployment secrets
  *
+ *   domain.view/manage        — see / add-verify-disable an organization's domains
+ *   ingress.view/manage       — see / create-update-delete an organization's ingress endpoints
+ *   public_address.manage     — platform-only: manage WAN/public IPs
+ *   ingress_provider.manage   — platform-only: manage ingress/gateway providers
+ *
  * Legacy aliases (`project.view`, `project.create`, `deployment.view`,
  * `deployment.manage`, `deployment.deploy`) are retained so existing route
  * handlers keep compiling; they resolve to the granular capabilities above.
@@ -76,6 +81,20 @@ export type Capability =
   // (server/services/notifications.ts is the sole scope-enforcement point —
   // this capability alone does not imply platform scope).
   | "alerting.manage"
+  // Domains & ingress (Phase 5). domain.*/ingress.* are organization-scoped —
+  // ADMIN manages any organization's, CLIENT_ADMIN only their own
+  // (server/services/domains.ts and server/services/ingress.ts are the sole
+  // scope-enforcement points, same pattern as alerting.manage). view-only
+  // capabilities are granted to every client role so an operator/viewer can
+  // see what's published without being able to change it.
+  | "domain.view"
+  | "domain.manage"
+  | "ingress.view"
+  | "ingress.manage"
+  // Platform-only (Phase 5): never granted to any client role. Organization
+  // users must not see platform Public Address / Provider management.
+  | "public_address.manage"
+  | "ingress_provider.manage"
   // Legacy aliases (kept for existing call sites)
   | "project.view"
   | "project.create"
@@ -89,7 +108,9 @@ const VIEWER_CAPABILITIES: Capability[] = [
   "project.view",
   "container.view",
   "container.view_logs",
-  "deployment.view"
+  "deployment.view",
+  "domain.view",
+  "ingress.view"
 ];
 
 /** Runtime actions an operator may perform without editing configuration. */
@@ -121,6 +142,10 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "node.manage",
     "workload.adopt",
     "alerting.manage",
+    "domain.manage",
+    "ingress.manage",
+    "public_address.manage",
+    "ingress_provider.manage",
     ...VIEWER_CAPABILITIES,
     ...OPERATOR_RUNTIME_CAPABILITIES,
     ...EDITOR_CAPABILITIES
@@ -132,6 +157,8 @@ const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     "client.manage",
     "user.manage",
     "alerting.manage",
+    "domain.manage",
+    "ingress.manage",
     ...VIEWER_CAPABILITIES,
     ...OPERATOR_RUNTIME_CAPABILITIES,
     ...EDITOR_CAPABILITIES

@@ -1,9 +1,11 @@
 import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { updateProjectSchema, cuidParamSchema } from "@/server/validation/admin";
-import { fromError, ok } from "@/server/http";
+import { fail, fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
+import { assertWorkloadReassignable, reconcileIngressEndpointsForDeactivatedWorkload } from "@/server/services/ingress";
+import { lockProjectForUpdate } from "@/server/db";
 
 export async function PATCH(
   request: Request,
@@ -16,7 +18,36 @@ export async function PATCH(
 
     const body = updateProjectSchema.parse(await request.json());
 
-    await prisma.project.update({ where: { id }, data: body });
+    // Same reassignment guard as app/api/admin/workloads/[id]/route.ts — this
+    // route accepts the identical clientAccountId field and must not be a
+    // way around it (see server/services/ingress.ts's
+    // assertWorkloadReassignable doc comment for why reassigning a workload
+    // with a bound ingress endpoint is unsafe). The check-then-update runs
+    // under the Project row lock (see server/db.ts's lockProjectForUpdate
+    // doc comment) so a concurrent createIngressEndpoint can't insert a
+    // fresh endpoint between the check and the reassignment.
+    if (body.clientAccountId !== undefined) {
+      const existing = await prisma.project.findUnique({ where: { id }, select: { clientAccountId: true } });
+      if (!existing) return fail("NOT_FOUND", "Workload not found", 404);
+      await prisma.$transaction(async (tx) => {
+        // Always lock and re-read when an owner was supplied. Deciding that
+        // it is a no-op from the pre-lock snapshot lets a stale PATCH move a
+        // workload back after another request has reassigned it.
+        await lockProjectForUpdate(tx, id);
+        const fresh = await tx.project.findUniqueOrThrow({ where: { id }, select: { clientAccountId: true } });
+        if (body.clientAccountId !== fresh.clientAccountId) {
+          await assertWorkloadReassignable(id, tx);
+        }
+        await tx.project.update({ where: { id }, data: body });
+      });
+    } else {
+      await prisma.project.update({ where: { id }, data: body });
+    }
+
+    // Reconciliation is idempotent, so doing it for every explicit false
+    // update also covers this route without relying on a stale pre-update
+    // isActive snapshot.
+    if (body.isActive === false) await reconcileIngressEndpointsForDeactivatedWorkload(id);
 
     await logAuditEvent({
       actorUserId: session.userId,
@@ -51,6 +82,10 @@ export async function DELETE(
       where: { id },
       data: { isActive: false }
     });
+
+    // Same reconciliation as any other workload deactivation path — see
+    // reconcileIngressEndpointsForDeactivatedWorkload's doc comment.
+    await reconcileIngressEndpointsForDeactivatedWorkload(id);
 
     await logAuditEvent({
       actorUserId: session.userId,

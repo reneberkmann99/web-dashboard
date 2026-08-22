@@ -48,6 +48,12 @@ export async function POST(request: Request): Promise<Response> {
           409,
           { conflicts: result.conflicts }
         );
+      case "container_has_ingress_endpoint":
+        return fail(
+          "CONTAINER_HAS_INGRESS_ENDPOINT",
+          "A container in this Compose project backs an ingress endpoint — delete or repoint it before moving this container to a different workload",
+          409
+        );
       case "adopted": {
         await logAuditEvent({
           actorUserId: session.userId,

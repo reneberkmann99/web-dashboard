@@ -1,6 +1,7 @@
 import { ProjectSource } from "@prisma/client";
-import { prisma } from "@/server/db";
+import { lockContainersForUpdate, prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
+import { reconcileIngressEndpointsForDeactivatedContainers } from "@/server/services/ingress";
 
 /**
  * Compose workload discovery, adoption, conversion & reconciliation.
@@ -141,15 +142,26 @@ export async function reconcileComposeWorkloads(nodeId: string, live: ComposeCon
     // Containers previously in this project but no longer reported become
     // inactive (kept for history, never deleted).
     if (members.length > 0) {
-      await prisma.container.updateMany({
+      const deactivating = await prisma.container.findMany({
         where: {
           projectId: project.id,
           nodeId,
           isActive: true,
           dockerContainerId: { notIn: members.map((c) => c.id) }
         },
-        data: { isActive: false, lastSeenAt: new Date() }
+        select: { id: true }
       });
+      if (deactivating.length > 0) {
+        const deactivatingIds = deactivating.map((c) => c.id);
+        const deactivated = await prisma.container.updateManyAndReturn({
+          // Preserve the read predicate in the write: overlapping sweeps may
+          // have already observed a member as active again.
+          where: { id: { in: deactivatingIds }, isActive: true, dockerContainerId: { notIn: members.map((c) => c.id) } },
+          data: { isActive: false, lastSeenAt: new Date() },
+          select: { id: true }
+        });
+        await reconcileIngressEndpointsForDeactivatedContainers(deactivated.map((container) => container.id));
+      }
     }
   }
 
@@ -517,7 +529,8 @@ export type AdoptComposeResult =
   | { status: "adopted"; id: string }
   | { status: "already_adopted"; workloadId: string; workloadName: string }
   | { status: "conflict"; conflicts: ComposeConflict[] }
-  | { status: "not_found" };
+  | { status: "not_found" }
+  | { status: "container_has_ingress_endpoint" };
 
 /**
  * Adopt a detected Compose project as a COMPOSE workload, optionally owned by
@@ -579,23 +592,58 @@ export async function adoptComposeProject(input: {
   }
 
   const friendly = input.name?.trim() || input.composeProject;
-  const created = await prisma.project.create({
-    data: {
-      name: friendly,
-      slug: input.slug?.trim() ? await uniqueSlugForNode(input.nodeId, input.slug.trim()) : await uniqueSlugForNode(input.nodeId, friendly),
-      description: input.description ?? null,
-      source: ProjectSource.COMPOSE,
-      composeProject: input.composeProject,
-      clientAccountId: input.clientAccountId,
-      nodeId: input.nodeId,
-      isActive: true
-    }
+  const slug = input.slug?.trim()
+    ? await uniqueSlugForNode(input.nodeId, input.slug.trim())
+    : await uniqueSlugForNode(input.nodeId, friendly);
+  const memberIds = members.map((m) => m.id);
+
+  // Reparenting a container to a new (possibly differently-owned) workload
+  // below never updates or checks IngressEndpoint.containerId — a bound
+  // endpoint would keep its OLD workload/organization ownership while its
+  // actual backend container silently belongs to the new one, letting the
+  // old tenant keep controlling public routing into infrastructure that's
+  // no longer semantically theirs. Refuse instead, same as
+  // deleteContainer's guard (server/services/container-lifecycle.ts). The
+  // whole check-then-reparent runs under a lock on every member container
+  // (see server/db.ts's lockContainersForUpdate doc comment) — a plain
+  // pre-transaction check here could otherwise leave a window where a
+  // concurrent createIngressEndpoint/updateIngressEndpoint attaches one of
+  // these containers after this check but before the reparenting update,
+  // recreating the exact cross-tenant routing condition this guard exists
+  // to prevent.
+  const created = await prisma.$transaction(async (tx) => {
+    await lockContainersForUpdate(tx, memberIds);
+
+    const boundEndpoint = await tx.ingressEndpoint.findFirst({
+      where: { containerId: { in: memberIds } },
+      select: { id: true }
+    });
+    if (boundEndpoint) return null;
+
+    const project = await tx.project.create({
+      data: {
+        name: friendly,
+        slug,
+        description: input.description ?? null,
+        source: ProjectSource.COMPOSE,
+        composeProject: input.composeProject,
+        clientAccountId: input.clientAccountId,
+        nodeId: input.nodeId,
+        isActive: true
+      }
+    });
+
+    await tx.container.updateMany({
+      where: { id: { in: memberIds } },
+      data: { projectId: project.id, isActive: true }
+    });
+
+    return project;
   });
 
-  await prisma.container.updateMany({
-    where: { id: { in: members.map((m) => m.id) } },
-    data: { projectId: created.id, isActive: true }
-  });
+  if (!created) {
+    return { status: "container_has_ingress_endpoint" };
+  }
 
   return { status: "adopted", id: created.id };
 }

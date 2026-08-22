@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
+import { reconcileIngressEndpointsForDeactivatedWorkload } from "@/server/services/ingress";
 import type { AuthSession } from "@/server/auth/session";
 
 /**
@@ -88,6 +89,10 @@ export async function setWorkloadActive(
   }
 
   await prisma.project.update({ where: { id: projectId }, data: { isActive } });
+
+  if (!isActive) {
+    await reconcileIngressEndpointsForDeactivatedWorkload(projectId);
+  }
 
   await logAuditEvent({
     actorUserId: session.userId,

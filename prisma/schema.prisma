@@ -211,6 +211,63 @@ enum SmtpTestStatus {
   FAILED
 }
 
+/**
+ * Phase 5: a Domain's DNS-ownership verification lifecycle. Noderaft never
+ * controls DNS — it only checks it (server/services/domains.ts) — so these
+ * states describe what the last check observed, never an intent Noderaft can
+ * enforce.
+ */
+enum DomainStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  INVALID
+  DISABLED
+}
+
+enum IpVersion {
+  V4
+  V6
+}
+
+/**
+ * Phase 5: whether a PublicAddress may serve more than one hostname/org
+ * (SHARED, via SNI for HTTP/HTTPS or distinct ports for TCP/UDP) or is
+ * reserved to exactly one Organization (DEDICATED, `reservedForOrgId`).
+ */
+enum PublicAddressAllocation {
+  SHARED
+  DEDICATED
+}
+
+/**
+ * Phase 5: which gateway integration an IngressProvider represents. MANUAL
+ * means a human wires up routing outside Noderaft; Noderaft only records the
+ * resulting endpoint's identity/status. Additional kinds are additive — the
+ * core ingress model never depends on any one of them existing (brief: "Do
+ * not tightly couple Noderaft to Nginx Proxy Manager").
+ */
+enum IngressProviderKind {
+  MANUAL
+  NGINX_PROXY_MANAGER
+}
+
+/**
+ * Phase 5: an IngressEndpoint's logical exposure. HTTPS/HTTP route by hostname (Domain); TCP/UDP reserve an explicit public port.
+ */
+enum IngressExposureType {
+  HTTPS
+  HTTP
+  TCP
+  UDP
+}
+
+enum IngressEndpointStatus {
+  PENDING
+  ACTIVE
+  ERROR
+  DISABLED
+}
+
 model ClientAccount {
   id                       String                    @id @default(cuid())
   name                     String
@@ -225,8 +282,19 @@ model ClientAccount {
   nodeAccess               ClientNodeAccess[]
   notificationDestinations NotificationDestination[]
   notificationRules        NotificationRule[]
+  domains                  Domain[]
+  ingressEndpoints         IngressEndpoint[]
+  reservedPublicAddresses  PublicAddress[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
+
+  // Phase 5 quota foundation: null = unlimited. Platform-admin-set, no
+  // billing behind them yet — see server/services/ingress.ts and
+  // server/services/domains.ts for where each is enforced.
+  maxDomains          Int?
+  maxIngressEndpoints Int?
+  maxTcpUdpEndpoints  Int?
+  maxDedicatedIps     Int?
 
   @@index([isActive])
 }
@@ -277,6 +345,8 @@ model User {
   notificationDestinationsCreated    NotificationDestination[]
   notificationRulesCreated           NotificationRule[]
   platformEmailSettingsUpdated       PlatformEmailSettings[]             @relation("PlatformEmailSettingsUpdatedBy")
+  domainsCreated                     Domain[]
+  ingressEndpointsCreated            IngressEndpoint[]
   createdAt                          DateTime                            @default(now())
   updatedAt                          DateTime                            @updatedAt
 
@@ -390,6 +460,7 @@ model Project {
   deployment         Deployment?
   attentionSilences  AttentionSilence[]
   maintenanceWindows MaintenanceWindow[]
+  ingressEndpoints   IngressEndpoint[]
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
@@ -428,6 +499,7 @@ model Container {
   assignments       ContainerAssignment[]
   grants            AccessGrant[]
   operations        Operation[]
+  ingressEndpoints  IngressEndpoint[]
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
@@ -1225,4 +1297,158 @@ model RecentFailureDismissal {
   dismissedAt DateTime @default(now())
 
   @@index([dismissedAt])
+}
+
+/**
+ * Phase 5: an organization-owned hostname pending/verified for ingress use.
+ * Ownership is proven by DNS, never assumed — `verificationToken` is the
+ * value an operator is instructed to publish in a TXT record at
+ * `_noderaft-challenge.<hostname>`; server/services/domains.ts is the only
+ * code that flips `status`, based on an actual DNS lookup (never a
+ * client-supplied claim). A domain must be VERIFIED before any
+ * IngressEndpoint may bind it (HTTPS/HTTP only — TCP/UDP endpoints never
+ * reference a Domain, they route by PublicAddress + explicit port).
+ *
+ * `hostname` is deliberately NOT globally unique at the DB level: a hard
+ * unique constraint here would let any organization "squat" a hostname it
+ * doesn't control by creating a PENDING_VERIFICATION row for it — since that
+ * row would never itself become VERIFIED, but its mere existence would
+ * permanently block the real owner from ever adding the domain. Multiple
+ * organizations may hold independent, never-conflicting PENDING_VERIFICATION
+ * (or INVALID) claims on the same hostname simultaneously. What must never
+ * happen is two organizations both holding VERIFIED for the same hostname at
+ * once — server/services/domains.ts's verifyDomain enforces that with a
+ * Postgres advisory lock keyed by the hostname string (there's no single row
+ * to FOR-UPDATE-lock across two different organizations' Domain rows) before
+ * ever flipping a row to VERIFIED.
+ */
+model Domain {
+  id                String            @id @default(cuid())
+  clientAccountId   String
+  clientAccount     ClientAccount     @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  hostname          String
+  status            DomainStatus      @default(PENDING_VERIFICATION)
+  verificationToken String
+  verifiedAt        DateTime?
+  lastCheckedAt     DateTime?
+  lastCheckError    String?
+  ingressEndpoints  IngressEndpoint[]
+  createdById       String?
+  createdBy         User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([clientAccountId])
+  @@index([status])
+  @@index([hostname])
+}
+
+/**
+ * Phase 5: a platform-owned WAN/public IP address available for ingress.
+ * Never assume one global WAN IP — the platform may front several
+ * gateways/datacenters, each with its own address(es). SHARED addresses may
+ * serve many hostnames (HTTP/HTTPS via SNI) or many distinct ports (TCP/UDP)
+ * across any organization; DEDICATED addresses are reserved to at most one
+ * organization (`reservedForOrgId`) and only that organization's endpoints
+ * may bind them (server/services/ingress.ts enforces this — never inferred
+ * from allocation alone).
+ */
+model PublicAddress {
+  id               String                  @id @default(cuid())
+  label            String
+  ipAddress        String                  @unique
+  ipVersion        IpVersion
+  allocation       PublicAddressAllocation @default(SHARED)
+  enabled          Boolean                 @default(true)
+  reservedForOrgId String?
+  reservedForOrg   ClientAccount?          @relation(fields: [reservedForOrgId], references: [id], onDelete: SetNull)
+  providerId       String?
+  provider         IngressProvider?        @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  ingressEndpoints IngressEndpoint[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([enabled])
+  @@index([reservedForOrgId])
+  @@index([providerId])
+}
+
+/**
+ * Phase 5: a platform-owned ingress/gateway provider. Noderaft is
+ * deliberately decoupled from any one gateway implementation — `kind`
+ * records which integration (if any) a provider represents and `config` is
+ * opaque, provider-specific detail that the core ingress model never reads.
+ * `gatewayHostname`, when set, is the stable hostname a domain should CNAME
+ * to instead of an A/AAAA record to a PublicAddress's raw IP (provider-
+ * agnostic: any gateway that prefers hostname-based routing can set this).
+ * MANUAL (the default, and the only kind Phase 5 assumes is wired up) means
+ * a human configures routing outside Noderaft; Noderaft only tracks the
+ * resulting endpoint's identity and status.
+ */
+model IngressProvider {
+  id               String              @id @default(cuid())
+  name             String
+  kind             IngressProviderKind @default(MANUAL)
+  enabled          Boolean             @default(true)
+  gatewayHostname  String?
+  config           Json?
+  publicAddresses  PublicAddress[]
+  ingressEndpoints IngressEndpoint[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+}
+
+/**
+ * Phase 5: the public exposure of one workload's service/container. This
+ * row IS the endpoint's identity — it never points at a node's WAN IP or a
+ * Docker host port. The chain is always
+ * public endpoint -> ingress/gateway (PublicAddress + IngressProvider) -> current workload backend
+ * never
+ * node WAN IP -> Docker host port,
+ * so relocating a workload to a different node only ever changes which
+ * backend the gateway forwards to — the public hostname/address/port an
+ * operator has already given out never changes, and this row's id/hostname/
+ * publicPort are untouched by a relocation (see tests/ingress-phase5.test.ts
+ * "endpoint identity remains independent of workload node").
+ * HTTPS/HTTP endpoints resolve through a verified `domain` (hostname-routed,
+ * SNI-shared on the PublicAddress) and never set `publicPort`. TCP/UDP
+ * endpoints have no `domain` and instead reserve an explicit
+ * (publicAddressId, publicPort, exposureType) tuple — conflicts are checked
+ * in server/services/ingress.ts before create, with this unique constraint
+ * as the DB-level backstop (nulls are distinct in Postgres, so it never
+ * collides with HTTP/HTTPS rows).
+ */
+model IngressEndpoint {
+  id              String                @id @default(cuid())
+  clientAccountId String
+  clientAccount   ClientAccount         @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
+  workloadId      String
+  workload        Project               @relation(fields: [workloadId], references: [id], onDelete: Cascade)
+  containerId     String?
+  container       Container?            @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  // Logical compose service name — set when the target container hasn't
+  // been discovered/adopted yet (or the workload isn't managed compose).
+  serviceName     String?
+  targetPort      Int
+  exposureType    IngressExposureType
+  domainId        String?               @unique
+  domain          Domain?               @relation(fields: [domainId], references: [id], onDelete: Restrict)
+  publicAddressId String
+  publicAddress   PublicAddress         @relation(fields: [publicAddressId], references: [id], onDelete: Restrict)
+  publicPort      Int?
+  providerId      String?
+  provider        IngressProvider?      @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  status          IngressEndpointStatus @default(PENDING)
+  statusDetail    String?
+  createdById     String?
+  createdBy       User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([publicAddressId, publicPort, exposureType])
+  @@index([clientAccountId])
+  @@index([workloadId])
+  @@index([publicAddressId])
+  @@index([providerId])
+  @@index([status])
 }
