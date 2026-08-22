@@ -8,6 +8,7 @@ import { getAttentionFeedForAdmin, getExpectedStates } from "@/server/services/a
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { deleteWorkload } from "@/server/services/workload-lifecycle";
+import { assertWorkloadReassignable } from "@/server/services/ingress";
 
 export async function GET(
   _: Request,
@@ -100,6 +101,19 @@ export async function PATCH(
     const target = await prisma.project.findUnique({ where: { id } });
     if (!target) {
       return fail("NOT_FOUND", "Workload not found", 404);
+    }
+
+    // Reassigning a workload to a different organization while it still has
+    // ingress endpoints would leave those endpoints' clientAccountId (fixed
+    // at create time) pointing at the OLD organization while
+    // IngressEndpoint.workloadId now resolves through to the new one's
+    // containers — letting the old tenant keep managing (and routing public
+    // traffic into) a workload it no longer owns. Reassignment must never
+    // silently orphan that ownership; force the endpoints to be dealt with
+    // first, the same way domain/address/provider deletion is blocked while
+    // still referenced.
+    if (body.clientAccountId !== undefined && body.clientAccountId !== target.clientAccountId) {
+      await assertWorkloadReassignable(id);
     }
 
     await prisma.project.update({

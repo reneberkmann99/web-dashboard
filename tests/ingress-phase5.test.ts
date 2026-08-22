@@ -18,6 +18,7 @@ import {
 } from "@/server/services/domains";
 import {
   IngressForbiddenError,
+  assertWorkloadReassignable,
   checkIngressPortConflict,
   createIngressEndpoint,
   createIngressProvider,
@@ -28,6 +29,7 @@ import {
   listAvailablePublicAddressesForOrg,
   listIngressEndpoints,
   listPublicAddresses,
+  reconcileIngressEndpointsForDeactivatedContainers,
   updateIngressEndpoint,
   updatePublicAddress
 } from "@/server/services/ingress";
@@ -969,5 +971,61 @@ describe("Phase 5 review follow-ups", () => {
     expect(attached && deleted).toBe(false);
     // Exactly one side should have won (the other rejected).
     expect([attachResult.status, deleteResult.status].filter((s) => s === "fulfilled")).toHaveLength(1);
+  });
+
+  it("excludes an address that inherits a disabled provider from the organization picker", async () => {
+    const disabledProvider = await createIngressProvider({ name: "Disabled picker gw", enabled: false, actor: sessionFor(world.adminA) });
+    const addressWithDisabledProvider = await createPublicAddress({
+      label: "Disabled provider picker", ipAddress: "203.0.113.173", ipVersion: "V4", providerId: disabledProvider.id, actor: sessionFor(world.adminA)
+    });
+    const plainAddress = await createPublicAddress({ label: "Plain picker", ipAddress: "203.0.113.174", ipVersion: "V4", actor: sessionFor(world.adminA) });
+
+    const picker = await listAvailablePublicAddressesForOrg(world.clientA.id);
+    expect(picker.some((a) => a.id === addressWithDisabledProvider.id)).toBe(false);
+    expect(picker.some((a) => a.id === plainAddress.id)).toBe(true);
+  });
+
+  it("blocks reassigning a workload to a different organization while it still has an ingress endpoint", async () => {
+    const address = await createPublicAddress({ label: "Reassign test", ipAddress: "203.0.113.175", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8400, exposureType: "TCP", publicAddressId: address.id, publicPort: 28400,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    await expect(assertWorkloadReassignable(world.projectA.id)).rejects.toThrow("WORKLOAD_HAS_INGRESS_ENDPOINT");
+
+    // A workload with no endpoints is unaffected (a fresh one — projectB
+    // accumulates endpoints across other tests in this file).
+    const freshProject = await prisma.project.create({
+      data: { name: "Reassign-clean", slug: `reassign-clean-${Date.now()}`, clientAccountId: world.clientA.id, nodeId: world.node1.id, isActive: true }
+    });
+    await expect(assertWorkloadReassignable(freshProject.id)).resolves.toBeUndefined();
+  });
+
+  it("reconciles a bound endpoint to ERROR when its container is deactivated by inventory sync, but never touches an already-DISABLED endpoint", async () => {
+    const containerA = await prisma.container.create({
+      data: { nodeId: world.node1.id, projectId: world.projectA.id, dockerContainerId: `reconcile-a-${Date.now()}`, dockerName: "reconcile-a", isActive: true }
+    });
+    const containerB = await prisma.container.create({
+      data: { nodeId: world.node1.id, projectId: world.projectA.id, dockerContainerId: `reconcile-b-${Date.now()}`, dockerName: "reconcile-b", isActive: true }
+    });
+    const address = await createPublicAddress({ label: "Reconcile test", ipAddress: "203.0.113.176", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const endpointA = await createIngressEndpoint({
+      workloadId: world.projectA.id, containerId: containerA.id, targetPort: 8500, exposureType: "TCP", publicAddressId: address.id, publicPort: 28500,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    const address2 = await createPublicAddress({ label: "Reconcile test 2", ipAddress: "203.0.113.177", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const endpointB = await createIngressEndpoint({
+      workloadId: world.projectA.id, containerId: containerB.id, targetPort: 8501, exposureType: "TCP", publicAddressId: address2.id, publicPort: 28501,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    await updateIngressEndpoint({ id: endpointB.id, status: "DISABLED", actor: sessionFor(world.clientAAdmin) });
+
+    await reconcileIngressEndpointsForDeactivatedContainers([containerA.id, containerB.id]);
+
+    const freshA = await getIngressEndpoint(endpointA.id, sessionFor(world.clientAAdmin));
+    const freshB = await getIngressEndpoint(endpointB.id, sessionFor(world.clientAAdmin));
+    expect(freshA.status).toBe("ERROR");
+    expect(freshA.statusDetail).toBe("Backend container is no longer reported by the node agent");
+    expect(freshB.status).toBe("DISABLED"); // untouched — an operator's explicit disable is never overwritten
   });
 });

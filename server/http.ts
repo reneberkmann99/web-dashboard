@@ -58,6 +58,9 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "CONTAINER_HAS_INGRESS_ENDPOINT") {
       return fail("CONTAINER_HAS_INGRESS_ENDPOINT", "This container backs an ingress endpoint — delete or repoint that endpoint before deleting it", 409);
     }
+    if (error.message === "WORKLOAD_HAS_INGRESS_ENDPOINT") {
+      return fail("WORKLOAD_HAS_INGRESS_ENDPOINT", "This workload has ingress endpoints — delete or repoint them before reassigning it to a different organization", 409);
+    }
     if (error.message === "ATTENTION_NOT_ACTIVE") {
       return fail("ATTENTION_NOT_ACTIVE", "The attention condition is no longer active", 409);
     }

@@ -178,15 +178,63 @@ export async function listPublicAddresses(actor: AuthSession) {
 
 /**
  * Client-safe picker: only what an organization is allowed to bind an
- * IngressEndpoint to (enabled, and either SHARED or DEDICATED-to-them) — no
- * other organization's reservation or platform inventory is exposed.
+ * IngressEndpoint to (enabled, either SHARED or DEDICATED-to-them, and not
+ * inheriting a disabled provider — createIngressEndpoint would reject that
+ * combination as INGRESS_PROVIDER_UNAVAILABLE, so it's never presented as a
+ * directly bindable choice here) — no other organization's reservation or
+ * platform inventory is exposed.
  */
 export async function listAvailablePublicAddressesForOrg(clientAccountId: string) {
   return prisma.publicAddress.findMany({
-    where: { enabled: true, OR: [{ allocation: "SHARED" }, { reservedForOrgId: clientAccountId }] },
+    where: {
+      enabled: true,
+      AND: [
+        { OR: [{ allocation: "SHARED" }, { reservedForOrgId: clientAccountId }] },
+        { OR: [{ providerId: null }, { provider: { enabled: true } }] }
+      ]
+    },
     orderBy: { label: "asc" },
     select: { id: true, label: true, ipAddress: true, ipVersion: true, allocation: true }
   });
+}
+
+/**
+ * Best-effort reconciliation for container inventory sync (see
+ * server/services/containers.ts and server/services/compose.ts): when a
+ * sweep discovers containers no longer reported by the node agent and marks
+ * them inactive, any IngressEndpoint still pointing at one of them no longer
+ * has a real backend. deleteContainer's own guard (server/services/
+ * container-lifecycle.ts) only covers an explicit admin delete — it never
+ * runs for these background sweeps — so without this, the endpoint would
+ * keep reporting ACTIVE while targeting a container that's gone. Moves it to
+ * ERROR (visibly wrong) rather than leaving it silently stale; never
+ * touches an endpoint an operator has already DISABLED.
+ */
+export async function reconcileIngressEndpointsForDeactivatedContainers(containerIds: string[]): Promise<void> {
+  if (containerIds.length === 0) return;
+  await prisma.ingressEndpoint
+    .updateMany({
+      where: { containerId: { in: containerIds }, status: { not: "DISABLED" } },
+      data: { status: "ERROR", statusDetail: "Backend container is no longer reported by the node agent" }
+    })
+    .catch(() => undefined);
+}
+
+/**
+ * Guards workload reassignment to a different organization (called from
+ * app/api/admin/workloads/[id]/route.ts's PATCH handler). IngressEndpoint.
+ * clientAccountId is captured once at create time and never re-derived from
+ * its workload — reassigning a workload with a bound endpoint out from
+ * under it would leave the endpoint owned by the OLD organization while its
+ * containerId ownership check (updateIngressEndpoint) resolves through the
+ * workload's NEW containers, letting the old tenant keep controlling public
+ * routing into a workload it no longer owns. Reassignment must deal with
+ * (delete/repoint) any bound endpoints first, the same way domain/address/
+ * provider deletion is blocked while still referenced.
+ */
+export async function assertWorkloadReassignable(workloadId: string): Promise<void> {
+  const boundEndpoint = await prisma.ingressEndpoint.findFirst({ where: { workloadId }, select: { id: true } });
+  if (boundEndpoint) throw new Error("WORKLOAD_HAS_INGRESS_ENDPOINT");
 }
 
 export type UpdatePublicAddressInput = {

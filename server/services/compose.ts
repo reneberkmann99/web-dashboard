@@ -1,6 +1,7 @@
 import { ProjectSource } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
+import { reconcileIngressEndpointsForDeactivatedContainers } from "@/server/services/ingress";
 
 /**
  * Compose workload discovery, adoption, conversion & reconciliation.
@@ -141,15 +142,23 @@ export async function reconcileComposeWorkloads(nodeId: string, live: ComposeCon
     // Containers previously in this project but no longer reported become
     // inactive (kept for history, never deleted).
     if (members.length > 0) {
-      await prisma.container.updateMany({
+      const deactivating = await prisma.container.findMany({
         where: {
           projectId: project.id,
           nodeId,
           isActive: true,
           dockerContainerId: { notIn: members.map((c) => c.id) }
         },
-        data: { isActive: false, lastSeenAt: new Date() }
+        select: { id: true }
       });
+      if (deactivating.length > 0) {
+        const deactivatingIds = deactivating.map((c) => c.id);
+        await prisma.container.updateMany({
+          where: { id: { in: deactivatingIds } },
+          data: { isActive: false, lastSeenAt: new Date() }
+        });
+        await reconcileIngressEndpointsForDeactivatedContainers(deactivatingIds);
+      }
     }
   }
 

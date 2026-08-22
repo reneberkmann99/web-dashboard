@@ -18,6 +18,7 @@ import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { recordNodePoll, type HeartbeatState } from "@/server/services/node-heartbeat";
 import { getAttentionMap, syncAttentionIfDue, getExpectedStates, isExpectedRunning } from "@/server/services/attention";
 import { collectOverviewSnapshot } from "@/server/services/overview";
+import { reconcileIngressEndpointsForDeactivatedContainers } from "@/server/services/ingress";
 import { ContainerView, OverviewStats, DiscoveredContainer } from "@/types/domain";
 
 function mapStatus(value?: string): ContainerView["status"] {
@@ -580,12 +581,22 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
     // agent actually answered with an inventory (an offline/timed-out agent
     // returns an empty list and must never trigger a sweep).
     if (runtimePayload.nodeOnline && seenIds.size > 0) {
-      await prisma.container
-        .updateMany({
+      const deactivating = await prisma.container
+        .findMany({
           where: { nodeId: node.id, isActive: true, dockerContainerId: { notIn: Array.from(seenIds) } },
-          data: { isActive: false, lastSeenAt: new Date() }
+          select: { id: true }
         })
-        .catch(() => undefined);
+        .catch(() => []);
+      if (deactivating.length > 0) {
+        const deactivatingIds = deactivating.map((c) => c.id);
+        await prisma.container
+          .updateMany({
+            where: { id: { in: deactivatingIds } },
+            data: { isActive: false, lastSeenAt: new Date() }
+          })
+          .catch(() => undefined);
+        await reconcileIngressEndpointsForDeactivatedContainers(deactivatingIds);
+      }
     }
 
     // Compose reconciliation already ran in collectOverviewSnapshot().
