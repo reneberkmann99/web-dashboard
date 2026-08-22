@@ -159,6 +159,17 @@ async function assertProviderExists(providerId: string): Promise<void> {
   if (!provider) throw new Error("NOT_FOUND");
 }
 
+/**
+ * A disabled provider must never be freshly bound to an IngressEndpoint —
+ * whether explicitly chosen or inherited from a PublicAddress — on create
+ * OR update, otherwise the provider's own Disable action has no effect on
+ * new/changed bindings.
+ */
+async function assertProviderUsable(client: Prisma.TransactionClient | typeof prisma, providerId: string): Promise<void> {
+  const provider = await client.ingressProvider.findUnique({ where: { id: providerId }, select: { id: true, enabled: true } });
+  if (!provider || !provider.enabled) throw new Error("INGRESS_PROVIDER_UNAVAILABLE");
+}
+
 /** ADMIN-only full management view (every address, including reservation/provider detail). */
 export async function listPublicAddresses(actor: AuthSession) {
   requirePlatformAdmin(actor);
@@ -459,6 +470,39 @@ export async function checkIngressPortConflict(
   return Boolean(conflict);
 }
 
+const HTTP_IMPLIED_PORT: Record<"HTTP" | "HTTPS", number> = { HTTP: 80, HTTPS: 443 };
+
+/**
+ * HTTP/HTTPS endpoints never set publicPort (checkIngressPortConflict alone
+ * never sees them), but at the actual gateway they still occupy the
+ * conventional TCP/80 or TCP/443 socket on their PublicAddress via SNI/vhost
+ * routing — a raw TCP endpoint explicitly requesting that same port can't
+ * bind it too, and a new HTTP(S) endpoint can't be created where a raw TCP
+ * endpoint already claims its conventional port. Two HTTP(S) endpoints on
+ * the same address never conflict with EACH OTHER (that's exactly what
+ * SNI/vhost routing exists for) — this only ever checks against TCP rows.
+ */
+async function checkHttpListenerConflict(
+  client: Prisma.TransactionClient | typeof prisma,
+  input: { publicAddressId: string; exposureType: IngressExposureType; publicPort: number | null; excludeId?: string }
+): Promise<boolean> {
+  let conflictWhere: { exposureType: IngressExposureType; publicPort?: number };
+  if (input.exposureType === "TCP" && input.publicPort !== null) {
+    const impliedType = input.publicPort === HTTP_IMPLIED_PORT.HTTP ? "HTTP" : input.publicPort === HTTP_IMPLIED_PORT.HTTPS ? "HTTPS" : null;
+    if (!impliedType) return false;
+    conflictWhere = { exposureType: impliedType };
+  } else if (input.exposureType === "HTTP" || input.exposureType === "HTTPS") {
+    conflictWhere = { exposureType: "TCP", publicPort: HTTP_IMPLIED_PORT[input.exposureType] };
+  } else {
+    return false;
+  }
+  const conflict = await client.ingressEndpoint.findFirst({
+    where: { publicAddressId: input.publicAddressId, ...conflictWhere, ...(input.excludeId ? { id: { not: input.excludeId } } : {}) },
+    select: { id: true }
+  });
+  return Boolean(conflict);
+}
+
 export type CreateIngressEndpointInput = {
   clientAccountId?: string | null;
   workloadId: string;
@@ -487,11 +531,13 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
 
   // The workload (and, if given, the container) must belong to this exact
   // organization — never trust the client to only submit its own ids. A
-  // container that's been deleted (soft: isActive false, see
-  // server/services/container-lifecycle.ts) can never back an endpoint —
-  // the row surviving is bookkeeping, not something a gateway can route to.
-  const workload = await prisma.project.findUnique({ where: { id: input.workloadId }, select: { id: true, clientAccountId: true } });
-  if (!workload || workload.clientAccountId !== clientAccountId) throw new Error("NOT_FOUND");
+  // deactivated workload (server/services/workload-lifecycle.ts) or a
+  // deleted (soft: isActive false, server/services/container-lifecycle.ts)
+  // container can never back an endpoint — a stale picker submission or a
+  // direct API call must not be able to bind to something the platform
+  // considers inactive.
+  const workload = await prisma.project.findUnique({ where: { id: input.workloadId }, select: { id: true, clientAccountId: true, isActive: true } });
+  if (!workload || workload.clientAccountId !== clientAccountId || !workload.isActive) throw new Error("NOT_FOUND");
   if (input.containerId) {
     const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true, isActive: true } });
     if (!container || container.projectId !== input.workloadId || !container.isActive) throw new Error("NOT_FOUND");
@@ -541,10 +587,7 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
       // explicitly chosen or inherited from the address — otherwise the
       // provider's own Disable action has no effect on new bindings.
       const resolvedProviderId = input.providerId ?? publicAddress.providerId ?? null;
-      if (resolvedProviderId) {
-        const provider = await tx.ingressProvider.findUnique({ where: { id: resolvedProviderId }, select: { id: true, enabled: true } });
-        if (!provider || !provider.enabled) throw new Error("INGRESS_PROVIDER_UNAVAILABLE");
-      }
+      if (resolvedProviderId) await assertProviderUsable(tx, resolvedProviderId);
 
       await lockClientAccountForQuota(tx, clientAccountId);
 
@@ -556,6 +599,9 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
         if (await checkIngressPortConflict({ publicAddressId: input.publicAddressId, publicPort: input.publicPort!, exposureType: input.exposureType }, tx)) {
           throw new Error("PORT_CONFLICT");
         }
+      }
+      if (await checkHttpListenerConflict(tx, { publicAddressId: input.publicAddressId, exposureType: input.exposureType, publicPort: tcpUdp ? input.publicPort! : null })) {
+        throw new Error("PORT_CONFLICT");
       }
 
       if (account.maxIngressEndpoints !== null) {
@@ -663,6 +709,8 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
   const resultingContainerId = input.containerId !== undefined ? input.containerId : existing.containerId;
   const resultingServiceName = input.serviceName !== undefined ? input.serviceName : existing.serviceName;
   if (!resultingContainerId && !resultingServiceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
+
+  if (input.providerId) await assertProviderUsable(prisma, input.providerId);
 
   const endpoint = await prisma.ingressEndpoint.update({
     where: { id: input.id },

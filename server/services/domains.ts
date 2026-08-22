@@ -124,6 +124,12 @@ export async function createDomain(input: CreateDomainInput) {
       if (existing >= account.maxDomains) throw new Error("DOMAIN_QUOTA_EXCEEDED");
     }
 
+    // Not a global uniqueness check (see the Domain model doc comment) —
+    // just hygiene against this organization accumulating literal duplicate
+    // claims on the same hostname.
+    const duplicate = await tx.domain.findFirst({ where: { clientAccountId, hostname, status: { not: "DISABLED" } }, select: { id: true } });
+    if (duplicate) throw new Error("DOMAIN_ALREADY_CLAIMED");
+
     return tx.domain.create({
       data: {
         clientAccountId,
@@ -252,19 +258,44 @@ export async function verifyDomain(input: { id: string; actor: AuthSession; sour
     checkError = "DNS_LOOKUP_FAILED";
   }
 
-  // Conditional on still not DISABLED: the DNS lookup above can take a while,
-  // and an operator may disable the domain while it's in flight (the UI
-  // leaves Disable available during verification). Without this guard, the
-  // verification result would land after — and silently overwrite — an
-  // explicit disable.
-  const applied = await prisma.domain.updateMany({
-    where: { id: input.id, status: { not: "DISABLED" } },
-    data: {
-      status: verified ? "VERIFIED" : "INVALID",
-      verifiedAt: verified ? now : existing.verifiedAt,
-      lastCheckedAt: now,
-      lastCheckError: checkError
+  const { applied, finalVerified, finalError } = await prisma.$transaction(async (tx) => {
+    // hostname is deliberately NOT globally unique at the DB level (see the
+    // Domain model doc comment) — two different organizations' Domain rows
+    // can both exist for the same hostname string with no shared row to
+    // FOR-UPDATE-lock. An advisory lock keyed by the hostname is what
+    // serializes this check against a concurrent verification of the SAME
+    // hostname by a DIFFERENT organization, so two organizations can never
+    // both end up VERIFIED for it at once.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${existing.hostname}))`;
+
+    let finalVerified = verified;
+    let finalError = checkError;
+    if (verified) {
+      const conflicting = await tx.domain.findFirst({
+        where: { hostname: existing.hostname, status: "VERIFIED", id: { not: existing.id } },
+        select: { id: true }
+      });
+      if (conflicting) {
+        finalVerified = false;
+        finalError = "HOSTNAME_ALREADY_VERIFIED_ELSEWHERE";
+      }
     }
+
+    // Conditional on still not DISABLED: the DNS lookup above can take a
+    // while, and an operator may disable the domain while it's in flight
+    // (the UI leaves Disable available during verification). Without this
+    // guard, the verification result would land after — and silently
+    // overwrite — an explicit disable.
+    const applied = await tx.domain.updateMany({
+      where: { id: input.id, status: { not: "DISABLED" } },
+      data: {
+        status: finalVerified ? "VERIFIED" : "INVALID",
+        verifiedAt: finalVerified ? now : existing.verifiedAt,
+        lastCheckedAt: now,
+        lastCheckError: finalError
+      }
+    });
+    return { applied, finalVerified, finalError };
   });
 
   const domain = await prisma.domain.findUniqueOrThrow({ where: { id: input.id }, select: domainPublicSelect });
@@ -275,11 +306,11 @@ export async function verifyDomain(input: { id: string; actor: AuthSession; sour
       actorEmail: input.actor.email,
       actorRole: input.actor.role,
       clientAccountId: domain.clientAccountId,
-      action: verified ? "DOMAIN_VERIFIED" : "DOMAIN_VERIFICATION_FAILED",
+      action: finalVerified ? "DOMAIN_VERIFIED" : "DOMAIN_VERIFICATION_FAILED",
       targetType: "DOMAIN",
       targetId: domain.id,
-      metadata: { hostname: domain.hostname, error: checkError },
-      result: verified ? "SUCCESS" : "FAILURE",
+      metadata: { hostname: domain.hostname, error: finalError },
+      result: finalVerified ? "SUCCESS" : "FAILURE",
       sourceIp: input.sourceIp ?? null
     });
   }
@@ -310,9 +341,22 @@ export type DnsInstructions = {
 
 type RoutingCandidate = { id: string; ipAddress: string; ipVersion: "V4" | "V6"; provider: { gatewayHostname: string | null } | null };
 
+/**
+ * A CNAME record cannot coexist with a zone's mandatory SOA/NS records at
+ * the zone apex (e.g. "example.com" itself) — only a subdomain
+ * ("app.example.com") can ever use one. Determining the TRUE apex requires
+ * the public suffix list (co.uk, com.au, ...), which is out of scope here;
+ * this is a conservative approximation (2 labels = treat as apex) that only
+ * ever errs toward the always-DNS-valid A/AAAA fallback, never toward
+ * recommending an invalid CNAME.
+ */
+function isLikelyApex(hostname: string): boolean {
+  return hostname.split(".").length <= 2;
+}
+
 function dnsRecordFor(hostname: string, address: RoutingCandidate): DnsRecord {
   const gatewayHostname = address.provider?.gatewayHostname ?? null;
-  if (gatewayHostname) return { type: "CNAME", host: hostname, value: gatewayHostname, publicAddressId: address.id };
+  if (gatewayHostname && !isLikelyApex(hostname)) return { type: "CNAME", host: hostname, value: gatewayHostname, publicAddressId: address.id };
   return { type: address.ipVersion === "V4" ? "A" : "AAAA", host: hostname, value: address.ipAddress, publicAddressId: address.id };
 }
 

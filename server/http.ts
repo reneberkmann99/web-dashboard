@@ -100,6 +100,9 @@ export function fromError(error: unknown): NextResponse {
     if (error.message === "DOMAIN_QUOTA_EXCEEDED") {
       return fail(error.message, "This organization has reached its domain limit", 422);
     }
+    if (error.message === "DOMAIN_ALREADY_CLAIMED") {
+      return fail(error.message, "Your organization already has a claim on this hostname", 409);
+    }
     if (
       error.message === "INVALID_IP_ADDRESS" ||
       error.message === "SHARED_ADDRESS_CANNOT_BE_RESERVED" ||

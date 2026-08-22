@@ -735,4 +735,109 @@ describe("Phase 5 review follow-ups", () => {
       publicAddressId: addressWithDisabledProvider.id, publicPort: 27501, actor: sessionFor(world.clientAAdmin)
     })).rejects.toThrow("INGRESS_PROVIDER_UNAVAILABLE");
   });
+
+  it("rejects patching an endpoint onto a disabled provider", async () => {
+    const address = await createPublicAddress({ label: "Update provider test", ipAddress: "203.0.113.160", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const endpoint = await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7600, exposureType: "TCP", publicAddressId: address.id, publicPort: 27600,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    const disabledProvider = await createIngressProvider({ name: "Disabled for update", enabled: false, actor: sessionFor(world.adminA) });
+    await expect(updateIngressEndpoint({ id: endpoint.id, providerId: disabledProvider.id, actor: sessionFor(world.clientAAdmin) }))
+      .rejects.toThrow("INGRESS_PROVIDER_UNAVAILABLE");
+  });
+
+  it("rejects a deactivated workload as an endpoint target", async () => {
+    const inactiveProject = await prisma.project.create({
+      data: { name: "Inactive workload", slug: `inactive-${Date.now()}`, clientAccountId: world.clientA.id, nodeId: world.node1.id, isActive: false }
+    });
+    const address = await createPublicAddress({ label: "Inactive workload test", ipAddress: "203.0.113.161", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await expect(createIngressEndpoint({
+      workloadId: inactiveProject.id, serviceName: "svc", targetPort: 7700, exposureType: "TCP", publicAddressId: address.id, publicPort: 27700,
+      actor: sessionFor(world.clientAAdmin)
+    })).rejects.toThrow("NOT_FOUND");
+  });
+
+  it("a raw TCP endpoint on port 80/443 conflicts with an HTTP/HTTPS endpoint already on that address, and vice versa", async () => {
+    const address = await createPublicAddress({ label: "HTTP vs TCP conflict", ipAddress: "203.0.113.162", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const domain = await verifiedDomain("http-vs-tcp.example.com", world.clientA, world.clientAAdmin);
+    await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8080, exposureType: "HTTP", domainId: domain.id, publicAddressId: address.id,
+      actor: sessionFor(world.clientAAdmin)
+    });
+
+    // A raw TCP endpoint explicitly on port 80 collides with the HTTP endpoint's implied TCP/80 socket.
+    await expect(createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8000, exposureType: "TCP", publicAddressId: address.id, publicPort: 80,
+      actor: sessionFor(world.clientAAdmin)
+    })).rejects.toThrow("PORT_CONFLICT");
+
+    // UDP/80 does not conflict (different protocol/socket).
+    const udpEndpoint = await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8001, exposureType: "UDP", publicAddressId: address.id, publicPort: 80,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    expect(udpEndpoint.publicPort).toBe(80);
+
+    // Reverse: a raw TCP endpoint already on 443 blocks a new HTTPS endpoint on the same address.
+    const address2 = await createPublicAddress({ label: "HTTP vs TCP conflict 2", ipAddress: "203.0.113.163", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8002, exposureType: "TCP", publicAddressId: address2.id, publicPort: 443,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    const domain2 = await verifiedDomain("http-vs-tcp-2.example.com", world.clientA, world.clientAAdmin);
+    await expect(createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8003, exposureType: "HTTPS", domainId: domain2.id, publicAddressId: address2.id,
+      actor: sessionFor(world.clientAAdmin)
+    })).rejects.toThrow("PORT_CONFLICT");
+  });
+
+  it("recommends an A/AAAA record (never CNAME) at a zone apex, even with a CNAME-capable provider", async () => {
+    const cnameProvider = await createIngressProvider({ name: "Apex test gw", gatewayHostname: "apex.gw.test", actor: sessionFor(world.adminA) });
+    const address = await createPublicAddress({ label: "Apex test address", ipAddress: "203.0.113.164", ipVersion: "V4", providerId: cnameProvider.id, actor: sessionFor(world.adminA) });
+    const apexDomain = await createDomain({ hostname: "apex-domain-test.com", actor: sessionFor(world.clientAAdmin) });
+
+    const instructions = await dnsInstructionsForDomain(apexDomain.id, sessionFor(world.clientAAdmin));
+    const candidate = instructions.routingAlternatives.find((r) => r.publicAddressId === address.id);
+    expect(candidate).toMatchObject({ type: "A", value: "203.0.113.164" });
+  });
+
+  it("hostname is not globally unique — two organizations may hold independent pending claims, but never both VERIFIED at once", async () => {
+    const sharedHostname = `contested-${Date.now()}.example.com`;
+    const domainA = await createDomain({ hostname: sharedHostname, actor: sessionFor(world.clientAAdmin) });
+
+    const clientBAdmin = await prisma.user.create({
+      data: {
+        email: `b-admin-squat-${Date.now()}@client-b.local`,
+        displayName: "B Admin Squat",
+        passwordHash: world.password,
+        role: "CLIENT_ADMIN",
+        clientAccountId: world.clientB.id,
+        isActive: true
+      }
+    });
+    // Client B can independently claim the same hostname — creation must not
+    // be blocked by client A's still-unverified claim (that would let A
+    // permanently squat a hostname it doesn't actually control).
+    const domainB = await createDomain({ hostname: sharedHostname, actor: sessionFor(clientBAdmin) });
+    expect(domainB.id).not.toBe(domainA.id);
+
+    setDomainTxtResolverForTests(async () => [[verificationTxtValue(domainA.verificationToken)]]);
+    const verifiedA = await verifyDomain({ id: domainA.id, actor: sessionFor(world.clientAAdmin) });
+    expect(verifiedA.status).toBe("VERIFIED");
+
+    // B's TXT record (its own token) also happens to be published — but A
+    // already holds VERIFIED for this hostname, so B's verification must not
+    // also succeed.
+    setDomainTxtResolverForTests(async () => [[verificationTxtValue(domainB.verificationToken)]]);
+    const verifiedB = await verifyDomain({ id: domainB.id, actor: sessionFor(clientBAdmin) });
+    expect(verifiedB.status).toBe("INVALID");
+    expect(verifiedB.lastCheckError).toBe("HOSTNAME_ALREADY_VERIFIED_ELSEWHERE");
+  });
+
+  it("rejects a second non-disabled claim on the same hostname by the same organization", async () => {
+    const hostname = `dup-claim-${Date.now()}.example.com`;
+    await createDomain({ hostname, actor: sessionFor(world.clientAAdmin) });
+    await expect(createDomain({ hostname, actor: sessionFor(world.clientAAdmin) })).rejects.toThrow("DOMAIN_ALREADY_CLAIMED");
+  });
 });

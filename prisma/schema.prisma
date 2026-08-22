@@ -1308,15 +1308,25 @@ model RecentFailureDismissal {
  * client-supplied claim). A domain must be VERIFIED before any
  * IngressEndpoint may bind it (HTTPS/HTTP only — TCP/UDP endpoints never
  * reference a Domain, they route by PublicAddress + explicit port).
- * `hostname` is globally unique: two organizations can never claim the same
- * hostname, which is what makes cross-organization hostname collision at
- * the shared gateway structurally impossible rather than a UI-level check.
+ *
+ * `hostname` is deliberately NOT globally unique at the DB level: a hard
+ * unique constraint here would let any organization "squat" a hostname it
+ * doesn't control by creating a PENDING_VERIFICATION row for it — since that
+ * row would never itself become VERIFIED, but its mere existence would
+ * permanently block the real owner from ever adding the domain. Multiple
+ * organizations may hold independent, never-conflicting PENDING_VERIFICATION
+ * (or INVALID) claims on the same hostname simultaneously. What must never
+ * happen is two organizations both holding VERIFIED for the same hostname at
+ * once — server/services/domains.ts's verifyDomain enforces that with a
+ * Postgres advisory lock keyed by the hostname string (there's no single row
+ * to FOR-UPDATE-lock across two different organizations' Domain rows) before
+ * ever flipping a row to VERIFIED.
  */
 model Domain {
   id                String            @id @default(cuid())
   clientAccountId   String
   clientAccount     ClientAccount     @relation(fields: [clientAccountId], references: [id], onDelete: Cascade)
-  hostname          String            @unique
+  hostname          String
   status            DomainStatus      @default(PENDING_VERIFICATION)
   verificationToken String
   verifiedAt        DateTime?
@@ -1330,6 +1340,7 @@ model Domain {
 
   @@index([clientAccountId])
   @@index([status])
+  @@index([hostname])
 }
 
 /**
