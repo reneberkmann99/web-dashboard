@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
+import { clientCard } from "@/components/mobile/mobile-resource-cards";
 
 type ClientListRecord = {
   id: string;
@@ -143,7 +144,7 @@ export default function AdminClientsPage(): React.JSX.Element {
           }}
           placeholder="Search clients…"
           aria-label="Search clients"
-          className="w-64"
+          className="w-full md:w-64"
         />
       </div>
 
@@ -162,6 +163,11 @@ export default function AdminClientsPage(): React.JSX.Element {
           go({ url: `/admin/clients/${c.id}`, label: c.name, type: "client", id: c.id });
         }}
         rowKey={(c) => c.id}
+        mobileCard={(c) =>
+          clientCard(c, () => {
+            go({ url: `/admin/clients/${c.id}`, label: c.name, type: "client", id: c.id });
+          })
+        }
       />
 
       <Modal

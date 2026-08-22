@@ -12,6 +12,7 @@ import { TabBar } from "@/components/ui/tab-bar";
 import { DeploymentsTab } from "@/components/workloads/deployment/deployments-tab";
 import { SecretsTab } from "@/components/workloads/deployment/secrets-tab";
 import { RollbackFlow } from "@/components/workloads/deployment/rollback-flow";
+import { containerCard } from "@/components/mobile/mobile-resource-cards";
 import type { WorkloadSummary, ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
@@ -126,6 +127,11 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
             go({ url: `/client/containers/${c.assignmentId}`, label: c.name, type: "container", id: c.containerId });
           }}
           rowKey={(c) => c.containerId}
+          mobileCard={(c) =>
+            containerCard(c, () => {
+              go({ url: `/client/containers/${c.assignmentId}`, label: c.name, type: "container", id: c.containerId });
+            })
+          }
         />
       )}
 

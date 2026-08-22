@@ -17,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Pagination } from "@/components/ui/pagination";
 import { timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
+import { MobileFiltersRow } from "@/components/mobile/mobile-resource-cards";
 
 type Actor = { displayName: string; email: string } | null;
 type Acknowledgement = {
@@ -120,6 +122,8 @@ export default function AttentionPage(): React.JSX.Element {
   const [maintenanceEnd, setMaintenanceEnd] = useState("");
   const [maintenanceReason, setMaintenanceReason] = useState("");
   const [page, setPage] = useState(0);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetCount, setSheetCount] = useState<number | null>(null);
   const PAGE_SIZE = 15;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -241,15 +245,15 @@ export default function AttentionPage(): React.JSX.Element {
         </Button>}
       />
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+      <div className="flex gap-2 overflow-x-auto border-b border-border pb-3 no-scrollbar">
         {tabs.map(([key, label]) => (
-          <button key={key} type="button" onClick={() => setView(key)} className={`rounded-md px-3 py-1.5 text-sm ${view === key ? "bg-brand text-brand-contrast" : "bg-panelAlt text-muted hover:text-text"}`}>
+          <button key={key} type="button" onClick={() => setView(key)} className={`flex-none rounded-md px-3 py-1.5 text-sm ${view === key ? "bg-brand text-brand-contrast" : "bg-panelAlt text-muted hover:text-text"}`}>
             {label}
           </button>
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="hidden flex-wrap gap-2 md:flex">
         <Select value={severity} onChange={(event) => { setSeverity(event.target.value); setPage(0); }} className="w-auto min-w-36">
           <option value="">All severities</option><option value="CRITICAL">Critical</option><option value="WARNING">Warning</option><option value="INFO">Info</option>
         </Select>
@@ -267,12 +271,27 @@ export default function AttentionPage(): React.JSX.Element {
         </Select>
       </div>
 
+      <div className="md:hidden">
+        <MobileFiltersRow
+          count={(severity ? 1 : 0) + (conditionType ? 1 : 0) + (nodeId ? 1 : 0) + (workloadId ? 1 : 0) + (maintenanceFilter ? 1 : 0)}
+          onOpen={() => {
+            setSheetCount(conditionsQuery.data?.conditions.length ?? null);
+            setSheetOpen(true);
+          }}
+          chips={[
+            ...(severity ? [{ label: severity.toLowerCase() }] : []),
+            ...(nodeId ? [{ label: refsQuery.data?.nodes.find((n) => n.id === nodeId)?.name ?? "Node" }] : []),
+            ...(conditionType ? [{ label: conditionType }] : [])
+          ]}
+        />
+      </div>
+
       <section className="space-y-2" aria-label={`${view} attention conditions`}>
         {conditionsQuery.isLoading && <div className="h-24 animate-pulse rounded-lg bg-panelAlt" />}
         {conditionsQuery.isError && <p className="rounded-lg border border-critical/30 bg-critical/5 p-4 text-critical-foreground">Failed to load attention conditions.</p>}
         {!conditionsQuery.isLoading && conditions.length === 0 && <p className="rounded-lg border border-border bg-panelAlt/40 p-5 text-sm text-muted">No conditions match these filters.</p>}
         {conditions.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((condition) => (
-          <button key={condition.id} type="button" onClick={() => setSelectedId(condition.id)} className={`w-full rounded-lg border p-4 text-left transition hover:border-accent/50 ${condition.resolvedAt ? "border-border bg-panelAlt/30 opacity-75" : condition.severity === "CRITICAL" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"}`}>
+          <button key={condition.id} type="button" onClick={() => setSelectedId(condition.id)} className={`w-full rounded-lg border p-4 text-left transition hover:border-accent/50 max-md:rounded-[12px] max-md:p-3.5 ${condition.resolvedAt ? "border-border bg-panelAlt/30 opacity-75" : condition.severity === "CRITICAL" ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5"}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -305,6 +324,70 @@ export default function AttentionPage(): React.JSX.Element {
           onPageChange={(p) => setPage(p - 1)}
         />
       )}
+
+      <FilterSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        groups={[
+          {
+            id: "severity",
+            label: "Severity",
+            options: [
+              { value: "CRITICAL", label: "Critical" },
+              { value: "WARNING", label: "Warning" },
+              { value: "INFO", label: "Info" }
+            ],
+            selected: severity ? [severity] : []
+          },
+          {
+            id: "conditionType",
+            label: "Condition type",
+            options: conditionTypes.map((type) => ({ value: type, label: type })),
+            selected: conditionType ? [conditionType] : []
+          },
+          {
+            id: "node",
+            label: "Node",
+            options: (refsQuery.data?.nodes ?? []).map((node) => ({ value: node.id, label: node.name })),
+            selected: nodeId ? [nodeId] : []
+          },
+          {
+            id: "workload",
+            label: "Workload",
+            options: (refsQuery.data?.workloads ?? []).map((workload) => ({ value: workload.id, label: workload.name })),
+            selected: workloadId ? [workloadId] : []
+          },
+          {
+            id: "maintenance",
+            label: "Maintenance",
+            options: [
+              { value: "active", label: "Under maintenance" },
+              { value: "none", label: "Not under maintenance" }
+            ],
+            selected: maintenanceFilter ? [maintenanceFilter] : []
+          }
+        ]}
+        resultCount={sheetCount}
+        resultNoun="conditions"
+        onApply={(draft: FilterDraft) => {
+          const pick = (id: string): string => draft.groups.find((g) => g.id === id)?.selected[0] ?? "";
+          setSeverity(pick("severity"));
+          setConditionType(pick("conditionType"));
+          setNodeId(pick("node"));
+          setWorkloadId(pick("workload"));
+          setMaintenanceFilter(pick("maintenance"));
+          setPage(0);
+        }}
+        onReset={() => {
+          setSeverity("");
+          setConditionType("");
+          setNodeId("");
+          setWorkloadId("");
+          setMaintenanceFilter("");
+          setPage(0);
+        }}
+        onDraftChange={() => setSheetCount(null)}
+      />
 
       {maintenanceWindows.length > 0 && (
         <section>

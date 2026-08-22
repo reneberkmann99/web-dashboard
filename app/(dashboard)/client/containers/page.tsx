@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
+import { containerCard } from "@/components/mobile/mobile-resource-cards";
 
 type ListResponse = {
   containers: ContainerView[];
@@ -104,6 +105,11 @@ export default function ClientContainersPage(): React.JSX.Element {
         onRowClick={(container) => {
           go({ url: `/client/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId });
         }}
+        mobileCard={(container) =>
+          containerCard(container, () => {
+            go({ url: `/client/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId });
+          })
+        }
       />
 
       <ConfirmDialog

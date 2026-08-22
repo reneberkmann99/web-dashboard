@@ -27,7 +27,33 @@ type NavApi = {
   goBreadcrumb: (index: number) => void;
   setTab: (tabLabel: string | null, url: string) => void;
   renameCurrent: (label: string) => void;
+  /** Root to return to after an account-sheet destination (mobile back chevron). */
+  mobileReturn: RootDef | null;
+  setMobileReturn: (def: RootDef | null) => void;
 };
+
+const MOBILE_RETURN_KEY = "noderaft:mobile-return";
+
+function readMobileReturn(): RootDef | null {
+  try {
+    const raw = window.sessionStorage.getItem(MOBILE_RETURN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as RootDef;
+    if (parsed && typeof parsed.href === "string") return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMobileReturn(def: RootDef | null): void {
+  try {
+    if (def) window.sessionStorage.setItem(MOBILE_RETURN_KEY, JSON.stringify(def));
+    else window.sessionStorage.removeItem(MOBILE_RETURN_KEY);
+  } catch {
+    /* storage unavailable — navigation still works */
+  }
+}
 
 const NavigationContext = createContext<NavApi | null>(null);
 
@@ -72,14 +98,25 @@ export function NavigationProvider({ children }: { children: React.ReactNode }):
     [router]
   );
 
+  const [mobileReturn, setMobileReturnState] = useState<RootDef | null>(() =>
+    typeof window === "undefined" ? null : readMobileReturn()
+  );
+
+  const setMobileReturn = useCallback((def: RootDef | null) => {
+    setMobileReturnState(def);
+    writeMobileReturn(def);
+  }, []);
+
   const goRoot = useCallback(
     (def: RootDef) => {
       const next: NavContextState = { rootKey: def.key, rootHref: def.href, stack: [{ kind: "root", label: def.label, url: def.href }] };
       saveContext(def.href, next);
       setCtx(next);
+      // Explicitly choosing a root clears any pending mobile sheet return target.
+      setMobileReturn(null);
       router.push(def.href);
     },
-    [router]
+    [router, setMobileReturn]
   );
 
   const goBreadcrumb = useCallback(
@@ -143,9 +180,11 @@ export function NavigationProvider({ children }: { children: React.ReactNode }):
       goRoot,
       goBreadcrumb,
       setTab,
-      renameCurrent
+      renameCurrent,
+      mobileReturn,
+      setMobileReturn
     }),
-    [ctx, pushResource, goRoot, goBreadcrumb, setTab, renameCurrent]
+    [ctx, pushResource, goRoot, goBreadcrumb, setTab, renameCurrent, mobileReturn, setMobileReturn]
   );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

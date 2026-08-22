@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,8 @@ export function DataTable<T>({
   rowKey,
   stateKey,
   toolbar,
+  mobileToolbar,
+  mobileCard,
   ariaLabel = "Resources"
 }: {
   columns: Column<T>[];
@@ -56,6 +58,10 @@ export function DataTable<T>({
   rowKey?: (row: T) => string;
   stateKey?: string;
   toolbar?: React.ReactNode;
+  /** Replaces the desktop toolbar below md (e.g. a Filters button + sheet). */
+  mobileToolbar?: React.ReactNode;
+  /** Mobile card presentation (design §02/§19); renders INSTEAD of the table below md. */
+  mobileCard?: (row: T) => React.ReactNode;
   ariaLabel?: string;
 }): React.JSX.Element {
   const [view, setView] = useStoredViewState(stateKey ? `table:${stateKey}` : null, {
@@ -129,10 +135,10 @@ export function DataTable<T>({
 
   return (
     <div className="space-y-3">
-      {(searchableText || toolbar) && (
+      {(searchableText || toolbar || mobileToolbar) && (
         <div className="flex flex-wrap items-center gap-2">
           {searchableText && (
-            <div className="relative min-w-56 flex-1 sm:max-w-sm">
+            <div className="relative min-w-56 flex-1 sm:max-w-sm max-md:w-full">
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <Input
                 type="search"
@@ -144,11 +150,12 @@ export function DataTable<T>({
               />
             </div>
           )}
-          {toolbar}
+          {toolbar && <div className="hidden flex-wrap items-center gap-2 md:flex">{toolbar}</div>}
+          {mobileToolbar && <div className="w-full md:hidden">{mobileToolbar}</div>}
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-panel border border-border bg-surface-deck">
+      <div className={cn("overflow-x-auto rounded-panel border border-border bg-surface-deck", mobileCard && "max-md:hidden")}>
         <table className="w-full text-sm" aria-label={ariaLabel}>
           <thead className="sticky top-0 bg-surface-raised/85 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted backdrop-blur">
             <tr>
@@ -189,8 +196,7 @@ export function DataTable<T>({
                 data-row-key={rowKey ? rowKey(row) : undefined}
                 className={cn(
                   "h-12 border-t border-border transition-colors",
-                  onRowClick && "cursor-pointer hover:bg-surface-raised/60 focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus",
-                  "max-md:hidden" // fallback handled below
+                  onRowClick && "cursor-pointer hover:bg-surface-raised/60 focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
                 )}
               >
                 {columns.map((col) => (
@@ -209,33 +215,17 @@ export function DataTable<T>({
                 ))}
               </tr>
             ))}
-            {/* Mobile fallback: card rows for small screens */}
-            {pageRows.map((row, rowIndex) => (
-              <tr
-                key={`${rowKey ? rowKey(row) : rowIndex}-card`}
-                className={cn("border-t border-border md:hidden", onRowClick && "cursor-pointer hover:bg-surface-raised/60")}
-                onClick={onRowClick ? (event) => openRow(row, event) : undefined}
-                onKeyDown={onRowClick ? (event) => openRow(row, event) : undefined}
-                tabIndex={onRowClick ? 0 : undefined}
-                role={onRowClick ? "link" : undefined}
-                data-row-key={rowKey ? rowKey(row) : undefined}
-              >
-                <td className="px-3 py-3">
-                  {columns
-                    .filter((c) => c.hideBelow === undefined)
-                    .slice(0, 3)
-                    .map((col) => (
-                      <div key={col.key} className="py-0.5">
-                        <span className="text-xs uppercase tracking-wide text-muted">{col.header}: </span>
-                        {col.render(row)}
-                      </div>
-                    ))}
-                </td>
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>
+
+      {mobileCard && (
+        <div className="space-y-2.5 md:hidden" aria-label={ariaLabel} data-mobile-cards>
+          {pageRows.map((row) => (
+            <Fragment key={rowKey ? rowKey(row) : undefined}>{mobileCard(row)}</Fragment>
+          ))}
+        </div>
+      )}
 
       {pageCount > 1 && (
         <Pagination

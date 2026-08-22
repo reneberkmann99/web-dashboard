@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BellRing,
@@ -17,11 +18,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isClientRole } from "@/types/domain";
+import { apiFetch } from "@/lib/fetcher";
 import { CommandPalette } from "@/components/search/command-palette";
 import { NoderaftLogo } from "@/components/brand/noderaft-logo";
 import { Menu } from "@/components/ui/menu";
 import { ViewStateRestoration } from "@/components/navigation/view-state";
 import { NavigationProvider, useNavigation } from "@/components/navigation/navigation-context";
+import { MobileAppHeader } from "@/components/mobile/mobile-app-header";
+import { MobileBottomNav } from "@/components/mobile/mobile-bottom-nav";
+import { AccountSheet } from "@/components/mobile/account-sheet";
 import type { NavRootKey } from "@/lib/navigation";
 
 type ShellSession = {
@@ -105,6 +110,26 @@ export function contentWidthClass(pathname: string): string {
   return VARIANT_CLASS[layoutVariantFor(pathname)];
 }
 
+/** Container detail routes carry a pinned mobile action bar above the nav. */
+export function hasPinnedContainerActions(pathname: string): boolean {
+  return /(\/admin\/containers\/[^/]+\/[^/]+|\/client\/containers\/[^/]+)$/.test(pathname);
+}
+
+type FleetSummaryPayload = {
+  fleetSummary: {
+    attentionIssues: number;
+    nodesOnline: number;
+    nodesTotal: number;
+    workloadsHealthy: number;
+    workloadsTotal: number;
+    containersRunning: number;
+    containersTotal: number;
+    degradedWorkloads: number;
+    unhealthyContainers: number;
+    activeOperations: number;
+  };
+};
+
 export function DashboardShell({
   children,
   session
@@ -135,10 +160,20 @@ function DashboardShellInner({
   const settingsItems = isAdmin ? ADMIN_SETTINGS : [];
   const overviewHref = isAdmin ? "/admin" : "/client";
 
+  const [accountOpen, setAccountOpen] = useState(false);
   const [now, setNow] = useState<string | null>(null);
   useEffect(() => {
     setNow(new Date().toLocaleString());
   }, []);
+
+  // Attention badge for the mobile bottom tab (admins only). Uses the same
+  // authoritative fleet summary as the Overview screen; refreshes slowly.
+  const attentionQuery = useQuery({
+    queryKey: ["mobile-nav-attention"],
+    queryFn: () => apiFetch<FleetSummaryPayload>("/api/admin/overview"),
+    refetchInterval: 60_000,
+    enabled: isAdmin
+  });
 
   const renderLink = (item: NavItem, Icon: NavItem["icon"]): React.JSX.Element => {
     const active = rootHref === item.href;
@@ -162,9 +197,11 @@ function DashboardShellInner({
     );
   };
 
+  const pinnedActions = hasPinnedContainerActions(pathname);
+
   return (
-    <div className="grid min-h-screen lg:grid-cols-[264px_1fr]">
-      <aside className="border-b border-border bg-surface-deck p-4 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+    <div className="min-h-screen md:grid md:grid-cols-[264px_1fr]">
+      <aside className="hidden border-b border-border bg-surface-deck p-4 md:block md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r">
         <a
           href={overviewHref}
           aria-label="Noderaft overview"
@@ -210,9 +247,8 @@ function DashboardShellInner({
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-10 flex min-h-16 items-center justify-between border-b border-border bg-surface-hull/95 px-4 py-3 backdrop-blur md:px-6">
-          <p className="hidden font-mono text-xs text-text-muted sm:block">{now ?? ""}</p>
-          <NoderaftLogo compact className="sm:hidden" />
+        <header className="sticky top-0 z-10 hidden min-h-16 items-center justify-between border-b border-border bg-surface-hull/95 px-4 py-3 backdrop-blur md:flex md:px-6">
+          <p className="font-mono text-xs text-text-muted">{now ?? ""}</p>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -249,11 +285,26 @@ function DashboardShellInner({
           </div>
         </header>
 
-        <main className={cn("mx-auto w-full p-gutter", contentWidthClass(pathname))}>
+        <MobileAppHeader session={session} onAccountOpen={() => setAccountOpen(true)} />
+
+        <main
+          className={cn(
+            "mx-auto w-full p-gutter",
+            contentWidthClass(pathname),
+            "max-md:pb-[calc(88px+env(safe-area-inset-bottom))]",
+            pinnedActions && "max-md:pb-[calc(168px+env(safe-area-inset-bottom))]"
+          )}
+        >
           <ViewStateRestoration />
           {children}
         </main>
       </div>
+
+      <MobileBottomNav
+        role={session.role}
+        attentionCount={isAdmin ? (attentionQuery.data?.fleetSummary.attentionIssues ?? 0) : 0}
+      />
+      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} session={session} />
       <CommandPalette />
     </div>
   );

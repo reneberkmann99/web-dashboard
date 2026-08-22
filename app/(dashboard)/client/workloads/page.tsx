@@ -9,6 +9,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import type { WorkloadSummary } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
+import { workloadCard } from "@/components/mobile/mobile-resource-cards";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 
@@ -80,6 +81,11 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
           go({ url: `/client/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
         }}
         rowKey={(w) => w.id}
+        mobileCard={(w) =>
+          workloadCard(w, () => {
+            go({ url: `/client/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
+          })
+        }
       />
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +18,7 @@ import { Menu } from "@/components/ui/menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ResourceUsageStrip } from "@/components/ui/resource-usage";
 import type { ResourceThresholds } from "@/types/domain";
+import { nodeCard } from "@/components/mobile/mobile-resource-cards";
 
 type NodesPayload = { resourceThresholds: ResourceThresholds; nodes: NodeRecord[] };
 type EnrollmentResponse = { token: string; expiresAt: string; ttlMinutes: number; nodeId: string | null };
@@ -177,9 +179,15 @@ export default function AdminNodesPage(): React.JSX.Element {
     }
   ];
 
+  const thresholds = query.data?.resourceThresholds ?? {
+    cpu: { warning: 85, critical: 97 },
+    mem: { warning: 85, critical: 95 },
+    disk: { warning: 85, critical: 95 }
+  };
+
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Fleet" title="Nodes" description="Where your workloads run, and whether those hosts need attention." actions={<Button onClick={() => setEnrollOpen(true)}>Add node</Button>} />
+      <PageHeader eyebrow="Fleet" title="Nodes" description="Where your workloads run, and whether those hosts need attention." actions={<span className="max-md:hidden"><Button onClick={() => setEnrollOpen(true)}>Add node</Button></span>} />
 
       <DataTable
         columns={columns}
@@ -199,7 +207,22 @@ export default function AdminNodesPage(): React.JSX.Element {
         onRowClick={(node) => {
           go({ url: `/admin/nodes/${node.id}`, label: node.name, type: "node", id: node.id });
         }}
+        mobileCard={(node) =>
+          nodeCard(node, thresholds, () => {
+            go({ url: `/admin/nodes/${node.id}`, label: node.name, type: "node", id: node.id });
+          })
+        }
       />
+
+      {/* Design §06: dashed "Add node" card below the mobile node list */}
+      <button
+        type="button"
+        onClick={() => setEnrollOpen(true)}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-border-strong/70 text-[15px] text-brand-hover focus:outline-none focus:ring-2 focus:ring-focus md:hidden"
+      >
+        <Plus size={16} />
+        Add node
+      </button>
 
       <Modal
         open={enrollOpen}

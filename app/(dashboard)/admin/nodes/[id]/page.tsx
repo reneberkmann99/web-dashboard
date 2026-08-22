@@ -21,6 +21,9 @@ import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
+import { containerCard } from "@/components/mobile/mobile-resource-cards";
+import { CardChip } from "@/components/mobile/mobile-resource-card";
 
 type NodeDetailPayload = {
   resourceThresholds: ResourceThresholds;
@@ -280,6 +283,23 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           onRowClick={(p) => {
             go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
           }}
+          mobileCard={(p) => (
+            <div
+              role="link"
+              tabIndex={0}
+              onClick={() => go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
+              }}
+              className="cursor-pointer rounded-[12px] border border-border bg-surface-deck p-3.5 focus:outline-none focus:ring-2 focus:ring-focus"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-medium">{p.name}</p>
+                <CardChip tone="neutral">{p._count.containers} containers</CardChip>
+              </div>
+              <p className="mt-1 font-mono text-[11px] text-text-muted">{p.clientAccount?.name ?? "No client"}</p>
+            </div>
+          )}
         />
       )}
 
@@ -297,6 +317,34 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
             go({ url: `/admin/containers/${node.id}/${c.id}`, label: c.name, type: "container", id: c.id });
           }}
           rowKey={(c) => c.id}
+          mobileCard={(c) =>
+            containerCard(
+              {
+                assignmentId: c.id,
+                containerId: c.id,
+                name: c.name,
+                image: c.image,
+                status: c.status,
+                health: c.health ?? null,
+                uptime: c.uptime ?? null,
+                ports: c.ports,
+                createdAt: c.createdAt ?? null,
+                cpuPercent: c.cpuPercent,
+                memoryUsage: c.memoryUsage ?? null,
+                restartCount: c.restartCount,
+                nodeId: node.id,
+                nodeName: node.name,
+                nodeOnline: !offline,
+                projectName: null,
+                clientName: "",
+                allowedActions: [],
+                lastUpdatedAt: c.lastUpdatedAt ?? new Date().toISOString(),
+                details: null,
+                expectedStopped: c.status === "stopped" ? true : undefined
+              } as never,
+              () => go({ url: `/admin/containers/${node.id}/${c.id}`, label: c.name, type: "container", id: c.id })
+            )
+          }
         />
       )}
 
@@ -346,7 +394,12 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
 
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
-          <ActivityTimeline events={activity} resourceName={node.name} emptyText="No activity recorded for this node." />
+          <div className="max-md:hidden">
+            <ActivityTimeline events={activity} resourceName={node.name} emptyText="No activity recorded for this node." />
+          </div>
+          <div className="md:hidden">
+            <MobileActivityList events={activity} resourceName={node.name} emptyText="No activity recorded for this node." />
+          </div>
         </div>
       )}
     </div>

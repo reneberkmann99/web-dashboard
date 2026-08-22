@@ -14,6 +14,8 @@ import { Select } from "@/components/ui/select";
 import type { ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
+import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
+import { MobileFiltersRow, containerCard } from "@/components/mobile/mobile-resource-cards";
 
 type ContainersPayload = {
   containers: ContainerView[];
@@ -50,6 +52,9 @@ export default function SettingsContainersPage(): React.JSX.Element {
   const sort = searchParams.get("sort") ?? "attention";
   const dir = searchParams.get("dir") === "desc" ? "desc" : "asc";
   const page = Math.max(Number(searchParams.get("page") ?? "1"), 1);
+
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetCount, setSheetCount] = useState<number | null>(null);
 
   const syncUrl = useCallback(
     (patch: Record<string, string>) => {
@@ -120,6 +125,72 @@ export default function SettingsContainersPage(): React.JSX.Element {
     }
   ];
 
+  const activeFilterCount =
+    (status ? 1 : 0) + (nodeId ? 1 : 0) + (clientId ? 1 : 0) + (projectId ? 1 : 0) + (health ? 1 : 0) + (needsAttention ? 1 : 0);
+
+  const groups = [
+    {
+      id: "status",
+      label: "State",
+      options: STATUSES.map((s) => ({ value: s, label: s })),
+      selected: status ? [status] : []
+    },
+    {
+      id: "node",
+      label: "Node",
+      options: (refsQuery.data?.nodes ?? []).map((n) => ({ value: n.id, label: n.name })),
+      selected: nodeId ? [nodeId] : []
+    },
+    {
+      id: "client",
+      label: "Client",
+      options: (refsQuery.data?.clients ?? []).map((c) => ({ value: c.id, label: c.name })),
+      selected: clientId ? [clientId] : []
+    },
+    {
+      id: "workload",
+      label: "Workload",
+      options: (refsQuery.data?.workloads ?? []).map((w) => ({ value: w.id, label: w.name })),
+      selected: projectId ? [projectId] : []
+    },
+    {
+      id: "health",
+      label: "Health",
+      options: [
+        { value: "healthy", label: "Healthy" },
+        { value: "unhealthy", label: "Unhealthy" },
+        { value: "starting", label: "Starting" },
+        { value: "none", label: "No healthcheck" }
+      ],
+      selected: health ? [health] : []
+    }
+  ];
+  const toggles = [{ id: "attention", label: "Needs attention only", checked: needsAttention }];
+
+  const draftToFilters = (draft: FilterDraft): void => {
+    const pick = (id: string): string => draft.groups.find((g) => g.id === id)?.selected[0] ?? "";
+    setStatus(pick("status"));
+    setNodeId(pick("node"));
+    setClientId(pick("client"));
+    setProjectId(pick("workload"));
+    setHealth(pick("health"));
+    setNeedsAttention(draft.toggles.find((t) => t.id === "attention")?.checked ?? false);
+    syncUrl({ page: "1" });
+  };
+
+  const openSheet = (): void => {
+    setSheetCount(query.data?.total ?? null);
+    setSheetOpen(true);
+  };
+
+  const activeChips = [
+    ...(status ? [{ label: status }] : []),
+    ...(nodeId ? [{ label: refsQuery.data?.nodes.find((n) => n.id === nodeId)?.name ?? "Node" }] : []),
+    ...(projectId ? [{ label: refsQuery.data?.workloads.find((w) => w.id === projectId)?.name ?? "Workload" }] : []),
+    ...(health ? [{ label: health }] : []),
+    ...(needsAttention ? [{ label: "attention" }] : [])
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Runtime inventory" title="Containers" description="Every container across all nodes, including unassigned ones." />
@@ -131,8 +202,9 @@ export default function SettingsContainersPage(): React.JSX.Element {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search containers…"
           aria-label="Search containers"
-          className="w-64"
+          className="w-full md:w-64"
         />
+        <div className="hidden flex-wrap gap-2 md:flex">
         <Select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -198,6 +270,10 @@ export default function SettingsContainersPage(): React.JSX.Element {
           />
           Needs attention only
         </label>
+        </div>
+        <div className="w-full md:hidden">
+          <MobileFiltersRow count={activeFilterCount} onOpen={openSheet} chips={activeChips} />
+        </div>
       </div>
 
       <ServerDataTable
@@ -221,6 +297,31 @@ export default function SettingsContainersPage(): React.JSX.Element {
           go({ url: `/admin/containers/${c.nodeId}/${c.containerId}`, label: c.name, type: "container", id: c.containerId });
         }}
         rowKey={(c) => `${c.nodeId}:${c.containerId}`}
+        mobileCard={(c) =>
+          containerCard(c, () => {
+            go({ url: `/admin/containers/${c.nodeId}/${c.containerId}`, label: c.name, type: "container", id: c.containerId });
+          })
+        }
+      />
+
+      <FilterSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        groups={groups}
+        toggles={toggles}
+        resultCount={sheetCount}
+        resultNoun="containers"
+        onApply={(draft) => draftToFilters(draft)}
+        onReset={() => {
+          setStatus("");
+          setNodeId("");
+          setClientId("");
+          setProjectId("");
+          setHealth("");
+          setNeedsAttention(false);
+          syncUrl({ page: "1" });
+        }}
+        onDraftChange={() => setSheetCount(null)}
       />
     </div>
   );

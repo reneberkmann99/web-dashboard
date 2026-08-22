@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isInteractiveTableTarget, type Column } from "@/components/ui/data-table";
@@ -27,7 +28,9 @@ export function ServerDataTable<T>({
   emptyBody,
   onRowClick,
   rowKey,
-  footer
+  footer,
+  mobileToolbar,
+  mobileCard
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -45,6 +48,10 @@ export function ServerDataTable<T>({
   onRowClick?: (row: T) => void;
   rowKey?: (row: T) => string;
   footer?: React.ReactNode;
+  /** Replaces the desktop toolbar below md (e.g. a Filters button + sheet). */
+  mobileToolbar?: React.ReactNode;
+  /** Mobile card presentation (design §02/§19); renders INSTEAD of the table below md. */
+  mobileCard?: (row: T) => React.ReactNode;
 }): React.JSX.Element {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(Math.max(page, 1), pageCount);
@@ -81,7 +88,8 @@ export function ServerDataTable<T>({
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-panel border border-border bg-surface-deck">
+      {mobileToolbar && <div className="md:hidden">{mobileToolbar}</div>}
+      <div className={cn("overflow-x-auto rounded-panel border border-border bg-surface-deck", mobileCard && "max-md:hidden")}>
         <table className="w-full text-sm" aria-label="Resources">
           <thead className="sticky top-0 bg-surface-raised/85 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted backdrop-blur">
             <tr>
@@ -147,6 +155,13 @@ export function ServerDataTable<T>({
         pageCount={pageCount}
         onPageChange={onPageChange}
       />
+      {mobileCard && (
+        <div className="space-y-2.5 md:hidden" aria-label="Resources" data-mobile-cards>
+          {rows.map((row) => (
+            <Fragment key={rowKey ? rowKey(row) : undefined}>{mobileCard(row)}</Fragment>
+          ))}
+        </div>
+      )}
       {footer}
     </div>
   );

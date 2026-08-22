@@ -13,6 +13,7 @@ import { StatePanel } from "@/components/ui/state-panel";
 import { ResourceUsage } from "@/components/ui/resource-usage";
 import { timeAgo, humanizeAction } from "@/lib/format";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
+import { MobileAdminOverview } from "@/components/mobile/mobile-overview";
 import type { AttentionItem, WorkloadSummary, FleetSummary, RecentFailure, ActiveOperationSummary, ResourceThresholds } from "@/types/domain";
 
 type OverviewPayload = {
@@ -86,9 +87,9 @@ export default function AdminOverviewPage(): React.JSX.Element {
     return (
       <div className="space-y-6">
         <div className="h-10 w-64 animate-pulse rounded-control bg-surface-raised" />
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="flex gap-2.5 overflow-hidden md:grid md:grid-cols-5 md:gap-4">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-panel bg-surface-raised" />
+            <div key={i} className="h-24 w-[112px] flex-none animate-pulse rounded-panel bg-surface-raised md:w-auto" />
           ))}
         </div>
       </div>
@@ -139,7 +140,11 @@ export default function AdminOverviewPage(): React.JSX.Element {
   );
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="md:hidden">
+        <MobileAdminOverview data={query.data} />
+      </div>
+      <div className="hidden space-y-6 md:block">
       <PageHeader
         eyebrow="Fleet"
         title="Overview"
@@ -460,6 +465,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
           )}
         </div>
       </section>
-    </div>
+      </div>
+    </>
   );
 }

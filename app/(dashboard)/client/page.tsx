@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { timeAgo } from "@/lib/format";
 import type { AttentionItem, ContainerView, OverviewStats, WorkloadSummary } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
+import { MobileClientOverview } from "@/components/mobile/mobile-overview";
 
 type ClientOverviewResponse = {
   overview: OverviewStats;
@@ -42,6 +43,16 @@ export default function ClientDashboardPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
+      <div className="md:hidden">
+        {query.isLoading ? (
+          <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-deck" />
+        ) : query.isError || !query.data ? (
+          <p className="rounded-panel border border-critical/30 bg-critical/5 p-4 text-sm text-critical-foreground">Failed to load overview.</p>
+        ) : (
+          <MobileClientOverview data={query.data} />
+        )}
+      </div>
+      <div className="hidden space-y-6 md:block">
       <PageHeader eyebrow="Your services" title="Overview" description="Operational state of the workloads assigned to you." />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -194,6 +205,7 @@ export default function ClientDashboardPage(): React.JSX.Element {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

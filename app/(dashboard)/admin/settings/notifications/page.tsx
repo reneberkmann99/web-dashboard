@@ -150,8 +150,38 @@ export default function NotificationsSettingsPage(): React.JSX.Element {
 
       <section>
         <h2 className="mb-2 text-lg font-semibold">Delivery history</h2>
-        <div className="overflow-x-auto rounded-lg border border-border bg-panel">
+        <div className="hidden overflow-x-auto rounded-lg border border-border bg-panel md:block">
           <table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border bg-panelAlt text-xs uppercase text-muted"><tr><th className="px-3 py-2">Event</th><th className="px-3 py-2">Destination</th><th className="px-3 py-2">Severity</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Attempt</th><th className="px-3 py-2">Time</th><th className="px-3 py-2"></th></tr></thead><tbody className="divide-y divide-border">{deliveries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((delivery) => <tr key={delivery.id}><td className="px-3 py-2"><p className="font-medium">{delivery.notificationEvent.summary}</p><p className="text-xs text-muted">{delivery.isTest ? "Test notification" : humanizeAction(delivery.notificationEvent.type)}</p></td><td className="px-3 py-2">{delivery.destination.name}</td><td className="px-3 py-2">{delivery.notificationEvent.severity?.toLowerCase() ?? "—"}</td><td className="px-3 py-2"><Badge variant={statusVariant(delivery.status)}>{delivery.status.toLowerCase()}</Badge>{delivery.error && <p className="mt-1 text-xs text-muted">{delivery.error}{delivery.httpStatus ? ` (${delivery.httpStatus})` : ""}</p>}</td><td className="px-3 py-2">{delivery.attemptNumber}{delivery.isManualRetry ? " manual" : ""}</td><td className="px-3 py-2 text-xs text-muted">{localDate(delivery.respondedAt ?? delivery.requestedAt)}</td><td className="px-3 py-2">{delivery.status === "FAILED" && <Button size="sm" variant="ghost" onClick={() => retry.mutate(delivery.id)}><RefreshCw className="mr-1 h-3 w-3" /> Retry</Button>}</td></tr>)}{deliveries.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">No deliveries yet.</td></tr>}</tbody></table>
+        </div>
+        {/* Mobile: compact delivery cards (design §17 — no squeezed table) */}
+        <div className="space-y-2.5 md:hidden">
+          {deliveries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((delivery) => (
+            <div key={delivery.id} className="rounded-[12px] border border-border bg-surface-deck p-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium leading-5">{delivery.notificationEvent.summary}</p>
+                  <p className="mt-0.5 font-mono text-[11px] text-text-muted">
+                    {delivery.isTest ? "Test notification" : humanizeAction(delivery.notificationEvent.type)}
+                  </p>
+                </div>
+                <Badge variant={statusVariant(delivery.status)}>{delivery.status.toLowerCase()}</Badge>
+              </div>
+              <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px] text-text-muted">
+                <span className="truncate">{delivery.destination.name} · {delivery.notificationEvent.severity?.toLowerCase() ?? "—"}</span>
+                <span className="flex-none">#{delivery.attemptNumber}{delivery.isManualRetry ? " manual" : ""}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="truncate font-mono text-[11px] text-text-subtle">{localDate(delivery.respondedAt ?? delivery.requestedAt)}</span>
+                {delivery.status === "FAILED" && (
+                  <Button size="sm" variant="ghost" onClick={() => retry.mutate(delivery.id)}>
+                    <RefreshCw className="mr-1 h-3 w-3" /> Retry
+                  </Button>
+                )}
+              </div>
+              {delivery.error && <p className="mt-1.5 break-words text-xs text-critical-foreground">{delivery.error}{delivery.httpStatus ? ` (${delivery.httpStatus})` : ""}</p>}
+            </div>
+          ))}
+          {deliveries.length === 0 && <p className="rounded-[12px] border border-border bg-surface-raised/40 px-4 py-5 text-center text-sm text-text-muted">No deliveries yet.</p>}
         </div>
         {deliveries.length > PAGE_SIZE && (
           <div className="mt-3">

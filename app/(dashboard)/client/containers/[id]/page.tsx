@@ -15,6 +15,9 @@ import type { ContainerView, OperationView, OperationState } from "@/types/domai
 import { PageHeader } from "@/components/ui/page-header";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation } from "@/components/navigation/navigation-context";
+import { MobileActionBar } from "@/components/mobile/mobile-action-bar";
+import { MobileMetricStrip, MobileMetricCard } from "@/components/mobile/mobile-resource-card";
+import { RotateCw, Square, Play, ScrollText } from "lucide-react";
 
 type DetailResponse = {
   container: ContainerView;
@@ -113,6 +116,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
       <PageHeader
         eyebrow="Container"
         title={container?.name ?? "Container details"}
+        mobile="hidden"
         description="Live state, safe metadata, and recent logs."
         back={<Breadcrumbs />}
       />
@@ -135,7 +139,33 @@ export default function ContainerDetailPage(): React.JSX.Element {
         )
       ) : (
         <>
-          <Card className="panel">
+          {/* Mobile: metric strip + pinned actions (design §04) */}
+          <div className="space-y-4 md:hidden">
+            <MobileMetricStrip cardWidth={106}>
+              <MobileMetricCard label="CPU" value={container.cpuPercent !== null ? `${container.cpuPercent.toFixed(1)}%` : "—"} valueClass="text-[22px]" />
+              <MobileMetricCard label="Memory" value={container.memoryUsage ?? "—"} valueClass="text-[22px]" />
+              <MobileMetricCard label="Uptime" value={container.uptime ?? "—"} valueClass="text-[22px]" />
+            </MobileMetricStrip>
+            <div className="rounded-[12px] border border-border bg-surface-deck px-4 py-3.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={container.status} />
+                {!container.nodeOnline && <Badge variant="danger">Node offline</Badge>}
+              </div>
+              <p className="mt-2 break-all font-mono text-xs text-text-muted">{container.image}</p>
+            </div>
+            <div className="rounded-[12px] border border-border bg-surface-deck p-4">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">Logs</h2>
+              <LogViewer
+                streamPath={`/api/client/containers/${assignmentId}/logs/stream`}
+                historicalPath={`/api/client/containers/${assignmentId}/logs`}
+                downloadName={container.name}
+                containerStatus={container.status}
+                nodeOnline={container.nodeOnline}
+              />
+            </div>
+          </div>
+
+          <Card className="panel max-md:hidden">
             <CardHeader>
               <CardTitle>{container.name}</CardTitle>
               <CardDescription>{container.image}</CardDescription>
@@ -193,7 +223,7 @@ export default function ContainerDetailPage(): React.JSX.Element {
             </CardContent>
           </Card>
 
-          <Card className="panel">
+          <Card className="panel max-md:hidden">
             <CardHeader>
               <CardTitle>Logs</CardTitle>
               <CardDescription>Live log stream from this container.</CardDescription>
@@ -208,6 +238,27 @@ export default function ContainerDetailPage(): React.JSX.Element {
               />
             </CardContent>
           </Card>
+
+          <MobileActionBar
+            actions={[
+              ...(container.status === "running"
+                ? [
+                    { key: "restart", label: "Restart", icon: RotateCw, disabled: busy, onClick: () => actionMutation.mutate("restart") },
+                    {
+                      key: "stop",
+                      label: "Stop",
+                      icon: Square,
+                      variant: "danger" as const,
+                      disabled: busy,
+                      onClick: () => setConfirmStop(true)
+                    }
+                  ]
+                : container.status === "stopped"
+                  ? [{ key: "start", label: "Start", icon: Play, disabled: busy, onClick: () => actionMutation.mutate("start") }]
+                  : []),
+              { key: "logs", label: "Logs", icon: ScrollText, variant: "secondary" as const, onClick: () => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }) }
+            ]}
+          />
         </>
       )}
 

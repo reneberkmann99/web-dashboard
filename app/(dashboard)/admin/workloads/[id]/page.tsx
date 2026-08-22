@@ -27,6 +27,8 @@ import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
+import { containerCard } from "@/components/mobile/mobile-resource-cards";
 
 type WorkloadDetailPayload = {
   workload: {
@@ -397,6 +399,34 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           onRowClick={(c) => {
             go({ url: `/admin/containers/${workload.node.id}/${c.containerId}`, label: c.dockerName, type: "container", id: c.containerId });
           }}
+          mobileCard={(c) =>
+            containerCard(
+              {
+                assignmentId: c.containerId,
+                containerId: c.containerId,
+                name: c.dockerName,
+                image: "",
+                status: c.status as "running" | "stopped" | "restarting" | "unhealthy" | "unknown",
+                health: (c.health as "healthy" | "unhealthy" | "starting" | null) ?? null,
+                uptime: c.uptime ?? null,
+                ports: c.ports,
+                createdAt: null,
+                cpuPercent: c.cpuPercent,
+                memoryUsage: c.memoryUsage ?? null,
+                restartCount: c.restartCount,
+                nodeId: workload.node.id,
+                nodeName: workload.node.name,
+                nodeOnline: workload.node.status === "ONLINE",
+                projectName: workload.name,
+                clientName: workload.client?.name ?? "",
+                allowedActions: [],
+                lastUpdatedAt: new Date().toISOString(),
+                details: null,
+                expectedStopped: c.intentionallyStopped ? true : undefined
+              },
+              () => go({ url: `/admin/containers/${workload.node.id}/${c.containerId}`, label: c.dockerName, type: "container", id: c.containerId })
+            )
+          }
         />
       )}
 
@@ -426,14 +456,26 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
       {/* Activity */}
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
-          <ActivityTimeline
-            events={activity}
-            resourceName={workload.name}
-            emptyText="No activity recorded for this workload."
-            renderAction={(event) => isDeploymentActivity(event.action) && deployment?.managed ? (
-              <button type="button" onClick={() => setTab("Deployments")} className="text-xs text-accent hover:underline">View deployment</button>
-            ) : null}
-          />
+          <div className="max-md:hidden">
+            <ActivityTimeline
+              events={activity}
+              resourceName={workload.name}
+              emptyText="No activity recorded for this workload."
+              renderAction={(event) => isDeploymentActivity(event.action) && deployment?.managed ? (
+                <button type="button" onClick={() => setTab("Deployments")} className="text-xs text-accent hover:underline">View deployment</button>
+              ) : null}
+            />
+          </div>
+          <div className="md:hidden">
+            <MobileActivityList
+              events={activity}
+              resourceName={workload.name}
+              emptyText="No activity recorded for this workload."
+              renderAction={(event) => isDeploymentActivity(event.action) && deployment?.managed ? (
+                <button type="button" onClick={() => setTab("Deployments")} className="text-xs text-accent hover:underline">View deployment</button>
+              ) : null}
+            />
+          </div>
         </div>
       )}
 

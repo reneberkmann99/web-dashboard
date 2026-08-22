@@ -12,8 +12,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { timeAgo } from "@/lib/format";
+import type { UserRole } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
+import { userCard } from "@/components/mobile/mobile-resource-cards";
 
 type TeamUser = {
   id: string;
@@ -170,7 +172,31 @@ export default function ClientTeamPage(): React.JSX.Element {
         emptyBody="Invite operators and viewers to give them access to your workloads."
         rowKey={(u) => u.id}
         stateKey="client-team"
-        ariaLabel="Team members"
+        mobileCard={(u: TeamUser) =>
+          userCard(
+            {
+              id: u.id,
+              email: u.email,
+              displayName: u.displayName,
+              role: u.role as UserRole,
+              isActive: u.isActive,
+              pending: u.pending,
+              clientAccountId: null,
+              clientAccount: null
+            },
+            <Menu
+              label={`Actions for ${u.displayName}`}
+              items={[
+                ...(u.pending ? [{ label: "Reissue invite", onSelect: () => reissueMutation.mutate(u.id) }] : []),
+                {
+                  label: u.isActive ? "Deactivate user" : "Activate user",
+                  tone: u.isActive ? ("danger" as const) : ("default" as const),
+                  onSelect: () => setConfirm({ id: u.id, name: u.displayName, isActive: !u.isActive })
+                }
+              ]}
+            />
+          )
+        }
       />
 
       <Modal

@@ -20,6 +20,9 @@ import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useDetailTab } from "@/components/navigation/view-state";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
+import { userCard } from "@/components/mobile/mobile-resource-cards";
+import { CardChip } from "@/components/mobile/mobile-resource-card";
 
 type ClientDetailPayload = {
   client: {
@@ -250,6 +253,18 @@ export default function AdminClientDetailPage(): React.JSX.Element {
             rowKey={(u) => u.id}
             stateKey={`client:${client.id}:users`}
             ariaLabel="Client users"
+            mobileCard={(u) =>
+              userCard({
+                id: u.id,
+                email: u.email,
+                displayName: u.displayName,
+                role: u.role as "ADMIN" | "CLIENT" | "CLIENT_ADMIN" | "CLIENT_OPERATOR" | "CLIENT_VIEWER",
+                isActive: u.isActive,
+                pending: false,
+                clientAccountId: client.id,
+                clientAccount: { id: client.id, name: client.name }
+              })
+            }
           />
         </div>
       )}
@@ -272,6 +287,23 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           onRowClick={(p) => {
             go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
           }}
+          mobileCard={(p) => (
+            <div
+              role="link"
+              tabIndex={0}
+              onClick={() => go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
+              }}
+              className="cursor-pointer rounded-[12px] border border-border bg-surface-deck p-3.5 focus:outline-none focus:ring-2 focus:ring-focus"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-medium">{p.name}</p>
+                <CardChip tone="neutral">{p._count.containers} containers</CardChip>
+              </div>
+              <p className="mt-1 font-mono text-[11px] text-text-muted">{p.node.name}</p>
+            </div>
+          )}
         />
       )}
 
@@ -291,7 +323,12 @@ export default function AdminClientDetailPage(): React.JSX.Element {
 
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
-          <ActivityTimeline events={activity} resourceName={client.name} emptyText="No activity recorded for this client." />
+          <div className="max-md:hidden">
+            <ActivityTimeline events={activity} resourceName={client.name} emptyText="No activity recorded for this client." />
+          </div>
+          <div className="md:hidden">
+            <MobileActivityList events={activity} resourceName={client.name} emptyText="No activity recorded for this client." />
+          </div>
         </div>
       )}
 

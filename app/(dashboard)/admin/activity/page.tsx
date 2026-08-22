@@ -13,6 +13,9 @@ import { formatDateTime, humanizeAction } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { ActivityTimeline, type TimelineEvent } from "@/components/activity/activity-timeline";
+import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
+import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
+import { MobileFiltersRow } from "@/components/mobile/mobile-resource-cards";
 
 type AuditEntry = {
   id: string;
@@ -38,6 +41,8 @@ export default function AdminActivityPage(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<AuditEntry | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetCount, setSheetCount] = useState<number | null>(null);
 
   const [q, setQ] = useState(searchParams.get("q") ?? "");
   const [result, setResult] = useState(searchParams.get("result") ?? "");
@@ -91,6 +96,50 @@ export default function AdminActivityPage(): React.JSX.Element {
 
   const hasDeepLink = Boolean(containerId || projectId);
 
+  // Mobile header Filter pill (design §05) dispatches this event.
+  useEffect(() => {
+    const open = (): void => {
+      setSheetCount(query.data?.total ?? null);
+      setSheetOpen(true);
+    };
+    window.addEventListener("noderaft:open-activity-filter", open);
+    return () => window.removeEventListener("noderaft:open-activity-filter", open);
+  });
+
+  const groups = [
+    {
+      id: "result",
+      label: "Result",
+      options: [
+        { value: "SUCCESS", label: "Success" },
+        { value: "FAILURE", label: "Failure" }
+      ],
+      selected: result ? [result] : []
+    },
+    {
+      id: "node",
+      label: "Node",
+      options: (refsQuery.data?.nodes ?? []).map((n) => ({ value: n.id, label: n.name })),
+      selected: nodeId ? [nodeId] : []
+    },
+    {
+      id: "client",
+      label: "Client",
+      options: (refsQuery.data?.clients ?? []).map((c) => ({ value: c.id, label: c.name })),
+      selected: clientId ? [clientId] : []
+    }
+  ];
+
+  const applyDraft = (draft: FilterDraft): void => {
+    const pick = (id: string): string => draft.groups.find((g) => g.id === id)?.selected[0] ?? "";
+    setResult(pick("result"));
+    setNodeId(pick("node"));
+    setClientId(pick("client"));
+    syncUrl({ page: "1" });
+  };
+
+  const activeFilterCount = (q ? 1 : 0) + (result ? 1 : 0) + (nodeId ? 1 : 0) + (clientId ? 1 : 0);
+
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Audit trail" title="Activity" description="What happened across the platform." />
@@ -106,7 +155,7 @@ export default function AdminActivityPage(): React.JSX.Element {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="hidden flex-wrap gap-2 md:flex">
         <Input
           type="search"
           value={q}
@@ -149,6 +198,32 @@ export default function AdminActivityPage(): React.JSX.Element {
         </Select>
       </div>
 
+      <div className="md:hidden">
+        <Input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search events, actors…"
+          aria-label="Search activity"
+          className="w-full"
+        />
+        <div className="mt-2">
+          <MobileFiltersRow
+            count={activeFilterCount}
+            onOpen={() => {
+              setSheetCount(query.data?.total ?? null);
+              setSheetOpen(true);
+            }}
+            chips={[
+              ...(result ? [{ label: result.toLowerCase() }] : []),
+              ...(nodeId ? [{ label: refsQuery.data?.nodes.find((n) => n.id === nodeId)?.name ?? "Node" }] : []),
+              ...(clientId ? [{ label: refsQuery.data?.clients.find((c) => c.id === clientId)?.name ?? "Client" }] : [])
+            ]}
+          />
+        </div>
+      </div>
+
+      <div className="max-md:hidden">
       <ActivityTimeline
         events={query.data?.logs ?? []}
         onSelect={(event: TimelineEvent) => setSelected(event as AuditEntry)}
@@ -157,6 +232,16 @@ export default function AdminActivityPage(): React.JSX.Element {
         emptyTitle="No activity"
         emptyBody="Actions performed on the platform will appear here."
       />
+      </div>
+      <div className="md:hidden">
+        {query.isLoading ? (
+          <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-deck" />
+        ) : query.isError ? (
+          <p className="rounded-panel border border-critical/30 bg-critical/5 p-4 text-sm text-critical-foreground">Failed to load activity.</p>
+        ) : (
+          <MobileActivityList events={query.data?.logs ?? []} onSelect={(event) => setSelected(event as AuditEntry)} />
+        )}
+      </div>
 
       {(query.data?.pageCount ?? 0) > 1 && (
         <Pagination
@@ -198,6 +283,22 @@ export default function AdminActivityPage(): React.JSX.Element {
           </dl>
         )}
       </Modal>
+
+      <FilterSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        groups={groups}
+        resultCount={sheetCount}
+        resultNoun="events"
+        onApply={(draft) => applyDraft(draft)}
+        onReset={() => {
+          setResult("");
+          setNodeId("");
+          setClientId("");
+          syncUrl({ page: "1" });
+        }}
+        onDraftChange={() => setSheetCount(null)}
+      />
     </div>
   );
 }

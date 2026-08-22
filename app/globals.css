@@ -151,6 +151,55 @@ samp,
   text-transform: uppercase;
 }
 
+/* ---- Mobile system utilities ---- */
+
+/* Hide scrollbars on horizontal metric/tab strips while keeping touch scroll. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Technical identifiers may break mid-token on mobile (design §07 / long names). */
+.mono-break {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  line-break: anywhere;
+}
+
+/* 52px mobile app header, one row. */
+.mobile-header {
+  height: 52px;
+  min-height: 52px;
+}
+
+/* Horizontal metric strip: 112px cards (106px on detail), one peeking. */
+.metric-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.metric-strip::-webkit-scrollbar {
+  display: none;
+}
+.metric-strip > * {
+  flex: none;
+}
+
+/* Safe-area aware fixed chrome (bottom nav / pinned actions / sheets). */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
 .log-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--border-strong)) rgb(var(--surface-hull) / 0.45);

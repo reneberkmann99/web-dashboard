@@ -101,6 +101,25 @@ export const CLIENT_ROOTS: Record<string, RootDef> = {
   team: { key: "team", href: "/client/team", label: "Team" }
 };
 
+/**
+ * Mobile account-sheet destinations (design §07). These are NOT bottom-tab
+ * roots: they keep the current navigation-root semantics (Containers lives
+ * under the Workloads surface per the design mock) and the sheet records a
+ * return root so the mobile header back chevron returns to the previous tab.
+ */
+export const CONTAINER_SHEET_ROOT: RootDef = {
+  key: "workloads",
+  href: "/admin/containers",
+  label: "Containers"
+};
+
+export const MOBILE_SHEET_DESTINATIONS: Record<string, RootDef> = {
+  containers: CONTAINER_SHEET_ROOT,
+  clients: { key: "clients", href: "/admin/clients", label: "Clients" },
+  users: { key: "users", href: "/admin/settings/users", label: "Users" },
+  notifications: { key: "notifications", href: "/admin/settings/notifications", label: "Notifications" }
+};
+
 function rootEntry(def: RootDef): NavEntry {
   return { kind: "root", label: def.label, url: def.href };
 }
@@ -131,9 +150,23 @@ export function deriveFallback(pathname: string, search: string): NavContextStat
     { re: /^\/admin\/activity$/, root: "activity" },
     { re: /^\/admin\/settings\/users$/, root: "users" },
     { re: /^\/admin\/settings\/containers$/, root: "containers" },
-    { re: /^\/admin\/settings\/notifications$/, root: "notifications" },
-    { re: /^\/admin\/containers\/[^/]+\/[^/]+$/, root: "containers", type: "container", label: "Container" }
+    { re: /^\/admin\/settings\/notifications$/, root: "notifications" }
   ] as const;
+
+  // Containers is a mobile sheet destination rooted under the Workloads
+  // surface (design §02 mock highlights the Workloads tab).
+  if (/^\/admin\/containers$/.test(pathname)) {
+    return {
+      rootKey: CONTAINER_SHEET_ROOT.key,
+      rootHref: CONTAINER_SHEET_ROOT.href,
+      stack: [rootEntry(CONTAINER_SHEET_ROOT)]
+    };
+  }
+  if (/^\/admin\/containers\/[^/]+\/[^/]+$/.test(pathname)) {
+    const stack: NavEntry[] = [rootEntry(CONTAINER_SHEET_ROOT), resourceEntry("Container", pathname, "container")];
+    if (tabLabel) stack.push({ kind: "tab", label: tabLabel, url });
+    return { rootKey: CONTAINER_SHEET_ROOT.key, rootHref: CONTAINER_SHEET_ROOT.href, stack };
+  }
 
   for (const rule of admin) {
     if (rule.re.test(pathname)) {

@@ -13,6 +13,7 @@ import type { UserRecord, UserRole, NameRef } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { userCard } from "@/components/mobile/mobile-resource-cards";
 
 type UsersPayload = {
   users: UserRecord[];
@@ -41,6 +42,24 @@ export default function AdminUsersPage(): React.JSX.Element {
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
   const [confirmDisable, setConfirmDisable] = useState<UserRecord | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserRecord | null>(null);
+
+  const userActions = (u: UserRecord): Array<{ label: string; tone?: "default" | "danger"; onSelect: () => void }> => [
+    ...(u.pending
+      ? [{ label: "Resend activation", onSelect: () => resendMutation.mutate(u.id) }]
+      : []),
+    {
+      label: u.isActive ? "Disable user" : "Enable user",
+      onSelect: () =>
+        u.isActive
+          ? setConfirmDisable(u)
+          : updateMutation.mutate({ id: u.id, role: u.role, isActive: true, clientAccountId: u.clientAccountId })
+    },
+    {
+      label: "Delete user",
+      tone: "danger" as const,
+      onSelect: () => setConfirmDelete(u)
+    }
+  ];
 
   const query = useQuery({
     queryKey: ["admin-users"],
@@ -264,31 +283,7 @@ export default function AdminUsersPage(): React.JSX.Element {
                 header: "",
                 render: (u: UserRecord) => (
                   <div className="flex justify-end">
-                    <Menu
-                      label={`Actions for ${u.displayName}`}
-                      items={[
-                        ...(u.pending
-                          ? [{
-                              label: "Resend activation",
-                              tone: "default" as const,
-                              onSelect: () => resendMutation.mutate(u.id)
-                            }]
-                          : []),
-                        {
-                          label: u.isActive ? "Disable user" : "Enable user",
-                          tone: "default" as const,
-                          onSelect: () =>
-                            u.isActive
-                              ? setConfirmDisable(u)
-                              : updateMutation.mutate({ id: u.id, role: u.role, isActive: true, clientAccountId: u.clientAccountId })
-                        },
-                        {
-                          label: "Delete user",
-                          tone: "danger" as const,
-                          onSelect: () => setConfirmDelete(u)
-                        }
-                      ]}
-                    />
+                    <Menu label={`Actions for ${u.displayName}`} items={userActions(u)} />
                   </div>
                 )
               }
@@ -304,6 +299,12 @@ export default function AdminUsersPage(): React.JSX.Element {
             stateKey="admin-users"
             ariaLabel="Users"
             rowKey={(u: UserRecord) => u.id}
+            mobileCard={(u: UserRecord) =>
+              userCard(
+                u,
+                <Menu label={`Actions for ${u.displayName}`} items={userActions(u)} />
+              )
+            }
           />
         </CardContent>
       </Card>

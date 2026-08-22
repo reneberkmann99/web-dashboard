@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Compass } from "lucide-react";
@@ -14,6 +14,8 @@ import { humanizeAction, timeAgo } from "@/lib/format";
 import type { WorkloadSummary } from "@/types/domain";
 import { useStoredViewState } from "@/components/navigation/view-state";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
+import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
+import { MobileFiltersRow, workloadCard } from "@/components/mobile/mobile-resource-cards";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type RefPayload = { nodes: Array<{ id: string; name: string }>; clients: Array<{ id: string; name: string }> };
@@ -28,10 +30,38 @@ function healthAttention(w: WorkloadSummary): "critical" | "warning" | "info" | 
   return "healthy";
 }
 
+type Filters = {
+  nodeFilter: string;
+  clientFilter: string;
+  stateFilter: string;
+  sourceFilter: string;
+  needsAttentionOnly: boolean;
+};
+
+function applyFilters(workloads: WorkloadSummary[], f: Filters): WorkloadSummary[] {
+  let out = workloads;
+  if (f.nodeFilter) out = out.filter((w) => w.nodeId === f.nodeFilter);
+  if (f.clientFilter) out = out.filter((w) => w.clientId === f.clientFilter);
+  if (f.stateFilter) out = out.filter((w) => w.health === f.stateFilter);
+  if (f.sourceFilter) out = out.filter((w) => w.source === f.sourceFilter);
+  if (f.needsAttentionOnly) out = out.filter((w) => healthAttention(w) === "critical" || healthAttention(w) === "warning");
+  return out;
+}
+
+function activeCount(f: Filters): number {
+  return (
+    (f.nodeFilter ? 1 : 0) +
+    (f.clientFilter ? 1 : 0) +
+    (f.stateFilter ? 1 : 0) +
+    (f.sourceFilter ? 1 : 0) +
+    (f.needsAttentionOnly ? 1 : 0)
+  );
+}
+
 export default function AdminWorkloadsPage(): React.JSX.Element {
   const go = useResourceNavigation();
   const router = useRouter();
-  const [filters, setFilters] = useStoredViewState("filters:admin-workloads", {
+  const [filters, setFilters] = useStoredViewState<Filters>("filters:admin-workloads", {
     nodeFilter: "",
     clientFilter: "",
     stateFilter: "",
@@ -39,6 +69,8 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     needsAttentionOnly: false
   });
   const { nodeFilter, clientFilter, stateFilter, sourceFilter, needsAttentionOnly } = filters;
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetCount, setSheetCount] = useState<number | null>(null);
 
   const workloadsQuery = useQuery({
     queryKey: ["admin-workloads"],
@@ -50,21 +82,17 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     queryFn: () => apiFetch<RefPayload>("/api/admin/clients-refs")
   });
 
+  const allWorkloads = workloadsQuery.data?.workloads ?? [];
+
   const rows = useMemo(() => {
-    let out = workloadsQuery.data?.workloads ?? [];
-    if (nodeFilter) out = out.filter((w) => w.nodeId === nodeFilter);
-    if (clientFilter) out = out.filter((w) => w.clientId === clientFilter);
-    if (stateFilter) out = out.filter((w) => w.health === stateFilter);
-    if (sourceFilter) out = out.filter((w) => w.source === sourceFilter);
-    if (needsAttentionOnly) out = out.filter((w) => healthAttention(w) === "critical" || healthAttention(w) === "warning");
     // Default view surfaces problems first (§5): explicit severity rank, then
     // alphabetical — never resorts purely on a fluctuating metric like CPU%.
-    return [...out].sort((a, b) => {
+    return [...applyFilters(allWorkloads, filters)].sort((a, b) => {
       const diff = ATTENTION_RANK[healthAttention(a)] - ATTENTION_RANK[healthAttention(b)];
       if (diff !== 0) return diff;
       return a.name.localeCompare(b.name);
     });
-  }, [workloadsQuery.data, nodeFilter, clientFilter, stateFilter, sourceFilter, needsAttentionOnly]);
+  }, [allWorkloads, filters]);
 
   const columns: Column<WorkloadSummary>[] = [
     {
@@ -156,6 +184,62 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     }
   ];
 
+  const nodeOptions = (refsQuery.data?.nodes ?? []).map((n) => ({ value: n.id, label: n.name }));
+  const clientOptions = (refsQuery.data?.clients ?? []).map((c) => ({ value: c.id, label: c.name }));
+
+  const groups = useMemo(
+    () => [
+      { id: "node", label: "Node", options: nodeOptions, selected: nodeFilter ? [nodeFilter] : [] },
+      {
+        id: "state",
+        label: "State",
+        options: [
+          { value: "healthy", label: "Healthy" },
+          { value: "degraded", label: "Degraded" },
+          { value: "down", label: "Down" },
+          { value: "unknown", label: "Unknown" }
+        ],
+        selected: stateFilter ? [stateFilter] : []
+      },
+      {
+        id: "source",
+        label: "Type",
+        options: [
+          { value: "MANUAL", label: "Manual" },
+          { value: "COMPOSE", label: "External Compose" },
+          { value: "MANAGED", label: "Managed" }
+        ],
+        selected: sourceFilter ? [sourceFilter] : []
+      },
+      { id: "client", label: "Client", options: clientOptions, selected: clientFilter ? [clientFilter] : [] }
+    ],
+    [nodeOptions, clientOptions, nodeFilter, stateFilter, sourceFilter, clientFilter]
+  );
+
+  const toggles = [{ id: "attention", label: "Needs attention only", checked: needsAttentionOnly }];
+
+  const draftToFilters = (draft: FilterDraft): Filters => {
+    const pick = (id: string): string => draft.groups.find((g) => g.id === id)?.selected[0] ?? "";
+    return {
+      nodeFilter: pick("node"),
+      stateFilter: pick("state"),
+      sourceFilter: pick("source"),
+      clientFilter: pick("client"),
+      needsAttentionOnly: draft.toggles.find((t) => t.id === "attention")?.checked ?? false
+    };
+  };
+
+  const openSheet = (): void => {
+    setSheetCount(applyFilters(allWorkloads, filters).length);
+    setSheetOpen(true);
+  };
+
+  const activeChips = [
+    ...(nodeFilter ? [{ label: refsQuery.data?.nodes.find((n) => n.id === nodeFilter)?.name ?? "Node" }] : []),
+    ...(stateFilter ? [{ label: stateFilter }] : []),
+    ...(sourceFilter ? [{ label: sourceFilter.toLowerCase() }] : [])
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -240,6 +324,18 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
           Needs attention
         </label>
         </>}
+        mobileToolbar={
+          <MobileFiltersRow
+            count={activeCount(filters)}
+            onOpen={openSheet}
+            chips={activeChips}
+          />
+        }
+        mobileCard={(w) =>
+          workloadCard(w, () => {
+            go({ url: `/admin/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
+          })
+        }
         loading={workloadsQuery.isLoading}
         error={workloadsQuery.isError ? "Failed to load workloads" : null}
         emptyTitle="No workloads yet"
@@ -248,6 +344,18 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
           go({ url: `/admin/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
         }}
         rowKey={(w) => w.id}
+      />
+
+      <FilterSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        groups={groups}
+        toggles={toggles}
+        resultCount={sheetCount}
+        resultNoun="workloads"
+        onApply={(draft) => setFilters(draftToFilters(draft))}
+        onReset={() => setFilters({ nodeFilter: "", clientFilter: "", stateFilter: "", sourceFilter: "", needsAttentionOnly: false })}
+        onDraftChange={(draft) => setSheetCount(applyFilters(allWorkloads, draftToFilters(draft)).length)}
       />
     </div>
   );
