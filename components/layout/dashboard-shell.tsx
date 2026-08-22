@@ -119,19 +119,16 @@ export function hasPinnedContainerActions(pathname: string): boolean {
   return /(\/admin\/containers\/[^/]+\/[^/]+|\/client\/containers\/[^/]+)$/.test(pathname);
 }
 
-type FleetSummaryPayload = {
+type ShellSummaryPayload = {
+  freshAt: string | null;
+  nodesOnline: number;
+  nodesTotal: number;
   fleetSummary: {
     attentionIssues: number;
-    nodesOnline: number;
     nodesTotal: number;
-    workloadsHealthy: number;
     workloadsTotal: number;
-    containersRunning: number;
     containersTotal: number;
-    degradedWorkloads: number;
-    unhealthyContainers: number;
-    activeOperations: number;
-  };
+  } | null;
 };
 
 export function DashboardShell({
@@ -181,19 +178,18 @@ function DashboardShellInner({
   // authoritative fleet summary as the Overview screen; refreshes slowly.
   const attentionQuery = useQuery({
     queryKey: ["shell-freshness", isAdmin ? "admin" : "client"],
-    queryFn: () => apiFetch<FleetSummaryPayload | Record<string, unknown>>(isAdmin ? "/api/admin/overview" : "/api/client/overview"),
+    queryFn: () => apiFetch<ShellSummaryPayload>("/api/shell/summary"),
     refetchInterval: 20_000
   });
 
-  const fleetSummary = "fleetSummary" in (attentionQuery.data ?? {})
-    ? (attentionQuery.data as FleetSummaryPayload).fleetSummary
-    : null;
-  const freshnessAge = attentionQuery.dataUpdatedAt > 0 ? Math.max(0, Math.floor((freshnessNow - attentionQuery.dataUpdatedAt) / 1000)) : null;
+  const fleetSummary = attentionQuery.data?.fleetSummary ?? null;
+  const freshAtMs = attentionQuery.data?.freshAt ? new Date(attentionQuery.data.freshAt).getTime() : Number.NaN;
+  const freshnessAge = Number.isFinite(freshAtMs) ? Math.max(0, Math.floor((freshnessNow - freshAtMs) / 1000)) : null;
   const freshness = deriveFreshness({
     ageSeconds: freshnessAge,
     queryError: attentionQuery.isError,
-    nodesTotal: fleetSummary?.nodesTotal ?? null,
-    nodesOnline: fleetSummary?.nodesOnline ?? null
+    nodesTotal: attentionQuery.data?.nodesTotal ?? null,
+    nodesOnline: attentionQuery.data?.nodesOnline ?? null
   });
 
   const setCollapsed = (value: boolean): void => {
