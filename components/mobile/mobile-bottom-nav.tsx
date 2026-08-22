@@ -63,7 +63,7 @@ export function MobileBottomNav({
               goRoot({ key: item.key, href: item.href, label: item.label });
             }}
             className={cn(
-              "relative flex flex-col items-center gap-[5px] rounded-[10px] py-[7px] transition-colors focus:outline-none focus:ring-2 focus:ring-focus",
+              "relative flex flex-col items-center gap-[5px] rounded-[10px] py-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
               active ? "text-brand" : "text-text-muted hover:text-text"
             )}
           >

@@ -32,7 +32,7 @@ export function Disclosure({
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex flex-1 items-center gap-1.5 rounded-control py-0.5 text-left text-sm font-semibold uppercase tracking-wide text-text-muted transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+          className="flex flex-1 items-center gap-1.5 rounded-control py-0.5 text-left text-sm font-semibold uppercase tracking-wide text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <ChevronRight size={14} className={cn("shrink-0 transition-transform", open && "rotate-90")} />
           <span>

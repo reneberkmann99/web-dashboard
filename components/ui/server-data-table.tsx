@@ -3,7 +3,7 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isInteractiveTableTarget, type Column } from "@/components/ui/data-table";
+import { isInteractiveTableTarget, computeVisibleColumns, type Column } from "@/components/ui/data-table";
 import { StatePanel } from "@/components/ui/state-panel";
 import { Pagination } from "@/components/ui/pagination";
 
@@ -86,16 +86,14 @@ export function ServerDataTable<T>({
     );
   }
 
-  const visibleColumns = columns.filter(
-    (column) => !column.omitWhenEmpty || rows.some((row) => !column.omitWhenEmpty?.(row))
-  );
+  const visibleColumns = computeVisibleColumns(columns, rows);
 
   return (
     <div className="space-y-3">
       {mobileToolbar && <div className="md:hidden">{mobileToolbar}</div>}
       <div className={cn("overflow-x-auto rounded-panel border border-border bg-surface-deck md:overflow-x-visible", mobileCard && "max-md:hidden")} data-desktop-table>
         <table className="w-full text-sm" aria-label="Resources">
-          <thead className="sticky top-[52px] z-[5] bg-surface-raised/95 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle backdrop-blur">
+          <thead className="sticky top-[52px] z-[5] bg-surface-raised text-left font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
             <tr>
               {visibleColumns.map((col) => (
                 <th key={col.key} className={cn(
@@ -109,7 +107,7 @@ export function ServerDataTable<T>({
                     <button
                       type="button"
                       onClick={() => onSortChange(col.key)}
-                      className="inline-flex items-center gap-1 rounded-control hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+                      className="inline-flex items-center gap-1 rounded-control hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                       aria-label={`Sort by ${col.ariaLabel ?? (typeof col.header === "string" ? col.header : col.key)}`}
                     >
                       {col.header}
@@ -134,7 +132,7 @@ export function ServerDataTable<T>({
                 data-row-key={rowKey ? rowKey(row) : undefined}
                 className={cn(
                   "h-11 border-t border-border transition-colors",
-                  onRowClick && "cursor-pointer hover:bg-surface-raised focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
+                  onRowClick && "cursor-pointer hover:bg-surface-raised focus:bg-selected/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
                 )}
               >
                 {visibleColumns.map((col) => (

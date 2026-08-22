@@ -47,7 +47,7 @@ export function MobileActionBar({
           onClick={first.onClick}
           disabled={first.disabled}
           className={cn(
-            "inline-flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[12px] text-[15px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-focus disabled:opacity-45",
+            "inline-flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[12px] text-[15px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45",
             first.variant === "danger"
               ? "bg-critical text-white"
               : first.variant === "secondary"
@@ -67,7 +67,7 @@ export function MobileActionBar({
             aria-label={action.label}
             title={action.label}
             className={cn(
-              "grid h-[50px] w-[50px] flex-none place-items-center rounded-[12px] transition-colors focus:outline-none focus:ring-2 focus:ring-focus disabled:opacity-45",
+              "grid h-[50px] w-[50px] flex-none place-items-center rounded-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45",
               action.variant === "danger"
                 ? "border border-critical/40 bg-critical/8 text-critical-foreground"
                 : action.variant === "secondary"

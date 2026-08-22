@@ -3,6 +3,7 @@ import { requireApiRole } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { fromError, ok } from "@/server/http";
 import { humanizeAction } from "@/server/services/overview";
+import { resolveActivityTargetLabels } from "@/server/services/activity";
 
 /**
  * Admin activity feed with server-side filtering + pagination.
@@ -108,8 +109,18 @@ export async function GET(request: Request): Promise<Response> {
       prisma.auditLog.count({ where })
     ]);
 
+    const labels = await resolveActivityTargetLabels(logs);
+
     return ok({
-      logs: logs.map((l) => ({ ...l, humanized: humanizeAction(l.action) })),
+      logs: logs.map((l) => {
+        const resolved = l.targetId ? labels.get(`${l.targetType}:${l.targetId}`) : undefined;
+        return {
+          ...l,
+          humanized: humanizeAction(l.action),
+          targetLabel: resolved?.label ?? null,
+          targetDeleted: resolved?.deleted ?? false
+        };
+      }),
       total,
       page,
       limit,

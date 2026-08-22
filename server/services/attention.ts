@@ -270,7 +270,7 @@ export async function recordNodeResourceSample(
   });
 }
 
-type SustainedPressure = { cpu: number | null; mem: number | null; disk: number | null; sampleCount: number };
+export type SustainedPressure = { cpu: number | null; mem: number | null; disk: number | null; sampleCount: number };
 
 /**
  * Average of samples inside the sustained-pressure window. A single spike
@@ -278,7 +278,7 @@ type SustainedPressure = { cpu: number | null; mem: number | null; disk: number 
  * dilutes it — deliberately conservative (brief §9: "A 95% CPU spike lasting
  * one poll should not generate a scary alert").
  */
-async function getSustainedNodePressure(nodeIds: string[]): Promise<Map<string, SustainedPressure>> {
+export async function getSustainedNodePressure(nodeIds: string[]): Promise<Map<string, SustainedPressure>> {
   if (nodeIds.length === 0) return new Map();
   const windowStart = new Date(Date.now() - ATTENTION_CONFIG.nodeResource.sustainedWindowMs);
   const samples = await prisma.nodeResourceSample.findMany({
@@ -1073,7 +1073,7 @@ function toAttentionItem(
  * node card already states the affected count) — container/workload detail
  * pages still show their own local state independently.
  */
-async function getDeduplicatedAdminAttentionRows() {
+export async function getDeduplicatedAdminAttentionRows() {
   const rows = await prisma.attentionState.findMany({
     where: { resolvedAt: null, severity: { in: ["CRITICAL", "WARNING"] } },
     orderBy: [{ severity: "asc" }, { lastObservedAt: "desc" }],

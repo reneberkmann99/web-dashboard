@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Activity, AlertTriangle, Loader2 } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Wrench, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { humanizeAction } from "@/lib/format";
+import { formatDuration } from "@/lib/freshness";
 import { StatePanel } from "@/components/ui/state-panel";
 
 export type TimelineEvent = {
@@ -15,25 +16,33 @@ export type TimelineEvent = {
   targetType?: string;
   targetId?: string | null;
   targetLabel?: string | null;
+  /** Set by the server when the referenced resource no longer exists — render "Name (deleted)". */
+  targetDeleted?: boolean;
   humanized?: string;
   metadata?: Record<string, unknown> | null;
 };
 
 function metadataName(metadata: Record<string, unknown> | null | undefined): string | null {
   if (!metadata) return null;
-  for (const key of ["resourceName", "containerName", "dockerName", "workloadName", "projectName", "nodeName", "clientName", "targetName", "displayName"]) {
+  for (const key of ["resourceName", "containerName", "dockerName", "workloadName", "projectName", "nodeName", "clientName", "targetName", "displayName", "name"]) {
     if (typeof metadata[key] === "string" && metadata[key]) return metadata[key] as string;
   }
   return null;
 }
 
+/**
+ * Human display name for the row's subject. Resolved server-side names win
+ * (with a "(deleted)" suffix when the resource no longer exists); metadata is
+ * only a fallback for events the server didn't resolve. Never falls back to
+ * the raw id — a primary Activity row must not leak internal identifiers
+ * (design review round 2, §8). Full/raw ids stay available in the row's
+ * expandable technical detail.
+ */
 export function activityResourceLabel(event: TimelineEvent, explicitName?: string): string | null {
   if (explicitName) return explicitName;
-  if (event.targetLabel) return event.targetLabel;
-  const name = metadataName(event.metadata);
-  if (name) return name;
-  if (event.targetId && !/^[0-9a-f-]{24,}$/i.test(event.targetId)) return event.targetId;
-  return null;
+  const resolved = event.targetLabel || metadataName(event.metadata);
+  if (!resolved) return null;
+  return event.targetDeleted ? `${resolved} (deleted)` : resolved;
 }
 
 function sentence(event: TimelineEvent, resourceName?: string): string {
@@ -87,6 +96,85 @@ export function activityRollupSentence(event: TimelineEvent, count: number): str
   return rollupSentence(event.humanized || humanizeAction(event.action), count);
 }
 
+function conditionLifecycle(action: string): { lifecycle: "OPENED" | "RESOLVED"; condition: string } | null {
+  const match = /^ATTENTION_(OPENED|RESOLVED)_(.+)$/.exec(action);
+  return match ? { lifecycle: match[1] as "OPENED" | "RESOLVED", condition: match[2] } : null;
+}
+
+/**
+ * Collapse an "X went offline" + "X recovered" pair (or any matching
+ * ATTENTION_OPENED / ATTENTION_RESOLVED pair for the same resource) into
+ * one incident row carrying a duration, instead of two separate lines a
+ * reader has to mentally re-associate (design review round 2, §3). Only
+ * collapses immediately adjacent entries in the (already newest-first)
+ * event list — the resolved event always sorts directly above its open
+ * event when nothing else touched that resource in between.
+ */
+export function pairIncidentEvents(events: TimelineEvent[]): TimelineEvent[] {
+  const out: TimelineEvent[] = [];
+  for (let i = 0; i < events.length; i++) {
+    const resolvedEvent = events[i];
+    const resolvedInfo = conditionLifecycle(resolvedEvent.action);
+    const openEvent = events[i + 1];
+    const openInfo = openEvent ? conditionLifecycle(openEvent.action) : null;
+    if (
+      resolvedInfo?.lifecycle === "RESOLVED" &&
+      openInfo?.lifecycle === "OPENED" &&
+      openInfo.condition === resolvedInfo.condition &&
+      resolvedEvent.targetId &&
+      resolvedEvent.targetId === openEvent!.targetId
+    ) {
+      const durationMs = new Date(resolvedEvent.createdAt).getTime() - new Date(openEvent!.createdAt).getTime();
+      const verb = resolvedEvent.humanized || humanizeAction(resolvedEvent.action);
+      out.push({
+        ...resolvedEvent,
+        id: `${openEvent!.id}:${resolvedEvent.id}`,
+        humanized: durationMs > 0 ? `${verb} after ${formatDuration(durationMs / 1000)}` : verb,
+        metadata: { ...(resolvedEvent.metadata ?? {}), pairedOpenEvent: openEvent, pairedResolvedEvent: resolvedEvent }
+      });
+      i += 1;
+      continue;
+    }
+    out.push(resolvedEvent);
+  }
+  return out;
+}
+
+type Tone = "positive" | "negative" | "caution" | "neutral";
+
+/** Icon + tone by severity — every row must not render the same neutral pulse glyph (§3). */
+function eventTone(event: TimelineEvent): Tone {
+  const action = event.action.toUpperCase();
+  if (event.result === "FAILURE" || /_FAILED$|CRASH_LOOP|OFFLINE(?!.*RESOLVED)/.test(action)) {
+    if (/^ATTENTION_RESOLVED_/.test(action)) return "positive";
+    return "negative";
+  }
+  if (/^ATTENTION_RESOLVED_|_RECOVERED$|_SUCCEEDED$/.test(action) || action === "LOGIN_SUCCESS") return "positive";
+  if (/^ATTENTION_OPENED_|DEGRADED|DRIFT|UNHEALTHY|STUCK/.test(action)) return "negative";
+  if (/MAINTENANCE/.test(action)) return "caution";
+  return "neutral";
+}
+
+const TONE_ICON: Record<Tone, React.ComponentType<{ size?: number; className?: string }>> = {
+  positive: CheckCircle2,
+  negative: AlertTriangle,
+  caution: Wrench,
+  neutral: Activity
+};
+
+const TONE_CLASS: Record<Tone, string> = {
+  positive: "bg-success/15 text-success-foreground",
+  negative: "bg-critical/15 text-critical-foreground",
+  caution: "bg-warning/15 text-warning-foreground",
+  neutral: "bg-surface-raised text-text-muted"
+};
+
+/** A real person acted — system-driven rows omit the actor line entirely rather than printing "System" (§9). */
+function personActor(event: TimelineEvent): string | null {
+  if (!event.actorEmail) return null;
+  return event.actorEmail;
+}
+
 export function ActivityTimeline({
   events,
   resourceName,
@@ -96,7 +184,8 @@ export function ActivityTimeline({
   loading = false,
   error = null,
   emptyTitle,
-  emptyBody
+  emptyBody,
+  pairIncidents = true
 }: {
   events: TimelineEvent[];
   resourceName?: string;
@@ -107,9 +196,12 @@ export function ActivityTimeline({
   error?: string | null;
   emptyTitle?: string;
   emptyBody?: string;
+  /** Collapse open/close attention pairs into one incident row. Off for scoped feeds that need every raw record (e.g. a single resource's full history). */
+  pairIncidents?: boolean;
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const groups = useMemo(() => groupActivityEvents(events), [events]);
+  const paired = useMemo(() => (pairIncidents ? pairIncidentEvents(events) : events), [events, pairIncidents]);
+  const groups = useMemo(() => groupActivityEvents(paired), [paired]);
 
   if (loading) return <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-deck" />;
   if (error) return <StatePanel tone="error" title="Unable to load activity" description={error} />;
@@ -117,27 +209,49 @@ export function ActivityTimeline({
 
   let previousDay = "";
   return (
-    <ol className="overflow-hidden rounded-panel border border-border bg-surface-deck" aria-label="Operations timeline" data-activity-timeline>
+    // `overflow-hidden` (any non-`visible` overflow) makes this element a
+    // scroll container per the CSS Overflow spec, which becomes the sticky
+    // day header's containing block — its `top:52px` then resolves against
+    // THIS box's top instead of the page's, pushing the header ~52px past
+    // its correct position and overlapping the row above it. `md:overflow-visible`
+    // removes that scroll-container status on desktop, where the sticky
+    // header actually needs to clear the page's fixed topbar (round 2 P0 §1).
+    <ol className="overflow-hidden rounded-panel border border-border bg-surface-deck md:overflow-visible" aria-label="Operations timeline" data-activity-timeline>
       {groups.map((group) => {
         const first = group.events[0];
         const showDay = group.day !== previousDay;
         previousDay = group.day;
-        const failed = first.result === "FAILURE" || /FAILED|FAILURE/.test(first.action);
-        const progress = !failed && /DEPLOY|ROLLBACK|REVISION|RELEASE/.test(first.action);
+        const tone = eventTone(first);
+        const Icon = TONE_ICON[tone];
         const isExpanded = expanded.has(group.key);
         const baseSentence = sentence(first, resourceName);
+        const resource = !resourceName ? activityResourceLabel(first) : null;
+        const actor = personActor(first);
         return (
           <li key={`${group.key}:${first.id}`}>
-            {showDay && <div className="sticky top-[52px] z-[4] border-b border-border bg-surface-raised/95 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-text-subtle backdrop-blur">{dayLabel(group.day)}</div>}
+            {showDay && (
+              <div className="sticky top-[52px] z-[2] border-b border-border bg-surface-raised px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-text-subtle">
+                {dayLabel(group.day)}
+              </div>
+            )}
             <div className="border-b border-border last:border-b-0">
               <div className="flex w-full items-center gap-2 px-3 transition-colors hover:bg-surface-raised">
-                <button type="button" onClick={() => onSelect?.(first)} className={cn("flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus", !onSelect && "cursor-default")}>
-                  <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg", failed ? "bg-critical/15 text-critical-foreground" : progress ? "bg-selected/70 text-brand" : "bg-surface-raised text-text-muted")}>
-                    {progress ? <Loader2 size={14} className="animate-spin" /> : failed ? <AlertTriangle size={14} /> : <Activity size={14} />}
+                <button type="button" onClick={() => onSelect?.(first)} className={cn("flex min-w-0 flex-1 items-center gap-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus", !onSelect && "cursor-default")}>
+                  <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg", TONE_CLASS[tone])}>
+                    <Icon size={14} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13.5px] text-text">{group.events.length > 1 ? activityRollupSentence(first, group.events.length) : baseSentence}</span>
-                    <span className="mt-0.5 block truncate text-xs text-text-muted">{first.actorEmail ?? "System"}</span>
+                    <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-muted">
+                      {resource && <span className="truncate">{resource}</span>}
+                      {resource && actor && <span className="text-text-subtle">·</span>}
+                      {actor && (
+                        <span className="flex shrink-0 items-center gap-1 truncate">
+                          <User size={11} className="shrink-0" />
+                          {actor}
+                        </span>
+                      )}
+                    </span>
                   </span>
                 </button>
                 {group.events.length > 1 && (

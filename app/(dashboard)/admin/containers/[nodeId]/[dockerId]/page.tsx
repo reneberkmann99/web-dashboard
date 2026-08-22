@@ -339,7 +339,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
               aria-selected={mobileTab === t}
               onClick={() => setMobileTab(t)}
               className={
-                "pb-2.5 pt-1 text-sm capitalize focus:outline-none focus:ring-2 focus:ring-focus " +
+                "pb-2.5 pt-1 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus " +
                 (mobileTab === t ? "font-medium text-text shadow-[inset_0_-2px_0_theme(colors.brand.DEFAULT)]" : "text-text-muted")
               }
             >
@@ -556,7 +556,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
               setOverflowOpen(false);
               router.push(`/admin/activity?containerId=${container.containerId}`);
             }}
-            className="flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left text-[15px] text-text transition-colors hover:bg-surface-raised focus:outline-none focus:ring-2 focus:ring-focus"
+            className="flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left text-[15px] text-text transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             View activity
           </button>
@@ -567,7 +567,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
                 setOverflowOpen(false);
                 setAdoptOpen(true);
               }}
-              className="flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left text-[15px] text-text transition-colors hover:bg-surface-raised focus:outline-none focus:ring-2 focus:ring-focus"
+              className="flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left text-[15px] text-text transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               Manage with Noderaft
             </button>
@@ -579,7 +579,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
                 setOverflowOpen(false);
                 setConfirmDelete(true);
               }}
-              className="flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left text-[15px] text-critical-foreground transition-colors hover:bg-critical/10 focus:outline-none focus:ring-2 focus:ring-focus"
+              className="flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left text-[15px] text-critical-foreground transition-colors hover:bg-critical/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               Delete container
             </button>

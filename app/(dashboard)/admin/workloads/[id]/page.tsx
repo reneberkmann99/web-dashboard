@@ -240,7 +240,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
             <button
               type="button"
               onClick={() => go({ url: `/admin/nodes/${workload.node.id}`, label: workload.node.name, type: "node", id: workload.node.id })}
-              className="text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus"
+              className="text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               {workload.node.name}
             </button>

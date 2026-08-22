@@ -7,8 +7,8 @@ import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { pollContainersForNode } from "@/server/services/workloads";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
-import { getAttentionMap, getAttentionFeedForAdmin } from "@/server/services/attention";
-import { resourceThresholds } from "@/server/services/attention-config";
+import { getAttentionMap, getAttentionFeedForAdmin, getSustainedNodePressure } from "@/server/services/attention";
+import { resourceThresholds, nodeResourceWindowLabel } from "@/server/services/attention-config";
 
 export async function GET(
   _: Request,
@@ -50,7 +50,7 @@ export async function GET(
     const storageSummary = await nodeAgentClient.getStorageSummary(node);
 
     const now = new Date();
-    const [activity, attentionMap, attentionFeed, maintenance] = await Promise.all([
+    const [activity, attentionMap, attentionFeed, maintenance, pressureByNode] = await Promise.all([
       prisma.auditLog.findMany({
         where: { OR: [{ targetType: "NODE", targetId: node.id }, { metadata: { path: ["nodeId"], equals: node.id } }] },
         orderBy: { createdAt: "desc" },
@@ -63,16 +63,24 @@ export async function GET(
         where: { nodeId: node.id, cancelledAt: null, startsAt: { lte: now }, endsAt: { gt: now } },
         orderBy: { endsAt: "asc" },
         select: { id: true, startsAt: true, endsAt: true, reason: true, notificationBehavior: true }
-      })
+      }),
+      getSustainedNodePressure([node.id])
     ]);
 
     const effectiveNode = freshNode ?? node;
     const offline = effectiveNode.status === "OFFLINE" || effectiveNode.status === "UNKNOWN";
     const attention = attentionMap.get(`NODE:${node.id}`) ?? (offline ? "critical" : "healthy");
     const nodeAttentionItems = attentionFeed.filter((item) => item.nodeId === node.id);
+    // Same sustained-window average CPU/RAM as Overview and the Nodes list.
+    const pressure = pressureByNode.get(node.id);
+    const rawSystemInfo = (effectiveNode.systemInfo ?? null) as Record<string, unknown> | null;
+    const systemInfo = rawSystemInfo
+      ? { ...rawSystemInfo, cpuPercent: pressure?.cpu ?? rawSystemInfo.cpuPercent ?? null, memPercent: pressure?.mem ?? rawSystemInfo.memPercent ?? null }
+      : null;
 
     return ok({
       resourceThresholds: resourceThresholds(),
+      resourceWindowLabel: nodeResourceWindowLabel(),
       node: {
         id: node.id,
         name: node.name,
@@ -88,7 +96,7 @@ export async function GET(
         dockerVersion: effectiveNode.dockerVersion,
         createdAt: node.createdAt,
         osInfo: effectiveNode.osInfo,
-        systemInfo: effectiveNode.systemInfo,
+        systemInfo,
         containerCount: containers.length,
         runningCount: running,
         unhealthyCount: unhealthy,

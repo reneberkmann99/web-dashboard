@@ -170,7 +170,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
     {
       key: "status",
       header: "Status",
-      render: (u) => <Badge variant={u.isActive ? "success" : "default"}>{u.isActive ? "active" : u.authSource === "PAM" ? "pam" : "pending"}</Badge>
+      render: (u) => <Badge variant={u.isActive ? "success" : "neutral"}>{u.isActive ? "active" : u.authSource === "PAM" ? "pam" : "pending"}</Badge>
     },
     {
       key: "lastLogin",
@@ -221,7 +221,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         eyebrow="Organization"
         title={client.name}
         back={<Breadcrumbs />}
-        description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{client.slug}</span><span>· {client.counts.users} users · {client.counts.projects} workloads</span><Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge></div>}
+        description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{client.slug}</span><span>· {client.counts.users} users · {client.counts.projects} workloads</span><Badge variant={client.isActive ? "success" : "neutral"}>{client.isActive ? "active" : "inactive"}</Badge></div>}
         actions={<>
           <Button variant="ghost" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>
             View activity
@@ -298,7 +298,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
               onKeyDown={(e) => {
                 if (e.key === "Enter") go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
               }}
-              className="cursor-pointer rounded-[12px] border border-border bg-surface-deck p-3.5 focus:outline-none focus:ring-2 focus:ring-focus"
+              className="cursor-pointer rounded-[12px] border border-border bg-surface-deck p-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="font-medium">{p.name}</p>

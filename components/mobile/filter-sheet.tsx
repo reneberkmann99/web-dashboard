@@ -135,7 +135,7 @@ export function FilterSheet({
             <button
               type="button"
               onClick={onClose}
-              className="h-12 w-24 flex-none rounded-[12px] border border-border bg-surface-raised text-[15px] text-text-muted transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+              className="h-12 w-24 flex-none rounded-[12px] border border-border bg-surface-raised text-[15px] text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               Cancel
             </button>
@@ -145,7 +145,7 @@ export function FilterSheet({
                 onApply(draft);
                 onClose();
               }}
-              className="h-12 flex-1 rounded-[12px] bg-brand text-[15px] font-medium text-text-inverse transition-colors hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-focus"
+              className="h-12 flex-1 rounded-[12px] bg-brand text-[15px] font-medium text-text-inverse transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               {label}
             </button>
@@ -164,7 +164,7 @@ export function FilterSheet({
               onReset();
               onDraftChange?.(cleared, { groups, toggles });
             }}
-            className="h-11 rounded-control px-2 text-sm text-brand-hover focus:outline-none focus:ring-2 focus:ring-focus"
+            className="h-11 rounded-control px-2 text-sm text-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             Reset
           </button>
@@ -185,7 +185,7 @@ export function FilterSheet({
                     aria-pressed={selected}
                     onClick={() => toggleChip(group.id, option.value)}
                     className={cn(
-                      "h-[38px] rounded-[10px] px-3.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-focus",
+                      "h-[38px] rounded-[10px] px-3.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                       selected
                         ? "bg-brand font-medium text-text-inverse"
                         : "border border-border bg-surface-raised text-[#c3d3ec] hover:border-border-strong"
@@ -214,7 +214,7 @@ export function FilterSheet({
                   aria-label={toggle.label}
                   onClick={() => toggleRow(toggle.id)}
                   className={cn(
-                    "flex h-6 w-10 flex-none items-center rounded-[12px] p-[3px] transition-colors focus:outline-none focus:ring-2 focus:ring-focus",
+                    "flex h-6 w-10 flex-none items-center rounded-[12px] p-[3px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                     toggle.checked ? "justify-end bg-brand" : "justify-start bg-border"
                   )}
                 >

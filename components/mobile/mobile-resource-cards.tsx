@@ -304,7 +304,7 @@ export function MobileFiltersRow({
         type="button"
         onClick={onOpen}
         aria-label={`Open filters${count > 0 ? `, ${count} active` : ""}`}
-        className="inline-flex h-[34px] flex-none items-center gap-[7px] rounded-[9px] bg-brand/14 px-3 text-[13px] text-text focus:outline-none focus:ring-2 focus:ring-focus"
+        className="inline-flex h-[34px] flex-none items-center gap-[7px] rounded-[9px] bg-brand/14 px-3 text-[13px] text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         data-filters-button
       >
         <span className="grid h-[14px] w-[14px] place-items-center">

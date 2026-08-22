@@ -95,7 +95,7 @@ export function MobileResourceCard({
   const shell = cn(
     "rounded-[12px] border border-border bg-surface-deck p-3.5 text-left transition-colors",
     dimmed && "opacity-75",
-    onClick && "w-full cursor-pointer hover:border-selected-border/40 focus:outline-none focus:ring-2 focus:ring-focus",
+    onClick && "w-full cursor-pointer hover:border-selected-border/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
     className
   );
 

@@ -144,7 +144,7 @@ export default function ClientTeamPage(): React.JSX.Element {
         u.pending ? (
           <Badge variant="warning">pending</Badge>
         ) : (
-          <Badge variant={u.isActive ? "success" : "default"}>{u.isActive ? "active" : "inactive"}</Badge>
+          <Badge variant={u.isActive ? "success" : "neutral"}>{u.isActive ? "active" : "inactive"}</Badge>
         )
     },
     {

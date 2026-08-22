@@ -54,7 +54,7 @@ export function MobileAppHeader({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="grid h-11 w-9 flex-none place-items-center rounded-control text-text-muted transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+          className="grid h-11 w-9 flex-none place-items-center rounded-control text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <ChevronLeft size={22} />
         </button>
@@ -73,7 +73,7 @@ export function MobileAppHeader({
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent("noderaft:open-activity-filter"))}
           aria-label="Open filters"
-          className="inline-flex h-[34px] flex-none items-center gap-1.5 rounded-[9px] border border-border bg-surface-raised px-2.5 text-[13px] text-text-muted transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+          className="inline-flex h-[34px] flex-none items-center gap-1.5 rounded-[9px] border border-border bg-surface-raised px-2.5 text-[13px] text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <SlidersHorizontal size={13} />
           Filter
@@ -84,7 +84,7 @@ export function MobileAppHeader({
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent("noderaft:open-container-overflow"))}
           aria-label="Container actions"
-          className="grid h-11 w-9 flex-none place-items-center rounded-control text-text-muted transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+          className="grid h-11 w-9 flex-none place-items-center rounded-control text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <EllipsisVertical size={20} />
         </button>
@@ -94,7 +94,7 @@ export function MobileAppHeader({
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent("noderaft:open-search"))}
           aria-label="Open search"
-          className="grid h-11 w-9 flex-none place-items-center rounded-control text-text-muted transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+          className="grid h-11 w-9 flex-none place-items-center rounded-control text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <Search size={19} />
         </button>
@@ -103,7 +103,7 @@ export function MobileAppHeader({
         type="button"
         onClick={onAccountOpen}
         aria-label="Open account sheet"
-        className="grid h-8 w-8 flex-none place-items-center rounded-full border border-border bg-surface-raised font-mono text-[13px] text-brand focus:outline-none focus:ring-2 focus:ring-focus"
+        className="grid h-8 w-8 flex-none place-items-center rounded-full border border-border bg-surface-raised font-mono text-[13px] text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
         {(session.displayName || session.email || "?").charAt(0).toUpperCase()}
       </button>

@@ -14,7 +14,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel, LoadingBlock } from "@/components/ui/state-panel";
 import { CodePanel } from "@/components/ui/code-panel";
 import { ResourceUsage } from "@/components/ui/resource-usage";
-import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
+import { formatBytes, formatDateTime, timeAgo, cleanVersion } from "@/lib/format";
+import { freshnessAgeLabel } from "@/lib/freshness";
 import type { RuntimeContainer } from "@/server/services/node-agent/types";
 import type { AttentionItem, AttentionSeverity, ResourceThresholds } from "@/types/domain";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
@@ -131,7 +132,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
           eyebrow="Node"
           title={<>{node.name}<Badge variant={offline ? "danger" : stale ? "warning" : "success"}>{offline ? "offline" : stale ? "stale" : "online"}</Badge></>}
           back={<Breadcrumbs />}
-          description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge>disabled</Badge>}</div>}
+          description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{node.hostname}</span>{node.attention !== "healthy" && <AttentionBadge severity={node.attention} />}{!node.isActive && <Badge variant="neutral">disabled</Badge>}</div>}
           actions={<Button variant="outline" size="sm" onClick={() => router.push(`/admin/activity?nodeId=${params.id}`)}>View activity →</Button>}
       />
 
@@ -140,7 +141,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
 
       {offline && (
           <p className="mt-2 rounded-lg border border-critical/30 bg-critical/5 p-3 text-sm text-critical-foreground">
-            This node is not responding. Last heartbeat: {timeAgo(node.lastHeartbeatAt)}. Check the Noderaft Agent container or
+            This node is not responding. Last heartbeat: {freshnessAgeLabel(node.lastHeartbeatAt)}. Check the Noderaft Agent container or
             host connectivity.
           </p>
       )}
@@ -177,9 +178,9 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Host</h2>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <Stat label="State" value={node.status.toLowerCase()} />
-              <Stat label="Last heartbeat" value={timeAgo(node.lastHeartbeatAt)} />
-              <Stat label="Noderaft Agent version" value={node.agentVersion ?? "—"} />
-              <Stat label="Docker version" value={node.dockerVersion ?? "—"} />
+              <Stat label="Last heartbeat" value={freshnessAgeLabel(node.lastHeartbeatAt)} />
+              <Stat label="Noderaft Agent version" value={cleanVersion(node.agentVersion) ?? "—"} />
+              <Stat label="Docker version" value={cleanVersion(node.dockerVersion) ?? "—"} />
               <Stat label="OS" value={String(node.osInfo?.os ?? "—")} />
               <Stat label="Architecture" value={String(node.osInfo?.arch ?? "—")} />
               <Stat label="CPU cores" value={String(node.systemInfo?.cpuCount ?? "—")} />
@@ -291,7 +292,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
               onKeyDown={(e) => {
                 if (e.key === "Enter") go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
               }}
-              className="cursor-pointer rounded-[12px] border border-border bg-surface-deck p-3.5 focus:outline-none focus:ring-2 focus:ring-focus"
+              className="cursor-pointer rounded-[12px] border border-border bg-surface-deck p-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="font-medium">{p.name}</p>
@@ -358,7 +359,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
               <Stat label="Hostname" value={node.hostname} />
               <Stat label="Noderaft Agent endpoint" value={node.apiBaseUrl} />
               <Stat label="Docker context" value={node.dockerContext ?? "default"} />
-              <Stat label="Noderaft Agent version" value={node.agentVersion ?? "—"} />
+              <Stat label="Noderaft Agent version" value={cleanVersion(node.agentVersion) ?? "—"} />
               <Stat label="Enabled" value={node.isActive ? "yes" : "no"} />
               <Stat label="Enrollment mode" value={node.agentVersion ? "token (self-registered)" : "manual"} />
               <Stat label="Registered" value={formatDateTime(node.createdAt)} />

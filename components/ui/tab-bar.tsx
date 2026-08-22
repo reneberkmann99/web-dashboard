@@ -53,7 +53,7 @@ export function TabBar<T extends string>({
             onClick={() => onChange(t)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "relative shrink-0 px-0.5 pb-2.5 pt-1 text-sm outline-none transition-colors focus:ring-2 focus:ring-focus",
+              "relative shrink-0 px-0.5 pb-2.5 pt-1 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-focus",
               selected
                 ? "font-medium text-text after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-selected-border"
                 : "text-text-muted hover:text-text"

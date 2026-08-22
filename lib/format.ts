@@ -81,6 +81,56 @@ export function compactUptime(uptime: string | null | undefined): string {
   return `${n}${suffix}`;
 }
 
+/**
+ * Strip stray JSON quoting from a version string that was captured via a
+ * `{{json .Field}}`-style template (`"29.6.2"` -> `29.6.2`). Older agent
+ * reports may still carry the quotes even after the capture format was
+ * fixed, so this stays defensive at render time rather than trusting the
+ * stored value.
+ */
+export function cleanVersion(version: string | null | undefined): string | null {
+  if (!version) return null;
+  const trimmed = version.trim();
+  const unquoted = trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"") ? trimmed.slice(1, -1) : trimmed;
+  return unquoted || null;
+}
+
+/** Parse a docker `memoryUsage` "used / limit" string ("43.86MiB / 23.48GiB") into raw used bytes, or null. */
+export function parseMemoryUsedBytes(memoryUsage: string | null | undefined): number | null {
+  if (!memoryUsage) return null;
+  const used = memoryUsage.split("/")[0]?.trim();
+  if (!used) return null;
+  const match = /^([\d.]+)\s*([A-Za-z]+)$/.exec(used);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (Number.isNaN(value)) return null;
+  const unit = match[2].toUpperCase();
+  const multiplier = unit.startsWith("T") ? 1024 ** 4 : unit.startsWith("G") ? 1024 ** 3 : unit.startsWith("K") ? 1024 : unit.startsWith("M") ? 1024 ** 2 : 1;
+  return value * multiplier;
+}
+
+const BYTE_UNITS: Array<[string, number]> = [["B", 1], ["K", 1024], ["M", 1024 ** 2], ["G", 1024 ** 3], ["T", 1024 ** 4]];
+
+/**
+ * One consistent unit for a whole table column, chosen from its largest
+ * value — a column must never mix `660K` next to `750.7M` next to `2.5G`
+ * (design review round 2, §2/§6). Returns a per-row formatter; unparseable
+ * or null values render as "—" rather than breaking the shared unit.
+ */
+export function formatBytesColumn(values: Array<number | null>): (bytes: number | null) => string {
+  const finite = values.filter((v): v is number => typeof v === "number" && v > 0);
+  const max = finite.length > 0 ? Math.max(...finite) : 0;
+  let unitLabel = "B";
+  let divisor = 1;
+  for (const [label, size] of BYTE_UNITS) {
+    if (max >= size) {
+      unitLabel = label;
+      divisor = size;
+    }
+  }
+  return (bytes: number | null): string => (bytes === null ? "—" : `${(bytes / divisor).toFixed(1)}${unitLabel}`);
+}
+
 export function maskSecrets(text: string): string {
   // crude but effective: redact common secret shapes in log lines
   return text
