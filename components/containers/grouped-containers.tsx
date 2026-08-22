@@ -134,16 +134,22 @@ export function GroupedContainers({
                             className="h-4 w-4 accent-brand"
                           />
                         </td>
-                        <td className="px-3 py-1.5 pl-8">
-                          <p className="max-w-[280px] truncate font-mono text-[13px] text-text" title={c.name}>{c.name}</p>
-                        </td>
-                        <td className="px-3 py-1.5 text-right"><StatusBadge status={c.status} expectedStopped={c.expectedStopped} health={c.health} /></td>
-                        <td className={cn("px-3 py-1.5 text-right font-mono text-xs tabular-nums text-text-muted")}>{formatRowMemory(parseMemoryUsedBytes(c.memoryUsage))}</td>
-                        <td className="px-3 py-1.5 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {c.attention && c.attention !== "healthy" && <AttentionBadge severity={c.attention} />}
-                            <span className="font-mono text-[11px] text-text-subtle">{compactUptime(c.uptime)}</span>
-                            {renderActions(c)}
+                        {/* Individual containers don't map onto the parent's
+                            Workload/Containers/Running/Memory columns (a
+                            container has a status and per-container memory,
+                            not a container count) — spanning the remaining
+                            columns with one flex row avoids implying a false
+                            header association for assistive tech. */}
+                        <td className="px-3 py-1.5" colSpan={4}>
+                          <div className="flex items-center gap-3 pl-8">
+                            <p className="min-w-0 max-w-[280px] flex-1 truncate font-mono text-[13px] text-text" title={c.name}>{c.name}</p>
+                            <StatusBadge status={c.status} expectedStopped={c.expectedStopped} health={c.health} />
+                            <span className={cn("w-16 shrink-0 text-right font-mono text-xs tabular-nums text-text-muted")}>{formatRowMemory(parseMemoryUsedBytes(c.memoryUsage))}</span>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {c.attention && c.attention !== "healthy" && <AttentionBadge severity={c.attention} />}
+                              <span className="font-mono text-[11px] text-text-subtle">{compactUptime(c.uptime)}</span>
+                              {renderActions(c)}
+                            </div>
                           </div>
                         </td>
                       </tr>

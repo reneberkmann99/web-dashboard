@@ -118,7 +118,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
 
   const groupedQuery = useQuery({
     queryKey: ["admin-all-containers-grouped", { search, status, nodeId, clientId, projectId, health, needsAttention }],
-    queryFn: () => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (status) params.set("status", status);
@@ -129,9 +129,18 @@ export default function SettingsContainersPage(): React.JSX.Element {
       if (needsAttention) params.set("needsAttention", "1");
       params.set("sort", "name");
       params.set("dir", "asc");
-      params.set("page", "1");
-      params.set("limit", "1000");
-      return apiFetch<ContainersPayload>(`/api/admin/containers?${params.toString()}`);
+      // The server clamps `limit` to 100/request regardless of what's asked
+      // for, so grouping must page through every result rather than trusting
+      // one oversized request — otherwise a fleet over 100 containers would
+      // silently group (and let bulk actions touch) only the first page.
+      const first = await apiFetch<ContainersPayload>(`/api/admin/containers?${params.toString()}&page=1&limit=100`);
+      const all = [...first.containers];
+      const MAX_PAGES = 50; // 5,000 containers — far beyond any real fleet this UI targets
+      for (let page = 2; page <= first.pageCount && page <= MAX_PAGES; page++) {
+        const next = await apiFetch<ContainersPayload>(`/api/admin/containers?${params.toString()}&page=${page}&limit=100`);
+        all.push(...next.containers);
+      }
+      return { ...first, containers: all };
     },
     refetchInterval: grouped ? 10000 : false,
     enabled: grouped

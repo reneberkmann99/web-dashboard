@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -67,7 +67,8 @@ export function DataTable<T>({
   toolbar,
   mobileToolbar,
   mobileCard,
-  ariaLabel = "Resources"
+  ariaLabel = "Resources",
+  onPageRowsChange
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -90,6 +91,13 @@ export function DataTable<T>({
   /** Mobile card presentation (design §02/§19); renders INSTEAD of the table below md. */
   mobileCard?: (row: T) => React.ReactNode;
   ariaLabel?: string;
+  /**
+   * Reports the exact rows on the currently rendered page whenever they
+   * change (sort/search/pagination all included) — for a parent-owned
+   * "select all on this page" control, which must scope to what's actually
+   * on screen rather than every filtered row across all pages.
+   */
+  onPageRowsChange?: (rows: T[]) => void;
 }): React.JSX.Element {
   const [view, setView] = useStoredViewState(stateKey ? `table:${stateKey}` : null, {
     query: "",
@@ -123,6 +131,16 @@ export function DataTable<T>({
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(safePage * pageSize, (safePage + 1) * pageSize);
   const visibleColumns = useMemo(() => computeVisibleColumns(columns, pageRows), [columns, pageRows]);
+
+  // Only the row identities (via rowKey, when given) should trigger this —
+  // `pageRows` is a fresh array every render regardless of content, and a
+  // parent naively storing it in state would loop forever re-rendering.
+  const pageRowIdentity = rowKey ? pageRows.map(rowKey).join(",") : pageRows;
+  useEffect(() => {
+    onPageRowsChange?.(pageRows);
+    // pageRowIdentity intentionally stands in for `pageRows` as the effect's
+    // real dependency — see the comment above.
+  }, [pageRowIdentity]);
 
   function toggleSort(key: string): void {
     if (sortKey === key) {

@@ -18,6 +18,7 @@ import { MobileFiltersRow, workloadCard } from "@/components/mobile/mobile-resou
 import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
 import { Menu } from "@/components/ui/menu";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type RefPayload = { nodes: Array<{ id: string; name: string }>; clients: Array<{ id: string; name: string }> };
@@ -85,6 +86,12 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
   // the same job one level up from "restart these 18 mailcow containers".
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkRestarting, setBulkRestarting] = useState(false);
+  // Scopes "select all on this page" to what DataTable actually renders —
+  // `rows` below is every filtered workload across all pages, not just the
+  // visible ones, so using it directly for the header checkbox let a single
+  // click select (and bulk-restart) workloads the operator never saw.
+  const [currentPageIds, setCurrentPageIds] = useState<string[]>([]);
+  const [confirmBulkRestart, setConfirmBulkRestart] = useState(false);
 
   const syncUrl = useCallback((next: Filters) => {
     const params = new URLSearchParams();
@@ -173,12 +180,12 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         <input
           type="checkbox"
           aria-label="Select all workloads on this page"
-          checked={rows.length > 0 && rows.every((w) => selected.has(w.id))}
+          checked={currentPageIds.length > 0 && currentPageIds.every((id) => selected.has(id))}
           onChange={(event) => {
             const next = new Set(selected);
-            for (const w of rows) {
-              if (event.target.checked) next.add(w.id);
-              else next.delete(w.id);
+            for (const id of currentPageIds) {
+              if (event.target.checked) next.add(id);
+              else next.delete(id);
             }
             setSelected(next);
           }}
@@ -398,7 +405,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         <div className="hidden min-h-10 items-center gap-2 rounded-panel border border-selected-border/30 bg-selected/30 px-3 py-2 md:flex" data-bulk-action-bar>
           <span className="font-mono text-xs text-text-muted">{selected.size} selected</span>
           {selectedWorkloads.length > 0 && (
-            <Button size="sm" variant="secondary" onClick={() => void runBulkRestart()} disabled={bulkRestarting}>
+            <Button size="sm" variant="secondary" onClick={() => setConfirmBulkRestart(true)} disabled={bulkRestarting}>
               {bulkRestarting ? "Restarting…" : `Restart ${selectedWorkloads.length}`}
             </Button>
           )}
@@ -431,6 +438,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
           go({ url: `/admin/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
         }}
         rowKey={(w) => w.id}
+        onPageRowsChange={(pageRows) => setCurrentPageIds(pageRows.map((w) => w.id))}
       />
 
       <FilterSheet
@@ -443,6 +451,17 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         onApply={(draft) => updateFilters(draftToFilters(draft))}
         onReset={() => updateFilters({ nodeFilter: "", clientFilter: "", stateFilter: "", sourceFilter: "", needsAttentionOnly: false })}
         onDraftChange={(draft) => setSheetCount(applyFilters(allWorkloads, draftToFilters(draft)).length)}
+      />
+
+      <ConfirmDialog
+        open={confirmBulkRestart}
+        onClose={() => setConfirmBulkRestart(false)}
+        onConfirm={() => { setConfirmBulkRestart(false); void runBulkRestart(); }}
+        title={`Restart ${selectedWorkloads.length} workload${selectedWorkloads.length === 1 ? "" : "s"}?`}
+        impact="Every container in each selected workload will be restarted."
+        confirmLabel="Restart workloads"
+        danger={false}
+        busy={bulkRestarting}
       />
     </div>
   );
