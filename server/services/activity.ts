@@ -66,9 +66,17 @@ export async function resolveActivityTargetLabels(logs: ActivityLogLike[]): Prom
     containerComposites.length > 0
       ? prisma.container.findMany({ where: { OR: containerComposites }, select: { nodeId: true, dockerContainerId: true, dockerName: true } })
       : Promise.resolve([]),
-    idsByType.has("CLIENT") || idsByType.has("ORGANIZATION")
+    idsByType.has("CLIENT") || idsByType.has("ORGANIZATION") || idsByType.has("CLIENT_ACCOUNT")
       ? prisma.clientAccount.findMany({
-          where: { id: { in: [...(idsByType.get("CLIENT") ?? []), ...(idsByType.get("ORGANIZATION") ?? [])] } },
+          where: {
+            id: {
+              in: [
+                ...(idsByType.get("CLIENT") ?? []),
+                ...(idsByType.get("ORGANIZATION") ?? []),
+                ...(idsByType.get("CLIENT_ACCOUNT") ?? [])
+              ]
+            }
+          },
           select: { id: true, name: true }
         })
       : Promise.resolve([]),
@@ -114,8 +122,12 @@ export async function resolveActivityTargetLabels(logs: ActivityLogLike[]): Prom
         break;
       }
       case "CLIENT":
-      case "ORGANIZATION": {
-        // Organizations are deactivated, never hard-deleted.
+      case "ORGANIZATION":
+      case "CLIENT_ACCOUNT": {
+        // Organizations are deactivated, never hard-deleted. Client
+        // create/update/deactivate routes write "CLIENT_ACCOUNT" as
+        // targetType (the Prisma model name), distinct from "CLIENT"/
+        // "ORGANIZATION" used elsewhere — all three resolve the same way.
         const live = clientById.get(log.targetId);
         resolved = { label: live ?? metadataString(log.metadata, CLIENT_META_KEYS), deleted: false };
         break;

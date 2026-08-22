@@ -4,6 +4,7 @@ import { compactMemory, compactUptime, cleanVersion, formatBytesColumn, parseMem
 import { parseLogLine } from "@/components/logs/log-viewer";
 import { activityRollupSentence, groupActivityEvents, pairIncidentEvents, activityResourceLabel, type TimelineEvent } from "@/components/activity/activity-timeline";
 import { groupContainersByWorkload } from "@/components/containers/grouped-containers";
+import { parseTimeRangeParam } from "@/components/activity/time-range-filter";
 import type { ContainerView } from "@/types/domain";
 
 describe("desktop operator formatting", () => {
@@ -101,5 +102,15 @@ describe("desktop operator formatting", () => {
     expect(groups).toHaveLength(2);
     expect(groups[0].events.map((event) => event.id)).toEqual(["1", "2"]);
     expect(activityRollupSentence(groups[0].events[0], 2)).toBe("Deleted 2 users");
+  });
+
+  it("validates the Activity ?range= URL param, falling back to 24h instead of crashing on an unknown value", () => {
+    expect(parseTimeRangeParam("1h")).toBe("1h");
+    expect(parseTimeRangeParam("24h")).toBe("24h");
+    expect(parseTimeRangeParam("7d")).toBe("7d");
+    expect(parseTimeRangeParam("custom")).toBe("custom");
+    expect(parseTimeRangeParam(null)).toBe("24h");
+    expect(parseTimeRangeParam("foo")).toBe("24h");
+    expect(parseTimeRangeParam("")).toBe("24h");
   });
 });

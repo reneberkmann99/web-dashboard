@@ -16,7 +16,7 @@ import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
 import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
 import { MobileFiltersRow } from "@/components/mobile/mobile-resource-cards";
 import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
-import { TimeRangeFilter, rangeToFrom, type TimeRangeKey } from "@/components/activity/time-range-filter";
+import { TimeRangeFilter, rangeToFrom, parseTimeRangeParam } from "@/components/activity/time-range-filter";
 
 type AuditEntry = {
   id: string;
@@ -55,7 +55,7 @@ export default function AdminActivityPage(): React.JSX.Element {
   const projectId = searchParams.get("projectId") ?? "";
   // Time range (§10): defaults to 24h so 845+ events never load unbounded.
   // "range" plus explicit from/to (custom only) is the URL-shareable state.
-  const range = (searchParams.get("range") as TimeRangeKey | null) ?? "24h";
+  const range = parseTimeRangeParam(searchParams.get("range"));
   const customFrom = searchParams.get("from") ?? "";
   const customTo = searchParams.get("to") ?? "";
   // Memoized so the relative-range boundary is computed once per selection,

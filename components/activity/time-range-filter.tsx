@@ -25,6 +25,16 @@ export function rangeToFrom(range: Exclude<TimeRangeKey, "custom">): string {
 }
 
 /**
+ * Validates a raw `?range=` URL value against the four known keys, falling
+ * back to `24h` for anything else — a hand-edited or shared URL can carry
+ * any string, and an unrecognized one reaching `rangeToFrom` as `undefined`
+ * would make `Date.now() - undefined` -> NaN -> `toISOString()` throw.
+ */
+export function parseTimeRangeParam(raw: string | null): TimeRangeKey {
+  return raw === "1h" || raw === "24h" || raw === "7d" || raw === "custom" ? raw : "24h";
+}
+
+/**
  * The first filter chip on Activity (design review round 2, §10): 845
  * events need a time bound before search does any good. Defaults to 24h;
  * Custom exposes a real start/end range. State lives in the URL via the

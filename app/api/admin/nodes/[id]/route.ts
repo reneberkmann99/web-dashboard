@@ -7,7 +7,7 @@ import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { pollContainersForNode } from "@/server/services/workloads";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
-import { getAttentionMap, getAttentionFeedForAdmin, getSustainedNodePressure } from "@/server/services/attention";
+import { getAttentionMap, getAttentionFeedForAdmin, getSustainedNodePressure, recordNodeResourceSample } from "@/server/services/attention";
 import { resourceThresholds, nodeResourceWindowLabel } from "@/server/services/attention-config";
 
 export async function GET(
@@ -48,6 +48,22 @@ export async function GET(
     const unhealthy = containers.filter((c) => c.health === "unhealthy" || c.status === "unhealthy").length;
     const stopped = containers.filter((c) => c.status === "stopped").length;
     const storageSummary = await nodeAgentClient.getStorageSummary(node);
+
+    // pollContainersForNode refreshes node.systemInfo with an instantaneous
+    // reading but (unlike the periodic background poll) never feeds it into
+    // NodeResourceSample. Without this, a node with no sample inside the
+    // sustained window falls back to that instantaneous value below while
+    // the response still always claims `resourceWindowLabel` ("5m avg") —
+    // mislabeling a live spike as sustained pressure. Recording it here
+    // means this view's own poll counts toward the window like any other.
+    const freshSystemInfo = (freshNode?.systemInfo ?? null) as Record<string, unknown> | null;
+    if (freshSystemInfo) {
+      await recordNodeResourceSample(node.id, {
+        cpuPercent: typeof freshSystemInfo.cpuPercent === "number" ? freshSystemInfo.cpuPercent : null,
+        memPercent: typeof freshSystemInfo.memPercent === "number" ? freshSystemInfo.memPercent : null,
+        diskPercent: typeof freshSystemInfo.diskPercent === "number" ? freshSystemInfo.diskPercent : null
+      });
+    }
 
     const now = new Date();
     const [activity, attentionMap, attentionFeed, maintenance, pressureByNode] = await Promise.all([

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "./helpers/db";
 import { resetDatabase } from "./setup";
 import { seedWorld } from "./helpers/fixtures";
-import { getDeduplicatedAdminAttentionRows } from "@/server/services/attention";
+import { getDeduplicatedAdminAttentionRows, recordNodeResourceSample, getSustainedNodePressure } from "@/server/services/attention";
 import { resolveActivityTargetLabels } from "@/server/services/activity";
 
 beforeAll(async () => {
@@ -75,6 +75,12 @@ describe("round 2: Activity resolves ids to names, deleted resources keep a snap
     expect(labels.get("CONTAINER:ccontainerthatvanished0001")).toEqual({ label: null, deleted: false });
   });
 
+  it("resolves CLIENT_ACCOUNT audit rows (the targetType client create/update/deactivate actually write), not just CLIENT/ORGANIZATION", async () => {
+    const world = await seedWorld();
+    const labels = await resolveActivityTargetLabels([{ targetType: "CLIENT_ACCOUNT", targetId: world.clientA.id, metadata: null }]);
+    expect(labels.get(`CLIENT_ACCOUNT:${world.clientA.id}`)).toEqual({ label: world.clientA.name, deleted: false });
+  });
+
   it("falls back to the metadata name snapshot and marks `deleted: true` once the row is hard-deleted", async () => {
     const world = await seedWorld();
     const ghostProjectId = "cghostprojectid00000000001";
@@ -85,5 +91,19 @@ describe("round 2: Activity resolves ids to names, deleted resources keep a snap
     expect(labels.get(`PROJECT:${ghostProjectId}`)).toEqual({ label: "Mailcow", deleted: true });
     expect(labels.get(`USER:cghostuserid000000000002`)).toEqual({ label: "Test User", deleted: true });
     void world;
+  });
+});
+
+describe("round 2: node detail's own poll feeds the sustained-pressure window instead of reporting instantaneous data under a '5m avg' label", () => {
+  it("a node with no prior sample has real windowed pressure the moment its own poll records one, not just an unlabeled instantaneous reading", async () => {
+    const world = await seedWorld();
+    // Before this fix, viewing a freshly-added node's detail page updated
+    // node.systemInfo (instantaneous) but never wrote a NodeResourceSample,
+    // so getSustainedNodePressure had nothing in its window — yet the API
+    // response always claimed `resourceWindowLabel: "5m avg"` regardless.
+    expect((await getSustainedNodePressure([world.node1.id])).get(world.node1.id)).toBeUndefined();
+    await recordNodeResourceSample(world.node1.id, { cpuPercent: 42, memPercent: 61, diskPercent: 30 });
+    const pressure = (await getSustainedNodePressure([world.node1.id])).get(world.node1.id);
+    expect(pressure).toEqual({ cpu: 42, mem: 61, disk: 30, sampleCount: 1 });
   });
 });
