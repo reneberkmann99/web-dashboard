@@ -26,3 +26,18 @@ if (process.env.NODE_ENV !== "production") {
 export async function lockClientAccountForQuota(tx: Prisma.TransactionClient, clientAccountId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM "ClientAccount" WHERE id = ${clientAccountId} FOR UPDATE`;
 }
+
+/**
+ * Locks a PublicAddress row for the rest of the current transaction. Both
+ * updatePublicAddress (changing allocation/reservation) and
+ * createIngressEndpoint (reading allocation/reservation before binding to
+ * it) must take this lock, in that order relative to
+ * lockClientAccountForQuota (account first, then address, in both call
+ * sites — a consistent lock order avoids a deadlock between the two), or a
+ * reservation change and a concurrent endpoint creation on the same address
+ * can interleave past each other's own check — see
+ * server/services/ingress.ts.
+ */
+export async function lockPublicAddressForUpdate(tx: Prisma.TransactionClient, publicAddressId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "PublicAddress" WHERE id = ${publicAddressId} FOR UPDATE`;
+}

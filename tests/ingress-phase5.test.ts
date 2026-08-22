@@ -150,7 +150,7 @@ describe("Phase 5 domain verification lifecycle", () => {
     const domain = await verifiedDomain("app.bound-delete.example.com", world.clientA, world.clientAAdmin);
     const address = await createPublicAddress({ label: "Shared v4", ipAddress: "203.0.113.20", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await createIngressEndpoint({
-      workloadId: world.projectA.id,
+      workloadId: world.projectA.id, serviceName: "svc",
       containerId: world.web.id,
       targetPort: 8080,
       exposureType: "HTTPS",
@@ -199,7 +199,7 @@ describe("Phase 5 organization isolation", () => {
   it("listIngressEndpoints / getIngressEndpoint scope to the caller's own organization", async () => {
     const address = await createPublicAddress({ label: "Shared v4 isolation", ipAddress: "203.0.113.30", ipVersion: "V4", actor: sessionFor(world.adminA) });
     const endpointA = await createIngressEndpoint({
-      workloadId: world.projectA.id,
+      workloadId: world.projectA.id, serviceName: "svc",
       targetPort: 9000,
       exposureType: "TCP",
       publicAddressId: address.id,
@@ -207,7 +207,7 @@ describe("Phase 5 organization isolation", () => {
       actor: sessionFor(world.clientAAdmin)
     });
     const endpointB = await createIngressEndpoint({
-      workloadId: projectB.id,
+      workloadId: projectB.id, serviceName: "svc",
       targetPort: 9001,
       exposureType: "TCP",
       publicAddressId: address.id,
@@ -256,7 +256,7 @@ describe("Phase 5 public addresses: multiple WAN IPs, shared vs dedicated", () =
 
     // Client A may use it.
     const okEndpoint = await createIngressEndpoint({
-      workloadId: world.projectA.id,
+      workloadId: world.projectA.id, serviceName: "svc",
       targetPort: 5000,
       exposureType: "TCP",
       publicAddressId: dedicated.id,
@@ -267,7 +267,7 @@ describe("Phase 5 public addresses: multiple WAN IPs, shared vs dedicated", () =
 
     // Client B may not, even on a different port.
     await expect(createIngressEndpoint({
-      workloadId: projectB.id,
+      workloadId: projectB.id, serviceName: "svc",
       targetPort: 5001,
       exposureType: "TCP",
       publicAddressId: dedicated.id,
@@ -310,7 +310,7 @@ describe("Phase 5 public addresses: multiple WAN IPs, shared vs dedicated", () =
   it("cannot delete a public address still referenced by an ingress endpoint", async () => {
     const address = await createPublicAddress({ label: "In use", ipAddress: "203.0.113.90", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await createIngressEndpoint({
-      workloadId: world.projectA.id,
+      workloadId: world.projectA.id, serviceName: "svc",
       targetPort: 6000,
       exposureType: "UDP",
       publicAddressId: address.id,
@@ -333,7 +333,7 @@ describe("Phase 5 TCP/UDP port conflict detection", () => {
     const address = await createPublicAddress({ label: "Conflict test", ipAddress: "203.0.113.100", ipVersion: "V4", actor: sessionFor(world.adminA) });
 
     await createIngressEndpoint({
-      workloadId: world.projectA.id,
+      workloadId: world.projectA.id, serviceName: "svc",
       targetPort: 5432,
       exposureType: "TCP",
       publicAddressId: address.id,
@@ -344,7 +344,7 @@ describe("Phase 5 TCP/UDP port conflict detection", () => {
     expect(await checkIngressPortConflict({ publicAddressId: address.id, publicPort: 25432, exposureType: "TCP" })).toBe(true);
 
     await expect(createIngressEndpoint({
-      workloadId: projectB.id,
+      workloadId: projectB.id, serviceName: "svc",
       targetPort: 5432,
       exposureType: "TCP",
       publicAddressId: address.id,
@@ -357,7 +357,7 @@ describe("Phase 5 TCP/UDP port conflict detection", () => {
   it("does not conflict across different protocols or different ports on the same address", async () => {
     const address = await createPublicAddress({ label: "No conflict test", ipAddress: "203.0.113.101", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await createIngressEndpoint({
-      workloadId: world.projectA.id,
+      workloadId: world.projectA.id, serviceName: "svc",
       targetPort: 53,
       exposureType: "UDP",
       publicAddressId: address.id,
@@ -367,7 +367,7 @@ describe("Phase 5 TCP/UDP port conflict detection", () => {
 
     // Same port, different protocol: fine.
     const tcpSamePort = await createIngressEndpoint({
-      workloadId: projectB.id,
+      workloadId: projectB.id, serviceName: "svc",
       targetPort: 53,
       exposureType: "TCP",
       publicAddressId: address.id,
@@ -379,7 +379,7 @@ describe("Phase 5 TCP/UDP port conflict detection", () => {
 
     // Same protocol, different port: fine.
     const udpDifferentPort = await createIngressEndpoint({
-      workloadId: projectB.id,
+      workloadId: projectB.id, serviceName: "svc",
       targetPort: 53,
       exposureType: "UDP",
       publicAddressId: address.id,
@@ -395,11 +395,11 @@ describe("Phase 5 TCP/UDP port conflict detection", () => {
     const before = await prisma.ingressEndpoint.count({ where: { clientAccountId: world.clientA.id, exposureType: { in: ["TCP", "UDP"] } } });
     await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { maxTcpUdpEndpoints: before + 1 } });
     await createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 7000, exposureType: "TCP", publicAddressId: address.id, publicPort: 27000,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7000, exposureType: "TCP", publicAddressId: address.id, publicPort: 27000,
       actor: sessionFor(world.clientAAdmin)
     });
     await expect(createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 7001, exposureType: "TCP", publicAddressId: address.id, publicPort: 27001,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7001, exposureType: "TCP", publicAddressId: address.id, publicPort: 27001,
       actor: sessionFor(world.clientAAdmin)
     })).rejects.toThrow("TCP_UDP_ENDPOINT_QUOTA_EXCEEDED");
     await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { maxTcpUdpEndpoints: null } });
@@ -411,7 +411,7 @@ describe("Phase 5 HTTP(S) endpoints require a verified, unbound domain", () => {
     const domain = await createDomain({ hostname: "unverified.example.com", actor: sessionFor(world.clientAAdmin) });
     const address = await createPublicAddress({ label: "For unverified", ipAddress: "203.0.113.110", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await expect(createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 8080, exposureType: "HTTPS", domainId: domain.id, publicAddressId: address.id,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8080, exposureType: "HTTPS", domainId: domain.id, publicAddressId: address.id,
       actor: sessionFor(world.clientAAdmin)
     })).rejects.toThrow("DOMAIN_NOT_VERIFIED");
   });
@@ -420,12 +420,12 @@ describe("Phase 5 HTTP(S) endpoints require a verified, unbound domain", () => {
     const domain = await verifiedDomain("already-bound.example.com", world.clientA, world.clientAAdmin);
     const address = await createPublicAddress({ label: "Bound test", ipAddress: "203.0.113.111", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 8080, exposureType: "HTTPS", domainId: domain.id, publicAddressId: address.id,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8080, exposureType: "HTTPS", domainId: domain.id, publicAddressId: address.id,
       actor: sessionFor(world.clientAAdmin)
     });
     const address2 = await createPublicAddress({ label: "Bound test 2", ipAddress: "203.0.113.112", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await expect(createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 8081, exposureType: "HTTPS", domainId: domain.id, publicAddressId: address2.id,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8081, exposureType: "HTTPS", domainId: domain.id, publicAddressId: address2.id,
       actor: sessionFor(world.clientAAdmin)
     })).rejects.toThrow("DOMAIN_ALREADY_BOUND");
   });
@@ -434,12 +434,12 @@ describe("Phase 5 HTTP(S) endpoints require a verified, unbound domain", () => {
     const domain = await verifiedDomain("wrong-shape.example.com", world.clientA, world.clientAAdmin);
     const address = await createPublicAddress({ label: "Shape test", ipAddress: "203.0.113.113", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await expect(createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 53, exposureType: "UDP", domainId: domain.id, publicAddressId: address.id,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 53, exposureType: "UDP", domainId: domain.id, publicAddressId: address.id,
       actor: sessionFor(world.clientAAdmin)
     })).rejects.toThrow("TCP_UDP_ENDPOINT_CANNOT_HAVE_DOMAIN");
 
     await expect(createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 8080, exposureType: "HTTP", domainId: domain.id, publicAddressId: address.id, publicPort: 8080,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8080, exposureType: "HTTP", domainId: domain.id, publicAddressId: address.id, publicPort: 8080,
       actor: sessionFor(world.clientAAdmin)
     })).rejects.toThrow("HTTP_ENDPOINT_CANNOT_SET_PUBLIC_PORT");
   });
@@ -458,18 +458,19 @@ describe("Phase 5 HTTP(S) endpoints require a verified, unbound domain", () => {
     setDomainTxtResolverForTests(async () => [[verificationTxtValue((await getDomain(domain.id, sessionFor(world.clientAAdmin))).verificationToken)]]);
     await verifyDomain({ id: domain.id, actor: sessionFor(world.clientAAdmin) });
     await createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 8080, exposureType: "HTTPS", domainId: domain.id, publicAddressId: addressWithProvider.id,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8080, exposureType: "HTTPS", domainId: domain.id, publicAddressId: addressWithProvider.id,
       actor: sessionFor(world.clientAAdmin)
     });
 
     const afterBinding = await dnsInstructionsForDomain(domain.id, sessionFor(world.clientAAdmin));
-    expect(afterBinding.routing).toHaveLength(1);
-    expect(afterBinding.routing[0]).toMatchObject({ type: "CNAME", value: "gw.noderaft-test.net" });
+    expect(afterBinding.routing).toMatchObject({ type: "CNAME", value: "gw.noderaft-test.net" });
+    expect(afterBinding.routingAlternatives).toHaveLength(0);
 
     const plainAddress = await createPublicAddress({ label: "No provider", ipAddress: "203.0.113.121", ipVersion: "V4", actor: sessionFor(world.adminA) });
     const domain2 = await createDomain({ hostname: "plain-a-record.example.com", actor: sessionFor(world.clientAAdmin) });
     const instructions2 = await dnsInstructionsForDomain(domain2.id, sessionFor(world.clientAAdmin));
-    const plainCandidate = instructions2.routing.find((r) => r.publicAddressId === plainAddress.id);
+    expect(instructions2.routing).toBeNull();
+    const plainCandidate = instructions2.routingAlternatives.find((r) => r.publicAddressId === plainAddress.id);
     expect(plainCandidate).toMatchObject({ type: "A", value: "203.0.113.121" });
   });
 });
@@ -479,7 +480,7 @@ describe("Phase 5 endpoint identity is independent of the workload's current nod
     const domain = await verifiedDomain("relocation.example.com", world.clientA, world.clientAAdmin);
     const address = await createPublicAddress({ label: "Relocation test", ipAddress: "203.0.113.130", ipVersion: "V4", actor: sessionFor(world.adminA) });
     const endpoint = await createIngressEndpoint({
-      workloadId: world.projectA.id,
+      workloadId: world.projectA.id, serviceName: "svc",
       containerId: world.web.id,
       targetPort: 8080,
       exposureType: "HTTPS",
@@ -530,7 +531,7 @@ describe("Phase 5 quotas", () => {
     await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { maxIngressEndpoints: 0 } });
     const address = await createPublicAddress({ label: "Quota endpoints", ipAddress: "203.0.113.140", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await expect(createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 9090, exposureType: "TCP", publicAddressId: address.id, publicPort: 29090,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 9090, exposureType: "TCP", publicAddressId: address.id, publicPort: 29090,
       actor: sessionFor(world.clientAAdmin)
     })).rejects.toThrow("INGRESS_ENDPOINT_QUOTA_EXCEEDED");
     await prisma.clientAccount.update({ where: { id: world.clientA.id }, data: { maxIngressEndpoints: null } });
@@ -580,37 +581,82 @@ describe("Phase 5 review follow-ups", () => {
     });
     const domain = await verifiedDomain("provider-override.example.com", world.clientA, world.clientAAdmin);
     const endpoint = await createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 8080, exposureType: "HTTPS", domainId: domain.id,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 8080, exposureType: "HTTPS", domainId: domain.id,
       publicAddressId: address.id, providerId: overrideProvider.id, // explicit override, different from the address's own default
       actor: sessionFor(world.clientAAdmin)
     });
     expect(endpoint.provider?.id).toBe(overrideProvider.id);
 
     const instructions = await dnsInstructionsForDomain(domain.id, sessionFor(world.clientAAdmin));
-    expect(instructions.routing).toHaveLength(1);
-    expect(instructions.routing[0]).toMatchObject({ type: "CNAME", value: "override.gw.test" });
+    expect(instructions.routing).toMatchObject({ type: "CNAME", value: "override.gw.test" });
 
     // Changing the address's own provider afterward must not retroactively
     // change what's already bound to this endpoint.
     await updatePublicAddress({ id: address.id, providerId: defaultProvider.id, actor: sessionFor(world.adminA) });
     const afterAddressProviderChange = await dnsInstructionsForDomain(domain.id, sessionFor(world.clientAAdmin));
-    expect(afterAddressProviderChange.routing[0]).toMatchObject({ type: "CNAME", value: "override.gw.test" });
+    expect(afterAddressProviderChange.routing).toMatchObject({ type: "CNAME", value: "override.gw.test" });
   });
 
   it("rejects reserving a shared address to one organization while another organization still has an endpoint bound to it", async () => {
     const address = await createPublicAddress({ label: "Shared with two tenants", ipAddress: "203.0.113.151", ipVersion: "V4", actor: sessionFor(world.adminA) });
     await createIngressEndpoint({
-      workloadId: world.projectA.id, targetPort: 7100, exposureType: "TCP", publicAddressId: address.id, publicPort: 27100,
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7100, exposureType: "TCP", publicAddressId: address.id, publicPort: 27100,
       actor: sessionFor(world.clientAAdmin)
     });
     await createIngressEndpoint({
-      workloadId: projectB.id, targetPort: 7100, exposureType: "UDP", publicAddressId: address.id, publicPort: 27100,
+      workloadId: projectB.id, serviceName: "svc", targetPort: 7100, exposureType: "UDP", publicAddressId: address.id, publicPort: 27100,
       actor: sessionFor(world.adminA), clientAccountId: world.clientB.id
     });
 
     await expect(updatePublicAddress({
       id: address.id, allocation: "DEDICATED", reservedForOrgId: world.clientA.id, actor: sessionFor(world.adminA)
     })).rejects.toThrow("RESERVATION_CONFLICTS_WITH_EXISTING_ENDPOINTS");
+  });
+
+  it("serializes a reservation change against a concurrent endpoint creation on the same address — never both succeed", async () => {
+    const address = await createPublicAddress({ label: "Race reserve vs create", ipAddress: "203.0.113.152", ipVersion: "V4", actor: sessionFor(world.adminA) });
+
+    const [reserveResult, createResult] = await Promise.allSettled([
+      updatePublicAddress({ id: address.id, allocation: "DEDICATED", reservedForOrgId: world.clientA.id, actor: sessionFor(world.adminA) }),
+      createIngressEndpoint({
+        workloadId: projectB.id, serviceName: "svc", targetPort: 7200, exposureType: "TCP", publicAddressId: address.id, publicPort: 27200,
+        actor: sessionFor(world.adminA), clientAccountId: world.clientB.id
+      })
+    ]);
+
+    const finalAddress = await prisma.publicAddress.findUniqueOrThrow({ where: { id: address.id } });
+    const boundEndpoints = await prisma.ingressEndpoint.count({ where: { publicAddressId: address.id } });
+    if (reserveResult.status === "fulfilled") {
+      // The reservation won the race: B's create must have lost (there is no
+      // endpoint on this address belonging to an organization other than A).
+      expect(createResult.status).toBe("rejected");
+      expect(boundEndpoints).toBe(0);
+      expect(finalAddress.reservedForOrgId).toBe(world.clientA.id);
+    } else {
+      // B's create won the race: the reservation must have lost, and B's
+      // endpoint must actually exist (never silently dropped).
+      expect(createResult.status).toBe("fulfilled");
+      expect(boundEndpoints).toBe(1);
+      expect(finalAddress.allocation).toBe("SHARED");
+    }
+  });
+
+  it("rejects an endpoint with neither a container nor a service name — nothing for a gateway to route to", async () => {
+    const address = await createPublicAddress({ label: "No backend", ipAddress: "203.0.113.153", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    await expect(createIngressEndpoint({
+      workloadId: world.projectA.id, targetPort: 7300, exposureType: "TCP", publicAddressId: address.id, publicPort: 27300,
+      actor: sessionFor(world.clientAAdmin)
+    })).rejects.toThrow("BACKEND_IDENTIFIER_REQUIRED");
+  });
+
+  it("rejects an update that would clear both containerId and serviceName", async () => {
+    const address = await createPublicAddress({ label: "Clear backend", ipAddress: "203.0.113.154", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const endpoint = await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7301, exposureType: "TCP", publicAddressId: address.id, publicPort: 27301,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    await expect(updateIngressEndpoint({ id: endpoint.id, serviceName: null, actor: sessionFor(world.clientAAdmin) }))
+      .rejects.toThrow("BACKEND_IDENTIFIER_REQUIRED");
   });
 
   it("a disable that lands while verification is in flight is not overwritten by the verification result", async () => {

@@ -286,19 +286,45 @@ export async function verifyDomain(input: { id: string; actor: AuthSession; sour
   return domain;
 }
 
+export type DnsRecord = { type: "A" | "AAAA" | "CNAME"; host: string; value: string; publicAddressId: string };
+
 export type DnsInstructions = {
   status: string;
   verification: { type: "TXT"; host: string; value: string };
-  routing: Array<{ type: "A" | "AAAA" | "CNAME"; host: string; value: string; publicAddressId: string | null }>;
+  /**
+   * The definitive record to publish, once this domain is bound to exactly
+   * one IngressEndpoint. Null until then.
+   */
+  routing: DnsRecord | null;
+  /**
+   * Only populated while NOT yet bound: every PublicAddress this
+   * organization could choose when it creates the endpoint. These are
+   * MUTUALLY EXCLUSIVE alternatives, not a record set — publish exactly one,
+   * matching whichever address the endpoint ends up using, never all of
+   * them together (a CNAME and an A/AAAA record can't coexist at the same
+   * name, and publishing more than one A/AAAA would point traffic at
+   * addresses nothing is actually listening on).
+   */
+  routingAlternatives: DnsRecord[];
 };
+
+type RoutingCandidate = { id: string; ipAddress: string; ipVersion: "V4" | "V6"; provider: { gatewayHostname: string | null } | null };
+
+function dnsRecordFor(hostname: string, address: RoutingCandidate): DnsRecord {
+  const gatewayHostname = address.provider?.gatewayHostname ?? null;
+  if (gatewayHostname) return { type: "CNAME", host: hostname, value: gatewayHostname, publicAddressId: address.id };
+  return { type: address.ipVersion === "V4" ? "A" : "AAAA", host: hostname, value: address.ipAddress, publicAddressId: address.id };
+}
 
 /**
  * DNS instructions are derived from the CURRENT ingress topology, never
  * hard-coded: if this domain is already bound to an IngressEndpoint, the
- * routing record points at that endpoint's actual PublicAddress/provider.
- * Otherwise it recommends every PublicAddress this organization could use
- * (shared, enabled addresses plus any dedicated to them) so an operator can
- * prepare DNS before creating the endpoint.
+ * single definitive `routing` record points at that endpoint's actual
+ * PublicAddress/provider. Otherwise `routingAlternatives` lists every
+ * PublicAddress this organization could choose (shared, enabled addresses
+ * plus any dedicated to them) so an operator can see their options before
+ * creating the endpoint — see the DnsInstructions doc comment for why these
+ * are alternatives, never a record set to publish all at once.
  */
 export async function dnsInstructionsForDomain(id: string, actor: AuthSession): Promise<DnsInstructions> {
   requireDomainViewActor(actor);
@@ -311,37 +337,30 @@ export async function dnsInstructionsForDomain(id: string, actor: AuthSession): 
     include: { publicAddress: true, provider: true }
   });
 
-  // An endpoint's own `provider` (set at create time — either inherited from
-  // its PublicAddress or explicitly overridden, see createIngressEndpoint)
-  // is authoritative once bound: the address's *current* provider may have
-  // since changed, but this endpoint's actual routing hasn't.
-  const candidates: Array<{ id: string; ipAddress: string; ipVersion: "V4" | "V6"; provider: { gatewayHostname: string | null } | null }> = boundEndpoint
-    ? [{ ...boundEndpoint.publicAddress, provider: boundEndpoint.provider }]
-    : await prisma.publicAddress.findMany({
-        where: {
-          enabled: true,
-          OR: [{ allocation: "SHARED" }, { reservedForOrgId: domain.clientAccountId }]
-        },
-        include: { provider: true },
-        orderBy: { label: "asc" }
-      });
+  const verification = { type: "TXT" as const, host: challengeHostname(domain.hostname), value: verificationTxtValue(domain.verificationToken) };
 
-  const routing = candidates.map((address) => {
-    const gatewayHostname = address.provider?.gatewayHostname ?? null;
-    if (gatewayHostname) {
-      return { type: "CNAME" as const, host: domain.hostname, value: gatewayHostname, publicAddressId: address.id };
-    }
-    return {
-      type: (address.ipVersion === "V4" ? "A" : "AAAA") as "A" | "AAAA",
-      host: domain.hostname,
-      value: address.ipAddress,
-      publicAddressId: address.id
-    };
+  if (boundEndpoint) {
+    // An endpoint's own `provider` (set at create time — either inherited
+    // from its PublicAddress or explicitly overridden, see
+    // createIngressEndpoint) is authoritative once bound: the address's
+    // *current* provider may have since changed, but this endpoint's actual
+    // routing hasn't.
+    const routing = dnsRecordFor(domain.hostname, { ...boundEndpoint.publicAddress, provider: boundEndpoint.provider });
+    return { status: domain.status, verification, routing, routingAlternatives: [] };
+  }
+
+  const candidates = await prisma.publicAddress.findMany({
+    where: {
+      enabled: true,
+      OR: [{ allocation: "SHARED" }, { reservedForOrgId: domain.clientAccountId }]
+    },
+    include: { provider: true },
+    orderBy: { label: "asc" }
   });
-
   return {
     status: domain.status,
-    verification: { type: "TXT", host: challengeHostname(domain.hostname), value: verificationTxtValue(domain.verificationToken) },
-    routing
+    verification,
+    routing: null,
+    routingAlternatives: candidates.map((address) => dnsRecordFor(domain.hostname, address))
   };
 }

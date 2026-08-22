@@ -174,7 +174,7 @@ function EndpointsPanel({ endpoints, loading, clients, domains, addresses, provi
 
   const [confirmDelete, setConfirmDelete] = useState<Endpoint | null>(null);
 
-  const valid = Boolean(orgId && workloadId && targetPort && publicAddressId) &&
+  const valid = Boolean(orgId && workloadId && targetPort && publicAddressId && (containerId || serviceName)) &&
     (tcpUdp ? Boolean(publicPort) : Boolean(domainId));
 
   return (
@@ -246,14 +246,14 @@ function EndpointsPanel({ endpoints, loading, clients, domains, addresses, provi
             </Select>
           </label>
           <label className="block text-sm">
-            <span className="mb-1 block text-text-muted">Container (optional)</span>
+            <span className="mb-1 block text-text-muted">Container</span>
             <Select value={containerId} onChange={(e) => setContainerId(e.target.value)} disabled={!selectedWorkload}>
-              <option value="">Unresolved / by service name</option>
+              <option value="">Not adopted yet — set a service name instead</option>
               {selectedWorkload?.containers.map((c) => <option key={c.id} value={c.id}>{c.dockerName}</option>)}
             </Select>
           </label>
           <label className="block text-sm">
-            <span className="mb-1 block text-text-muted">Service name (if not adopted yet)</span>
+            <span className="mb-1 block text-text-muted">Service name{containerId ? "" : " (required if no container is selected)"}</span>
             <Input value={serviceName} onChange={(e) => setServiceName(e.target.value)} placeholder="web" disabled={Boolean(containerId)} />
           </label>
           <label className="block text-sm">

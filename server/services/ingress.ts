@@ -1,6 +1,6 @@
 import net from "node:net";
 import { Prisma, type IngressExposureType, type PublicAddressAllocation, type IngressProviderKind, type IngressEndpointStatus } from "@prisma/client";
-import { lockClientAccountForQuota, prisma } from "@/server/db";
+import { lockClientAccountForQuota, lockPublicAddressForUpdate, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
 
@@ -200,9 +200,19 @@ export async function updatePublicAddress(input: UpdatePublicAddressInput) {
   if (input.providerId) await assertProviderExists(input.providerId);
 
   const address = await prisma.$transaction(async (tx) => {
+    // Lock order (ClientAccount, then PublicAddress) matches
+    // createIngressEndpoint's — see server/db.ts's lockPublicAddressForUpdate
+    // doc comment for why both operations must serialize on the address row:
+    // without it, a concurrent endpoint creation can read this address as
+    // still SHARED and insert after this transaction has already reserved it
+    // to a different organization (or vice versa), each having checked
+    // against a state the other has since invalidated.
     if (reservedForOrgId && reservedForOrgId !== existing.reservedForOrgId) {
       await lockClientAccountForQuota(tx, reservedForOrgId);
       if (allocation === "DEDICATED") await assertDedicatedIpQuota(tx, reservedForOrgId);
+    }
+    await lockPublicAddressForUpdate(tx, existing.id);
+    if (reservedForOrgId && reservedForOrgId !== existing.reservedForOrgId) {
       await assertNoConflictingEndpointOwners(tx, existing.id, reservedForOrgId);
     }
     return tx.publicAddress.update({
@@ -500,22 +510,30 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
     domainId = domain.id;
   }
 
-  const publicAddress = await prisma.publicAddress.findUnique({ where: { id: input.publicAddressId } });
-  if (!publicAddress || !publicAddress.enabled) throw new Error("PUBLIC_ADDRESS_UNAVAILABLE");
-  if (publicAddress.allocation === "DEDICATED" && publicAddress.reservedForOrgId !== clientAccountId) {
-    throw new Error("PUBLIC_ADDRESS_RESERVED");
-  }
+  if (!input.containerId && !input.serviceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
 
-  // The row lock serializes concurrent quota checks for this organization —
-  // without it, two concurrent requests with one slot remaining could both
-  // observe headroom under maxIngressEndpoints/maxTcpUdpEndpoints and both
-  // insert. The port-conflict check runs in here too (consistent read within
-  // the same transaction); it's additionally backstopped by the table's own
-  // unique constraint regardless.
+  // The row locks serialize this against both concurrent quota checks for
+  // this organization (maxIngressEndpoints/maxTcpUdpEndpoints — without the
+  // ClientAccount lock, two concurrent requests with one slot remaining
+  // could both observe headroom and both insert) and a concurrent
+  // updatePublicAddress reservation change (without the PublicAddress lock
+  // and re-reading it under that lock, this could still bind to an address
+  // an admin is simultaneously reserving to a different organization — see
+  // server/db.ts's lockPublicAddressForUpdate doc comment). The
+  // port-conflict check runs in here too (consistent read within the same
+  // transaction); it's additionally backstopped by the table's own unique
+  // constraint regardless.
   let endpoint;
   try {
     endpoint = await prisma.$transaction(async (tx) => {
       await lockClientAccountForQuota(tx, clientAccountId);
+      await lockPublicAddressForUpdate(tx, input.publicAddressId);
+
+      const publicAddress = await tx.publicAddress.findUnique({ where: { id: input.publicAddressId } });
+      if (!publicAddress || !publicAddress.enabled) throw new Error("PUBLIC_ADDRESS_UNAVAILABLE");
+      if (publicAddress.allocation === "DEDICATED" && publicAddress.reservedForOrgId !== clientAccountId) {
+        throw new Error("PUBLIC_ADDRESS_RESERVED");
+      }
 
       if (tcpUdp) {
         const totalExisting = await tx.ingressEndpoint.count({ where: { clientAccountId, exposureType: { in: ["TCP", "UDP"] } } });
@@ -625,6 +643,13 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
     const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true } });
     if (!container || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
   }
+
+  // An endpoint with neither a container nor a service name has nothing for
+  // a gateway to route to — reject a patch that would leave it that way,
+  // same as create.
+  const resultingContainerId = input.containerId !== undefined ? input.containerId : existing.containerId;
+  const resultingServiceName = input.serviceName !== undefined ? input.serviceName : existing.serviceName;
+  if (!resultingContainerId && !resultingServiceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
 
   const endpoint = await prisma.ingressEndpoint.update({
     where: { id: input.id },

@@ -30,7 +30,10 @@ type DnsRecord = { type: "A" | "AAAA" | "CNAME" | "TXT"; host: string; value: st
 type DnsInstructions = {
   status: DomainStatus;
   verification: DnsRecord;
-  routing: (DnsRecord & { publicAddressId: string | null })[];
+  /** The definitive record, once bound to exactly one ingress endpoint. */
+  routing: (DnsRecord & { publicAddressId: string }) | null;
+  /** Mutually exclusive options while unbound — publish exactly one, never all. */
+  routingAlternatives: (DnsRecord & { publicAddressId: string })[];
 };
 
 function statusVariant(status: DomainStatus): "success" | "danger" | "warning" | "default" {
@@ -206,10 +209,17 @@ export function DomainsConsole({ canManage, organizationName }: { canManage: boo
             </div>
             <div>
               <p className="mb-1 font-medium text-text">Routing</p>
-              {instructionsQuery.data.instructions.routing.length === 0 ? (
+              {instructionsQuery.data.instructions.routing ? (
+                <DnsRecordRow record={instructionsQuery.data.instructions.routing} />
+              ) : instructionsQuery.data.instructions.routingAlternatives.length === 0 ? (
                 <p className="text-muted">No public address is available to route this domain yet — contact your platform administrator.</p>
               ) : (
-                instructionsQuery.data.instructions.routing.map((record, i) => <DnsRecordRow key={i} record={record} />)
+                <>
+                  <p className="text-muted">
+                    Not bound to an endpoint yet — publish exactly ONE of the following once you create it, matching whichever public address it uses (never all of them at once).
+                  </p>
+                  {instructionsQuery.data.instructions.routingAlternatives.map((record, i) => <DnsRecordRow key={i} record={record} />)}
+                </>
               )}
             </div>
           </div>

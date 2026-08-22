@@ -73,7 +73,11 @@ export const ingressEndpointCreateSchema = z.object({
   publicAddressId: z.string().cuid(),
   publicPort: port.nullable().optional(),
   providerId: nullableId
-}).strict();
+}).strict()
+  .refine((body) => Boolean(body.containerId) || Boolean(body.serviceName), {
+    message: "containerId or serviceName is required so a gateway has something to route to",
+    path: ["containerId"]
+  });
 
 export const ingressEndpointUpdateSchema = z.object({
   containerId: nullableId,
