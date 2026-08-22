@@ -1052,7 +1052,7 @@ describe("Phase 5 review follow-ups", () => {
     await expect(assertWorkloadReassignable(freshProject.id)).resolves.toBeUndefined();
   });
 
-  it("reconciles a bound endpoint to ERROR when its container is deactivated by inventory sync, but never touches an already-DISABLED endpoint", async () => {
+  it("reconciles a bound endpoint to BACKEND_UNAVAILABLE when its container is deactivated by inventory sync, but never touches an already-DISABLED endpoint", async () => {
     const containerA = await prisma.container.create({
       data: { nodeId: world.node1.id, projectId: world.projectA.id, dockerContainerId: `reconcile-a-${Date.now()}`, dockerName: "reconcile-a", isActive: true }
     });
@@ -1071,6 +1071,7 @@ describe("Phase 5 review follow-ups", () => {
     });
     await updateIngressEndpoint({ id: endpointB.id, status: "DISABLED", actor: sessionFor(world.clientAAdmin) });
 
+    await prisma.container.updateMany({ where: { id: { in: [containerA.id, containerB.id] } }, data: { isActive: false } });
     await reconcileIngressEndpointsForDeactivatedContainers([containerA.id, containerB.id]);
 
     const freshA = await getIngressEndpoint(endpointA.id, sessionFor(world.clientAAdmin));

@@ -578,7 +578,7 @@ function ProvidersPanel({ providers, loading, refresh }: { providers: Provider[]
           {kind === "CADDY" && <>
             <label className="block text-sm">
               <span className="mb-1 block text-text-muted">Caddy Admin API URL</span>
-              <Input value={adminUrl} onChange={(e) => setAdminUrl(e.target.value)} placeholder="http://caddy:2019" />
+              <Input value={adminUrl} onChange={(e) => setAdminUrl(e.target.value)} placeholder="https://caddy.internal.example:2019" />
             </label>
             <label className="block text-sm">
               <span className="mb-1 block text-text-muted">Bearer credential (optional)</span>
