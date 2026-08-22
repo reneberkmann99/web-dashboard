@@ -526,7 +526,8 @@ export type AdoptComposeResult =
   | { status: "adopted"; id: string }
   | { status: "already_adopted"; workloadId: string; workloadName: string }
   | { status: "conflict"; conflicts: ComposeConflict[] }
-  | { status: "not_found" };
+  | { status: "not_found" }
+  | { status: "container_has_ingress_endpoint" };
 
 /**
  * Adopt a detected Compose project as a COMPOSE workload, optionally owned by
@@ -585,6 +586,21 @@ export async function adoptComposeProject(input: {
   );
   if (conflicts.length > 0 && !input.moveConflictingContainers) {
     return { status: "conflict", conflicts };
+  }
+
+  // Reparenting a container to a new (possibly differently-owned) workload
+  // below never updates or checks IngressEndpoint.containerId — a bound
+  // endpoint would keep its OLD workload/organization ownership while its
+  // actual backend container silently belongs to the new one, letting the
+  // old tenant keep controlling public routing into infrastructure that's
+  // no longer semantically theirs. Refuse instead, same as
+  // deleteContainer's guard (server/services/container-lifecycle.ts).
+  const boundEndpoint = await prisma.ingressEndpoint.findFirst({
+    where: { containerId: { in: members.map((m) => m.id) } },
+    select: { id: true }
+  });
+  if (boundEndpoint) {
+    return { status: "container_has_ingress_endpoint" };
   }
 
   const friendly = input.name?.trim() || input.composeProject;

@@ -130,7 +130,14 @@ function EndpointsPanel({ endpoints, loading, clients, domains, addresses, provi
   const workloads = workloadsQuery.data?.workloads ?? [];
   const selectedWorkload = workloads.find((w) => w.id === workloadId);
 
-  const orgDomains = domains.filter((d) => d.clientAccountId === orgId && d.status === "VERIFIED");
+  // A domain can back at most one endpoint (Domain.id is @unique on
+  // IngressEndpoint) — the server rejects a create against an
+  // already-bound domain with DOMAIN_ALREADY_BOUND regardless of that
+  // endpoint's status (see createIngressEndpoint's doc comment), so the
+  // picker must exclude it too rather than let the admin pick it and hit
+  // an error.
+  const boundDomainIds = new Set(endpoints.map((e) => e.domain?.id).filter((id): id is string => Boolean(id)));
+  const orgDomains = domains.filter((d) => d.clientAccountId === orgId && d.status === "VERIFIED" && !boundDomainIds.has(d.id));
   const orgAddresses = addresses.filter((a) => a.enabled && (a.allocation === "SHARED" || a.reservedForOrg?.id === orgId));
   const tcpUdp = exposureType === "TCP" || exposureType === "UDP";
 

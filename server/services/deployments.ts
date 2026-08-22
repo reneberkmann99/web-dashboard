@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { DeploymentSource, ProjectSource, Prisma } from "@prisma/client";
 import { parse, stringify } from "yaml";
-import { prisma } from "@/server/db";
+import { lockProjectForUpdate, prisma } from "@/server/db";
 import { nodeAgentClient } from "@/server/services/node-agent/client";
 import { logAuditEvent } from "@/server/audit";
 import { assertWorkloadReassignable } from "@/server/services/ingress";
@@ -321,8 +321,14 @@ export async function createDeployment(input: {
   // as app/api/admin/workloads/[id]/route.ts (see assertWorkloadReassignable's
   // doc comment): that existing project could already have a bound ingress
   // endpoint, and reassigning it here would be just as unsafe as reassigning
-  // it through the workload settings form.
-  if (adoptingExisting && existingProject && (input.clientAccountId ?? null) !== existingProject.clientAccountId) {
+  // it through the workload settings form. This is a cheap pre-transaction
+  // rejection only — the authoritative re-check happens again below, under
+  // the Project row lock, inside the transaction that performs the
+  // reassignment itself (see server/db.ts's lockProjectForUpdate doc
+  // comment).
+  const isReassignment =
+    adoptingExisting && existingProject && (input.clientAccountId ?? null) !== existingProject.clientAccountId;
+  if (isReassignment && existingProject) {
     await assertWorkloadReassignable(existingProject.id);
   }
 
@@ -334,6 +340,11 @@ export async function createDeployment(input: {
   const envSnapshot = sortObjectEntries(input.environment);
 
   const result = await prisma.$transaction(async (tx) => {
+    if (adoptingExisting && existingProject) {
+      await lockProjectForUpdate(tx, existingProject.id);
+      if (isReassignment) await assertWorkloadReassignable(existingProject.id, tx);
+    }
+
     const project = adoptingExisting && existingProject
       ? await tx.project.update({
           where: { id: existingProject.id },

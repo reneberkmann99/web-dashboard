@@ -3,6 +3,8 @@ import { prisma } from "./helpers/db";
 import { resetDatabase } from "./setup";
 import { seedWorld, sessionFor } from "./helpers/fixtures";
 import { can, capabilitiesForRole } from "@/server/auth/policy";
+import { lockProjectForUpdate } from "@/server/db";
+import { setWorkloadActive } from "@/server/services/workload-lifecycle";
 import {
   DomainForbiddenError,
   challengeHostname,
@@ -677,6 +679,40 @@ describe("Phase 5 review follow-ups", () => {
     expect(final.status).toBe("DISABLED");
   });
 
+  it("setDomainEnabled contends on the same hostname advisory lock createIngressEndpoint and verifyDomain take, so a status change can never land inside their locked check-then-act window", async () => {
+    const hostname = "race-disable-lock.example.com";
+    const domain = await createDomain({ hostname, actor: sessionFor(world.clientAAdmin) });
+
+    // Simulates createIngressEndpoint holding this exact advisory lock
+    // across its own domain-status re-check and insert — without
+    // setDomainEnabled's fix, a plain (non-locked) update could otherwise
+    // slip in and commit a disable in that window, leaving a freshly
+    // created endpoint bound to a domain that's already Disabled.
+    let releaseLock!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => {
+      void prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${hostname}))`;
+        resolve();
+        await new Promise<void>((releaseResolve) => { releaseLock = releaseResolve; });
+      });
+    });
+    await lockAcquired;
+
+    let disableSettled = false;
+    const disablePromise = setDomainEnabled({ id: domain.id, enabled: false, actor: sessionFor(world.clientAAdmin) })
+      .then((r) => { disableSettled = true; return r; });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(disableSettled).toBe(false); // blocked behind the held advisory lock, not a plain unlocked update
+
+    releaseLock();
+    await disablePromise;
+    expect(disableSettled).toBe(true);
+
+    const final = await getDomain(domain.id, sessionFor(world.clientAAdmin));
+    expect(final.status).toBe("DISABLED");
+  });
+
   it("rejects a deleted (soft: isActive false) container as an endpoint backend, on create and on update", async () => {
     const deletedContainer = await prisma.container.create({
       data: {
@@ -1053,5 +1089,67 @@ describe("Phase 5 review follow-ups", () => {
     // once the other's change was visible, since clearing the second field
     // against the already-updated state would leave nothing.
     expect(results.some((r) => r.status === "rejected")).toBe(true);
+  });
+
+  it("serializes a workload reassignment against a concurrent createIngressEndpoint — an endpoint's clientAccountId always matches its workload's actual owner", async () => {
+    const freshWorkload = await prisma.project.create({
+      data: { name: "Reassign race", slug: `reassign-race-${Date.now()}`, clientAccountId: world.clientA.id, nodeId: world.node1.id, isActive: true }
+    });
+    const address = await createPublicAddress({ label: "Reassign race addr", ipAddress: "203.0.113.182", ipVersion: "V4", actor: sessionFor(world.adminA) });
+
+    // Emulates the same locked check-then-update the admin routes
+    // (app/api/admin/workloads/[id], app/api/admin/projects/[id]) and the
+    // compose-adoption path (server/services/deployments.ts) now perform —
+    // see server/db.ts's lockProjectForUpdate doc comment.
+    const reassign = prisma.$transaction(async (tx) => {
+      await lockProjectForUpdate(tx, freshWorkload.id);
+      await assertWorkloadReassignable(freshWorkload.id, tx);
+      await tx.project.update({ where: { id: freshWorkload.id }, data: { clientAccountId: world.clientB.id } });
+    });
+    const create = createIngressEndpoint({
+      workloadId: freshWorkload.id, serviceName: "svc", targetPort: 8800, exposureType: "TCP",
+      publicAddressId: address.id, publicPort: 28800, actor: sessionFor(world.adminA), clientAccountId: world.clientA.id
+    });
+
+    const results = await Promise.allSettled([reassign, create]);
+
+    const freshProjectRow = await prisma.project.findUniqueOrThrow({ where: { id: freshWorkload.id } });
+    const freshEndpoint = await prisma.ingressEndpoint.findFirst({ where: { workloadId: freshWorkload.id } });
+    if (freshEndpoint) {
+      // Never the cross-tenant state the lock exists to prevent: an
+      // endpoint owned by an organization that isn't the workload's actual
+      // (post-race) owner.
+      expect(freshEndpoint.clientAccountId).toBe(freshProjectRow.clientAccountId);
+    }
+    // Exactly one side wins: either the reassignment commits first and the
+    // endpoint creation then sees a workload it no longer owns (NOT_FOUND),
+    // or the endpoint is created first and the reassignment then sees a
+    // bound endpoint (WORKLOAD_HAS_INGRESS_ENDPOINT) — never both.
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  });
+
+  it("reconciles a bound endpoint to ERROR when its workload is deactivated, but never touches an already-DISABLED endpoint", async () => {
+    const workload = await prisma.project.create({
+      data: { name: "Deactivate reconcile", slug: `deactivate-reconcile-${Date.now()}`, clientAccountId: world.clientA.id, nodeId: world.node1.id, isActive: true }
+    });
+    const address = await createPublicAddress({ label: "Deactivate reconcile addr", ipAddress: "203.0.113.183", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const endpoint = await createIngressEndpoint({
+      workloadId: workload.id, serviceName: "svc", targetPort: 8900, exposureType: "TCP", publicAddressId: address.id, publicPort: 28900,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    const address2 = await createPublicAddress({ label: "Deactivate reconcile addr 2", ipAddress: "203.0.113.184", ipVersion: "V4", actor: sessionFor(world.adminA) });
+    const disabledEndpoint = await createIngressEndpoint({
+      workloadId: workload.id, serviceName: "svc2", targetPort: 8901, exposureType: "TCP", publicAddressId: address2.id, publicPort: 28901,
+      actor: sessionFor(world.clientAAdmin)
+    });
+    await updateIngressEndpoint({ id: disabledEndpoint.id, status: "DISABLED", actor: sessionFor(world.clientAAdmin) });
+
+    await setWorkloadActive(sessionFor(world.adminA), workload.id, false, null);
+
+    const freshEndpoint = await getIngressEndpoint(endpoint.id, sessionFor(world.clientAAdmin));
+    const freshDisabled = await getIngressEndpoint(disabledEndpoint.id, sessionFor(world.clientAAdmin));
+    expect(freshEndpoint.status).toBe("ERROR");
+    expect(freshEndpoint.statusDetail).toBe("Workload is deactivated");
+    expect(freshDisabled.status).toBe("DISABLED"); // untouched — an operator's explicit disable is never overwritten
   });
 });

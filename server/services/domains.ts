@@ -185,12 +185,23 @@ export async function setDomainEnabled(input: { id: string; enabled: boolean; ac
   if (!existing) throw new Error("NOT_FOUND");
   assertOwnsClientAccountId(input.actor, existing.clientAccountId);
 
-  const domain = await prisma.domain.update({
-    where: { id: input.id },
-    data: input.enabled
-      ? { status: "PENDING_VERIFICATION", verifiedAt: null }
-      : { status: "DISABLED" },
-    select: domainPublicSelect
+  // Same hostname advisory lock verifyDomain and createIngressEndpoint take
+  // (see their doc comments) — without it, a plain update here could commit
+  // in the gap between createIngressEndpoint reading this domain as VERIFIED
+  // under that lock and its own insert committing, leaving a freshly
+  // created endpoint bound to a domain that's already Disabled (distinct
+  // from — and unlike — an operator later disabling an ALREADY-bound
+  // domain, which is the deliberate, accepted state verifyDomain's own
+  // conflict check documents).
+  const domain = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${existing.hostname}))`;
+    return tx.domain.update({
+      where: { id: input.id },
+      data: input.enabled
+        ? { status: "PENDING_VERIFICATION", verifiedAt: null }
+        : { status: "DISABLED" },
+      select: domainPublicSelect
+    });
   });
   await logAuditEvent({
     actorUserId: input.actor.userId,

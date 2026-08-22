@@ -4,7 +4,8 @@ import { updateProjectSchema, cuidParamSchema } from "@/server/validation/admin"
 import { fail, fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
-import { assertWorkloadReassignable } from "@/server/services/ingress";
+import { assertWorkloadReassignable, reconcileIngressEndpointsForDeactivatedWorkload } from "@/server/services/ingress";
+import { lockProjectForUpdate } from "@/server/db";
 
 export async function PATCH(
   request: Request,
@@ -21,16 +22,24 @@ export async function PATCH(
     // route accepts the identical clientAccountId field and must not be a
     // way around it (see server/services/ingress.ts's
     // assertWorkloadReassignable doc comment for why reassigning a workload
-    // with a bound ingress endpoint is unsafe).
+    // with a bound ingress endpoint is unsafe). The check-then-update runs
+    // under the Project row lock (see server/db.ts's lockProjectForUpdate
+    // doc comment) so a concurrent createIngressEndpoint can't insert a
+    // fresh endpoint between the check and the reassignment.
     if (body.clientAccountId !== undefined) {
       const existing = await prisma.project.findUnique({ where: { id }, select: { clientAccountId: true } });
       if (!existing) return fail("NOT_FOUND", "Workload not found", 404);
-      if (body.clientAccountId !== existing.clientAccountId) {
-        await assertWorkloadReassignable(id);
-      }
+      const isReassignment = body.clientAccountId !== existing.clientAccountId;
+      await prisma.$transaction(async (tx) => {
+        if (isReassignment) {
+          await lockProjectForUpdate(tx, id);
+          await assertWorkloadReassignable(id, tx);
+        }
+        await tx.project.update({ where: { id }, data: body });
+      });
+    } else {
+      await prisma.project.update({ where: { id }, data: body });
     }
-
-    await prisma.project.update({ where: { id }, data: body });
 
     await logAuditEvent({
       actorUserId: session.userId,
@@ -65,6 +74,10 @@ export async function DELETE(
       where: { id },
       data: { isActive: false }
     });
+
+    // Same reconciliation as any other workload deactivation path — see
+    // reconcileIngressEndpointsForDeactivatedWorkload's doc comment.
+    await reconcileIngressEndpointsForDeactivatedWorkload(id);
 
     await logAuditEvent({
       actorUserId: session.userId,

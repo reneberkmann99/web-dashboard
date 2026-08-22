@@ -8,7 +8,8 @@ import { getAttentionFeedForAdmin, getExpectedStates } from "@/server/services/a
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { deleteWorkload } from "@/server/services/workload-lifecycle";
-import { assertWorkloadReassignable } from "@/server/services/ingress";
+import { assertWorkloadReassignable, reconcileIngressEndpointsForDeactivatedWorkload } from "@/server/services/ingress";
+import { lockProjectForUpdate } from "@/server/db";
 
 export async function GET(
   _: Request,
@@ -111,21 +112,37 @@ export async function PATCH(
     // traffic into) a workload it no longer owns. Reassignment must never
     // silently orphan that ownership; force the endpoints to be dealt with
     // first, the same way domain/address/provider deletion is blocked while
-    // still referenced.
-    if (body.clientAccountId !== undefined && body.clientAccountId !== target.clientAccountId) {
-      await assertWorkloadReassignable(id);
-    }
-
-    await prisma.project.update({
-      where: { id },
-      data: {
-        name: body.name,
-        slug: body.slug,
-        description: body.description,
-        clientAccountId: body.clientAccountId,
-        isActive: body.isActive
+    // still referenced. The check-then-update runs under the Project row
+    // lock (see server/db.ts's lockProjectForUpdate doc comment) so a
+    // concurrent createIngressEndpoint can't insert a fresh endpoint between
+    // the check and the reassignment.
+    const isReassignment = body.clientAccountId !== undefined && body.clientAccountId !== target.clientAccountId;
+    await prisma.$transaction(async (tx) => {
+      if (isReassignment) {
+        await lockProjectForUpdate(tx, id);
+        await assertWorkloadReassignable(id, tx);
       }
+
+      await tx.project.update({
+        where: { id },
+        data: {
+          name: body.name,
+          slug: body.slug,
+          description: body.description,
+          clientAccountId: body.clientAccountId,
+          isActive: body.isActive
+        }
+      });
     });
+
+    // A deactivated workload's containers are no longer a valid ingress
+    // backend — reconcile any bound endpoints the same way an explicit
+    // workload-lifecycle deactivation does (see
+    // reconcileIngressEndpointsForDeactivatedWorkload's doc comment). Only on
+    // the true->false transition, after the update commits.
+    if (body.isActive === false && target.isActive) {
+      await reconcileIngressEndpointsForDeactivatedWorkload(id);
+    }
 
     await logAuditEvent({
       actorUserId: session.userId,

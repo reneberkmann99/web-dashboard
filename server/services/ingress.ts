@@ -1,6 +1,6 @@
 import net from "node:net";
 import { Prisma, type IngressExposureType, type PublicAddressAllocation, type IngressProviderKind, type IngressEndpointStatus } from "@prisma/client";
-import { lockClientAccountForQuota, lockContainerForUpdate, lockIngressEndpointForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
+import { lockClientAccountForQuota, lockContainerForUpdate, lockIngressEndpointForUpdate, lockProjectForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
 
@@ -221,6 +221,31 @@ export async function reconcileIngressEndpointsForDeactivatedContainers(containe
 }
 
 /**
+ * Same best-effort reconciliation as reconcileIngressEndpointsForDeactivatedContainers
+ * above, but for the workload itself going inactive rather than one of its
+ * containers — server/services/workload-lifecycle.ts's setWorkloadActive, and
+ * the isActive toggle exposed through app/api/admin/workloads/[id] and
+ * app/api/admin/projects/[id] (its soft-delete DELETE handler), all flip
+ * Project.isActive directly without going through deleteContainer's guard or
+ * a container-inventory sweep. Without this, an endpoint bound to a
+ * deactivated workload (matched via IngressEndpoint.workloadId, independent
+ * of whether it also has a containerId) would keep reporting a healthy
+ * status while its workload — and by extension every container in it — is
+ * no longer a valid backend. Never touches an endpoint an operator has
+ * already DISABLED. Called after the workload's own isActive update commits,
+ * same as the container variant, so a reconciliation failure never blocks
+ * the primary deactivation.
+ */
+export async function reconcileIngressEndpointsForDeactivatedWorkload(workloadId: string): Promise<void> {
+  await prisma.ingressEndpoint
+    .updateMany({
+      where: { workloadId, status: { not: "DISABLED" } },
+      data: { status: "ERROR", statusDetail: "Workload is deactivated" }
+    })
+    .catch(() => undefined);
+}
+
+/**
  * Guards workload reassignment to a different organization (called from
  * app/api/admin/workloads/[id]/route.ts's PATCH handler). IngressEndpoint.
  * clientAccountId is captured once at create time and never re-derived from
@@ -232,8 +257,11 @@ export async function reconcileIngressEndpointsForDeactivatedContainers(containe
  * (delete/repoint) any bound endpoints first, the same way domain/address/
  * provider deletion is blocked while still referenced.
  */
-export async function assertWorkloadReassignable(workloadId: string): Promise<void> {
-  const boundEndpoint = await prisma.ingressEndpoint.findFirst({ where: { workloadId }, select: { id: true } });
+export async function assertWorkloadReassignable(
+  workloadId: string,
+  client: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<void> {
+  const boundEndpoint = await client.ingressEndpoint.findFirst({ where: { workloadId }, select: { id: true } });
   if (boundEndpoint) throw new Error("WORKLOAD_HAS_INGRESS_ENDPOINT");
 }
 
@@ -615,21 +643,33 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
 
   if (!input.containerId && !input.serviceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
 
-  // The row locks serialize this against: a concurrent updatePublicAddress
-  // reservation change (PublicAddress lock, acquired FIRST for consistency
-  // with that function — see server/db.ts's lockPublicAddressForUpdate doc
-  // comment); a concurrent deleteContainer (Container lock, see
-  // lockContainerForUpdate); a concurrent verifyDomain/another organization
-  // binding the same hostname (the hostname advisory lock, same key
-  // verifyDomain itself takes); and concurrent quota checks for this
-  // organization (ClientAccount lock — without it, two concurrent requests
-  // with one slot remaining could both observe headroom and both insert).
-  // The port-conflict check runs in here too (consistent read within the
-  // same transaction); it's additionally backstopped by the table's own
-  // unique constraint regardless.
+  // The row locks serialize this against: a concurrent workload reassignment
+  // (Project lock, acquired FIRST — see server/db.ts's lockProjectForUpdate
+  // doc comment — with a fresh re-read of clientAccountId/isActive under it,
+  // since a reassignment committed between the pre-transaction read above
+  // and here would otherwise let this insert bind an endpoint for the OLD
+  // organization onto a workload that now belongs to a different one); a
+  // concurrent updatePublicAddress reservation change (PublicAddress lock,
+  // acquired next for consistency with that function — see
+  // lockPublicAddressForUpdate's doc comment); a concurrent deleteContainer
+  // (Container lock, see lockContainerForUpdate); a concurrent
+  // verifyDomain/another organization binding the same hostname (the
+  // hostname advisory lock, same key verifyDomain itself takes); and
+  // concurrent quota checks for this organization (ClientAccount lock —
+  // without it, two concurrent requests with one slot remaining could both
+  // observe headroom and both insert). The port-conflict check runs in here
+  // too (consistent read within the same transaction); it's additionally
+  // backstopped by the table's own unique constraint regardless.
   let endpoint;
   try {
     endpoint = await prisma.$transaction(async (tx) => {
+      await lockProjectForUpdate(tx, input.workloadId);
+      const freshWorkload = await tx.project.findUniqueOrThrow({
+        where: { id: input.workloadId },
+        select: { clientAccountId: true, isActive: true }
+      });
+      if (freshWorkload.clientAccountId !== clientAccountId || !freshWorkload.isActive) throw new Error("NOT_FOUND");
+
       await lockPublicAddressForUpdate(tx, input.publicAddressId);
 
       const publicAddress = await tx.publicAddress.findUnique({ where: { id: input.publicAddressId } });

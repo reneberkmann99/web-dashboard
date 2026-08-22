@@ -72,3 +72,20 @@ export async function lockContainerForUpdate(tx: Prisma.TransactionClient, conta
 export async function lockIngressEndpointForUpdate(tx: Prisma.TransactionClient, endpointId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM "IngressEndpoint" WHERE id = ${endpointId} FOR UPDATE`;
 }
+
+/**
+ * Locks a Project (workload) row for the rest of the current transaction.
+ * Both createIngressEndpoint (re-reading clientAccountId/isActive fresh
+ * before binding) and every workload-reassignment path (app/api/admin/
+ * workloads/[id], app/api/admin/projects/[id], server/services/
+ * deployments.ts's compose-adoption flow — re-checking
+ * assertWorkloadReassignable under this same lock) must take it, or a
+ * reassignment and a concurrent endpoint creation can each act on a stale
+ * read of workload ownership: creation can insert an endpoint for
+ * organization A onto a workload a concurrent reassignment has already
+ * moved to organization B, recreating the exact cross-tenant routing
+ * condition assertWorkloadReassignable exists to prevent.
+ */
+export async function lockProjectForUpdate(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
+}
