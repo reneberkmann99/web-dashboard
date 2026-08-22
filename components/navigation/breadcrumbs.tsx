@@ -40,7 +40,7 @@ export function Breadcrumbs({ className }: { className?: string }): React.JSX.El
                   goBreadcrumb(index);
                 }}
                 className={cn(
-                  "max-w-52 truncate text-text-muted transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
+                  "max-w-52 truncate text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                   middle && "hidden md:inline-flex"
                 )}
               >

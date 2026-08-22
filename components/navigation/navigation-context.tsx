@@ -65,24 +65,60 @@ function defaultContext(pathname: string): NavContextState {
   };
 }
 
-export function NavigationProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
+/** Identity used to build the Account settings breadcrumb — see accountContext below. */
+export type AccountNavContext = { displayName: string; overviewHref: string };
+
+/**
+ * `/account` has no sidebar item — it's reached from the user menu, not a
+ * root nav destination (design review round 2, P0 §2: the route-to-nav
+ * mapping needs an explicit "no match" case rather than falling back to the
+ * index route, which previously left the breadcrumb reading "Overview" and
+ * the sidebar highlighting Overview even though the user was on Account).
+ * `rootHref: "/account"` matches no sidebar href, so no nav item renders
+ * active; the breadcrumb reads "{name} › Account settings".
+ */
+function deriveAccountContext(pathname: string, account: AccountNavContext): NavContextState | null {
+  if (pathname !== "/account" && !pathname.startsWith("/account/")) return null;
+  return {
+    rootKey: "overview",
+    rootHref: "/account",
+    stack: [
+      { kind: "root", label: account.displayName, url: account.overviewHref },
+      { kind: "resource", label: "Account settings", url: pathname }
+    ]
+  };
+}
+
+export function NavigationProvider({ children, accountContext }: { children: React.ReactNode; accountContext?: AccountNavContext }): React.JSX.Element {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const url = currentUrl(pathname, searchParams.toString());
 
+  const deriveRouteContext = useCallback(
+    (path: string, search: string): NavContextState | null =>
+      (accountContext && deriveAccountContext(path, accountContext)) ?? deriveFallback(path, search),
+    [accountContext]
+  );
+
   // Deterministic initial render (route-derived only — no sessionStorage) so
   // server and client hydration agree. sessionStorage is restored in an effect.
   const [ctx, setCtx] = useState<NavContextState>(
-    () => deriveFallback(pathname, searchParams.toString()) ?? defaultContext(pathname)
+    () => deriveRouteContext(pathname, searchParams.toString()) ?? defaultContext(pathname)
   );
 
   // On any route change (push / replace / back / forward) restore the context
-  // recorded for this exact URL, or fall back to route-derived.
+  // recorded for this exact URL, or fall back to route-derived. Account is
+  // always route-derived (never restored from a stale stored trail, e.g. one
+  // saved by a session that hit this route before the P0 fix above) — it has
+  // no meaningful "previous state" to return to since it isn't a root.
+  const isAccountRoute = Boolean(accountContext) && (pathname === "/account" || pathname.startsWith("/account/"));
   useEffect(() => {
-    const restored = loadContext(url) ?? deriveFallback(pathname, searchParams.toString()) ?? defaultContext(pathname);
+    const restored = isAccountRoute
+      ? deriveRouteContext(pathname, searchParams.toString()) ?? defaultContext(pathname)
+      : loadContext(url) ?? deriveRouteContext(pathname, searchParams.toString()) ?? defaultContext(pathname);
     setCtx(restored);
-  }, [url]);
+  }, [url, deriveRouteContext, isAccountRoute, pathname, searchParams]);
 
   const pushResource = useCallback(
     (input: PushInput) => {

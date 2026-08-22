@@ -138,8 +138,9 @@ export class RootlessDockerAdapter implements DockerAdapter {
 
   async version(): Promise<string | null> {
     try {
-      const { stdout } = await this.runDocker(["info", "--format", "{{json .ServerVersion}}"]);
-      return stdout.trim() || null;
+      const { stdout } = await this.runDocker(["info", "--format", "{{.ServerVersion}}"]);
+      const value = stdout.trim();
+      return value || null;
     } catch {
       return null;
     }

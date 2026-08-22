@@ -6,8 +6,8 @@ import { fromError, ok } from "@/server/http";
 import { logAuditEvent } from "@/server/audit";
 import { getSourceIpFromRequest } from "@/server/request";
 import { collectOverviewSnapshot } from "@/server/services/overview";
-import { getAttentionMap, syncAttentionIfDue } from "@/server/services/attention";
-import { resourceThresholds } from "@/server/services/attention-config";
+import { getAttentionMap, syncAttentionIfDue, getSustainedNodePressure } from "@/server/services/attention";
+import { resourceThresholds, nodeResourceWindowLabel } from "@/server/services/attention-config";
 
 export async function GET(): Promise<Response> {
   try {
@@ -17,6 +17,8 @@ export async function GET(): Promise<Response> {
     await syncAttentionIfDue(snapshot);
     const live = new Map(snapshot.nodes.map((n) => [n.id, n]));
     const attentionMap = await getAttentionMap();
+    // Same sustained-window average as Overview — see overview/route.ts.
+    const pressureByNode = await getSustainedNodePressure(snapshot.nodes.filter((n) => n.isActive).map((n) => n.id));
 
     const nodes = await prisma.node.findMany({
       orderBy: { createdAt: "desc" },
@@ -39,15 +41,18 @@ export async function GET(): Promise<Response> {
 
     return ok({
       resourceThresholds: resourceThresholds(),
+      resourceWindowLabel: nodeResourceWindowLabel(),
       nodes: nodes.map((n) => {
         const op = live.get(n.id);
         const offline = op?.offline ?? n.status === "OFFLINE";
         const attention = attentionMap.get(`NODE:${n.id}`) ?? (offline ? "critical" : "healthy");
+        const systemInfo = (op?.systemInfo ?? n.systemInfo) as Record<string, unknown> | null;
+        const pressure = pressureByNode.get(n.id);
         return {
           ...n,
           status: op?.status ?? n.status,
           lastHeartbeatAt: op?.lastHeartbeatAt ?? n.lastHeartbeatAt,
-          systemInfo: op?.systemInfo ?? n.systemInfo,
+          systemInfo: systemInfo ? { ...systemInfo, cpuPercent: pressure?.cpu ?? systemInfo.cpuPercent ?? null, memPercent: pressure?.mem ?? systemInfo.memPercent ?? null } : null,
           liveContainerCount: op?.containerCount ?? 0,
           liveRunningCount: op?.runningCount ?? 0,
           liveWorkloadCount: n._count.projects,

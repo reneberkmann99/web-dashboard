@@ -60,7 +60,7 @@ export function AccountSheet({
       onClick={onClick}
       data-testid={opts.testId}
       className={
-        "flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-focus " +
+        "flex h-[50px] w-full items-center gap-[13px] rounded-[10px] px-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus " +
         (opts.danger ? "text-critical-foreground" : "text-text hover:bg-surface-raised")
       }
     >

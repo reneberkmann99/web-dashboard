@@ -431,7 +431,7 @@ function LiveLogViewer({
             type="button"
             onClick={() => setPaused((p) => !p)}
             aria-label={paused ? "Resume live logs" : "Pause live logs"}
-            className="inline-flex items-center gap-1 rounded-control border border-border bg-surface-hull/40 px-2 py-1 font-mono text-xs text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+            className="inline-flex items-center gap-1 rounded-control border border-border bg-surface-hull/40 px-2 py-1 font-mono text-xs text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             {paused ? <Play size={12} /> : <Pause size={12} />}
             {paused ? "Resume" : "Pause"}

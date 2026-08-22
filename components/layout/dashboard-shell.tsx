@@ -149,8 +149,12 @@ export function DashboardShell({
   children: React.ReactNode;
   session: ShellSession;
 }): React.JSX.Element {
+  const accountContext = {
+    displayName: session.displayName || session.email,
+    overviewHref: session.role === "ADMIN" ? "/admin" : "/organization"
+  };
   return (
-    <NavigationProvider>
+    <NavigationProvider accountContext={accountContext}>
       <DashboardShellInner session={session}>{children}</DashboardShellInner>
     </NavigationProvider>
   );
@@ -212,11 +216,14 @@ function DashboardShellInner({
   };
 
   const navCount = (item: NavItem): number | null => {
-    if (!fleetSummary) return item.key === "attention" ? 0 : null;
+    if (!fleetSummary) return null;
     if (item.key === "workloads") return fleetSummary.workloadsTotal;
     if (item.key === "containers") return fleetSummary.containersTotal;
     if (item.key === "nodes") return fleetSummary.nodesTotal;
-    if (item.key === "attention") return fleetSummary.attentionIssues;
+    // A zero Attention badge is noise that trains people to ignore the badge —
+    // hide it at zero, amber pill only once there's something to see (design
+    // review round 2, consistency debts §06).
+    if (item.key === "attention") return fleetSummary.attentionIssues > 0 ? fleetSummary.attentionIssues : null;
     return null;
   };
 
@@ -231,7 +238,7 @@ function DashboardShellInner({
         }}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "relative flex h-[38px] items-center rounded-control px-3 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus",
+          "relative flex h-[38px] items-center rounded-control px-3 text-sm text-text-muted transition-colors hover:bg-surface-raised hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
           sidebarCollapsed ? "justify-center" : "gap-2.5",
           active && "bg-selected/70 text-text before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-brand"
         )}
@@ -262,19 +269,19 @@ function DashboardShellInner({
             event.preventDefault();
             goRoot({ key: "overview", href: overviewHref, label: "Overview" });
           }}
-          className="inline-flex rounded-control focus:outline-none focus:ring-2 focus:ring-focus"
+          className="inline-flex rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <NoderaftLogo priority compact={sidebarCollapsed} className={sidebarCollapsed ? "h-[30px] w-[30px]" : "h-[30px] w-auto"} />
         </a>
         {!sidebarCollapsed && (
-          <button type="button" onClick={() => setCollapsed(true)} aria-label="Collapse sidebar" className="grid h-8 w-8 place-items-center rounded-control text-text-subtle hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus">
+          <button type="button" onClick={() => setCollapsed(true)} aria-label="Collapse sidebar" className="grid h-8 w-8 place-items-center rounded-control text-text-subtle hover:bg-surface-raised hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
             <PanelLeftClose size={15} />
           </button>
         )}
         </div>
 
         {sidebarCollapsed && (
-          <button type="button" onClick={() => setCollapsed(false)} aria-label="Expand sidebar" title="Expand sidebar" className="mt-3 grid h-8 w-full place-items-center rounded-control text-text-subtle hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus">
+          <button type="button" onClick={() => setCollapsed(false)} aria-label="Expand sidebar" title="Expand sidebar" className="mt-3 grid h-8 w-full place-items-center rounded-control text-text-subtle hover:bg-surface-raised hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
             <PanelLeftOpen size={15} />
           </button>
         )}
@@ -313,17 +320,27 @@ function DashboardShellInner({
             <button
               type="button"
               onClick={() => window.dispatchEvent(new CustomEvent("noderaft:open-search"))}
-              className="hidden h-8 items-center gap-2 rounded-control border border-border bg-surface-raised px-2.5 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text focus:outline-none focus:ring-2 focus:ring-focus sm:flex"
+              className="hidden h-8 items-center gap-2 rounded-control border border-border bg-surface-raised px-2.5 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus sm:flex"
               aria-label="Open search"
             >
               <Search size={14} />
               <span>Search</span>
               <kbd className="rounded-sm border border-border px-1.5 text-[10px]">⌘K</kbd>
             </button>
-            <span className={cn("inline-flex items-center gap-1.5 font-mono text-[11px]", freshness.state === "unavailable" ? "text-critical-foreground" : freshness.state === "stale" ? "text-warning-foreground" : "text-success-foreground")} data-freshness-state={freshness.state}>
-              <span className={cn("h-1.5 w-1.5 rounded-full", freshness.state === "unavailable" ? "bg-critical" : freshness.state === "stale" ? "bg-warning" : "bg-success")} />
+            <button
+              type="button"
+              onClick={() => attentionQuery.refetch()}
+              disabled={attentionQuery.isFetching}
+              title="Refresh now"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-control px-1.5 py-0.5 font-mono text-[11px] transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-70",
+                freshness.state === "unavailable" ? "text-critical-foreground" : freshness.state === "stale" ? "text-warning-foreground" : "text-success-foreground"
+              )}
+              data-freshness-state={freshness.state}
+            >
+              <span className={cn("h-1.5 w-1.5 rounded-full", freshness.state === "unavailable" ? "bg-critical" : freshness.state === "stale" ? "bg-warning" : "bg-success", attentionQuery.isFetching && "animate-pulse")} />
               {freshness.label}
-            </span>
+            </button>
           </div>
         </header>
 

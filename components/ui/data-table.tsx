@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,31 @@ export type Column<T> = {
   hideBelow?: "sm" | "md" | "lg"; // progressive disclosure on small screens
   /** Omit this column when every currently visible row is empty. */
   omitWhenEmpty?: (row: T) => boolean;
+  /**
+   * Omit this column when every currently visible row shares the same value
+   * — a column that reads e.g. "Main VPS" 46 times adds no information, and
+   * the active filter chip already says the same thing in one line (design
+   * review round 2, §2). Reappears automatically the moment a second value
+   * is present (a cleared filter, a different page). Uses `uniformKey` when
+   * given, otherwise `sortValue`.
+   */
+  omitWhenUniform?: boolean;
+  uniformKey?: (row: T) => string;
 };
+
+export function computeVisibleColumns<T>(columns: Column<T>[], visibleRows: T[]): Column<T>[] {
+  return columns.filter((column) => {
+    if (column.omitWhenEmpty && !visibleRows.some((row) => !column.omitWhenEmpty?.(row))) return false;
+    if (column.omitWhenUniform && visibleRows.length > 1) {
+      const keyFn = column.uniformKey ?? (column.sortValue ? (row: T) => String(column.sortValue!(row)) : null);
+      if (keyFn) {
+        const first = keyFn(visibleRows[0]);
+        if (visibleRows.every((row) => keyFn(row) === first)) return false;
+      }
+    }
+    return true;
+  });
+}
 
 export function isInteractiveTableTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest("a, button, input, select, textarea, [role='menuitem'], [data-row-action]"));
@@ -43,7 +67,8 @@ export function DataTable<T>({
   toolbar,
   mobileToolbar,
   mobileCard,
-  ariaLabel = "Resources"
+  ariaLabel = "Resources",
+  onPageRowsChange
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -66,6 +91,13 @@ export function DataTable<T>({
   /** Mobile card presentation (design §02/§19); renders INSTEAD of the table below md. */
   mobileCard?: (row: T) => React.ReactNode;
   ariaLabel?: string;
+  /**
+   * Reports the exact rows on the currently rendered page whenever they
+   * change (sort/search/pagination all included) — for a parent-owned
+   * "select all on this page" control, which must scope to what's actually
+   * on screen rather than every filtered row across all pages.
+   */
+  onPageRowsChange?: (rows: T[]) => void;
 }): React.JSX.Element {
   const [view, setView] = useStoredViewState(stateKey ? `table:${stateKey}` : null, {
     query: "",
@@ -98,10 +130,17 @@ export function DataTable<T>({
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(safePage * pageSize, (safePage + 1) * pageSize);
-  const visibleColumns = useMemo(
-    () => columns.filter((column) => !column.omitWhenEmpty || pageRows.some((row) => !column.omitWhenEmpty?.(row))),
-    [columns, pageRows]
-  );
+  const visibleColumns = useMemo(() => computeVisibleColumns(columns, pageRows), [columns, pageRows]);
+
+  // Only the row identities (via rowKey, when given) should trigger this —
+  // `pageRows` is a fresh array every render regardless of content, and a
+  // parent naively storing it in state would loop forever re-rendering.
+  const pageRowIdentity = rowKey ? pageRows.map(rowKey).join(",") : pageRows;
+  useEffect(() => {
+    onPageRowsChange?.(pageRows);
+    // pageRowIdentity intentionally stands in for `pageRows` as the effect's
+    // real dependency — see the comment above.
+  }, [pageRowIdentity]);
 
   function toggleSort(key: string): void {
     if (sortKey === key) {
@@ -164,7 +203,7 @@ export function DataTable<T>({
 
       <div className={cn("overflow-x-auto rounded-panel border border-border bg-surface-deck md:overflow-x-visible", mobileCard && "max-md:hidden")} data-desktop-table>
         <table className="w-full text-sm" aria-label={ariaLabel}>
-          <thead className="sticky top-[52px] z-[5] bg-surface-raised/95 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle backdrop-blur">
+          <thead className="sticky top-[52px] z-[5] bg-surface-raised text-left font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
             <tr>
               {visibleColumns.map((col) => (
                 <th key={col.key} className={cn(
@@ -178,7 +217,7 @@ export function DataTable<T>({
                     <button
                       type="button"
                       onClick={() => toggleSort(col.key)}
-                      className="inline-flex items-center gap-1 rounded-control hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+                      className="inline-flex items-center gap-1 rounded-control hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                       aria-label={`Sort by ${col.ariaLabel ?? (typeof col.header === "string" ? col.header : col.key)}`}
                     >
                       {col.header}
@@ -203,7 +242,7 @@ export function DataTable<T>({
                 data-row-key={rowKey ? rowKey(row) : undefined}
                 className={cn(
                   "h-11 border-t border-border transition-colors",
-                  onRowClick && "cursor-pointer hover:bg-surface-raised focus:bg-selected/35 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
+                  onRowClick && "cursor-pointer hover:bg-surface-raised focus:bg-selected/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
                 )}
               >
                 {visibleColumns.map((col) => (

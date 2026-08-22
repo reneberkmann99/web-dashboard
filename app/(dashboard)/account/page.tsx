@@ -3,11 +3,14 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Copy } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+
+const PASSWORD_MIN_LENGTH = 12;
 
 type MePayload = {
   user: { id: string; email: string; displayName: string; role: string; clientAccountName: string | null };
@@ -88,10 +91,24 @@ export default function AccountPage(): React.JSX.Element {
         <CardContent className="space-y-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted">Email</label>
-            <Input value={user?.email ?? ""} disabled />
+            <div className="flex h-control items-center justify-between rounded-control border border-border bg-surface-raised px-3 text-sm text-text">
+              <span className="truncate">{user?.email ?? "—"}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!user?.email) return;
+                  void navigator.clipboard.writeText(user.email);
+                  toast.success("Email copied");
+                }}
+                aria-label="Copy email"
+                className="ml-2 shrink-0 rounded-control p-1 text-text-subtle hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
           </div>
-          <form className="flex items-end gap-2" onSubmit={submitName}>
-            <div className="flex-1">
+          <form className="space-y-3" onSubmit={submitName}>
+            <div>
               <label className="mb-1 block text-xs font-medium text-muted">Display name</label>
               <Input
                 value={displayName || user?.displayName || ""}
@@ -99,9 +116,11 @@ export default function AccountPage(): React.JSX.Element {
                 required
               />
             </div>
-            <Button type="submit" disabled={nameMutation.isPending || (displayName.trim() === (user?.displayName ?? ""))}>
-              {nameMutation.isPending ? "Saving…" : "Save"}
-            </Button>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={nameMutation.isPending || (displayName.trim() === (user?.displayName ?? ""))}>
+                {nameMutation.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -119,15 +138,18 @@ export default function AccountPage(): React.JSX.Element {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted">New password</label>
-              <Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={12} />
+              <Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={PASSWORD_MIN_LENGTH} />
+              <p className="mt-1 text-xs text-text-subtle">At least {PASSWORD_MIN_LENGTH} characters.</p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted">Confirm new password</label>
               <Input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required />
             </div>
-            <Button type="submit" disabled={passwordMutation.isPending}>
-              {passwordMutation.isPending ? "Changing…" : "Change password"}
-            </Button>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={passwordMutation.isPending}>
+                {passwordMutation.isPending ? "Changing…" : "Change password"}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -138,9 +160,11 @@ export default function AccountPage(): React.JSX.Element {
           <CardDescription>Log out of every other device while keeping this session active.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="secondary" onClick={() => sessionsMutation.mutate()} disabled={sessionsMutation.isPending}>
-            {sessionsMutation.isPending ? "Working…" : "Log out other sessions"}
-          </Button>
+          <div className="flex justify-end">
+            <Button variant="secondary" onClick={() => sessionsMutation.mutate()} disabled={sessionsMutation.isPending}>
+              {sessionsMutation.isPending ? "Working…" : "Log out other sessions"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

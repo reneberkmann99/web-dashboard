@@ -267,6 +267,10 @@ export default function AttentionPage(): React.JSX.Element {
 
   const detail = detailQuery.data;
   const maintenanceWindows = maintenanceQuery.data?.windows ?? [];
+  // Nothing to filter when the unfiltered active set is already empty — a
+  // search field and "0 results" above an all-clear panel says the same
+  // thing twice (design review round 2, consistency debts §06).
+  const showAllClear = !conditionsQuery.isLoading && conditions.length === 0 && view === "active" && filterCount === 0;
 
   return (
     <div className="space-y-4">
@@ -289,12 +293,13 @@ export default function AttentionPage(): React.JSX.Element {
 
       <div className="flex gap-6 overflow-x-auto border-b border-border no-scrollbar" role="tablist" aria-label="Attention state">
         {tabs.map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => { setView(key); setPage(0); syncUrl({ view: key === "active" ? "" : key, page: "" }); }} className={`relative flex-none px-0.5 pb-2.5 pt-1 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-focus ${view === key ? "font-medium text-text after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-text-muted" : "text-text-muted hover:text-text"}`}>
+          <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => { setView(key); setPage(0); syncUrl({ view: key === "active" ? "" : key, page: "" }); }} className={`relative flex-none px-0.5 pb-2.5 pt-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${view === key ? "font-medium text-text after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-text-muted" : "text-text-muted hover:text-text"}`}>
             {label}
           </button>
         ))}
       </div>
 
+      {!showAllClear && (
       <DesktopFilterBar
         search={q}
         onSearchChange={(value) => { setQ(value); setPage(0); syncUrl({ q: value, page: "" }); }}
@@ -310,7 +315,9 @@ export default function AttentionPage(): React.JSX.Element {
         totalCount={totalConditionsQuery.data?.conditions.length ?? allConditions.length}
         onClearAll={clearFilters}
       />
+      )}
 
+      {!showAllClear && (
       <div className="md:hidden">
         <MobileFiltersRow
           count={filterCount}
@@ -325,6 +332,7 @@ export default function AttentionPage(): React.JSX.Element {
           ]}
         />
       </div>
+      )}
 
       <section className="space-y-2" aria-label={`${view} attention conditions`}>
         {conditionsQuery.isLoading && <div className="h-24 animate-pulse rounded-lg bg-panelAlt" />}

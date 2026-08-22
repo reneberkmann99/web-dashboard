@@ -1,6 +1,7 @@
 import { requireApiSession } from "@/server/auth/guards";
 import { prisma } from "@/server/db";
 import { fromError, ok } from "@/server/http";
+import { getDeduplicatedAdminAttentionRows } from "@/server/services/attention";
 
 /**
  * Read-only shell summary. Unlike Overview, this endpoint never polls agents
@@ -33,11 +34,17 @@ export async function GET(): Promise<Response> {
       });
     }
 
-    const [workloadsTotal, containersTotal, attentionIssues] = await Promise.all([
+    // attentionIssues must use the same deduplicated, severity-filtered rows
+    // as Overview/Attention (getDeduplicatedAdminAttentionRows) — a raw
+    // AttentionState count includes INFO-severity and node-offline-suppressed
+    // rows the rest of the app never surfaces, which showed up as the shell
+    // badge disagreeing with the Overview and Attention page counts.
+    const [workloadsTotal, containersTotal, attentionRows] = await Promise.all([
       prisma.project.count({ where: { isActive: true } }),
       prisma.container.count({ where: { isActive: true } }),
-      prisma.attentionState.count({ where: { resolvedAt: null } })
+      getDeduplicatedAdminAttentionRows()
     ]);
+    const attentionIssues = attentionRows.length;
 
     return ok({
       freshAt: freshAt?.toISOString() ?? null,

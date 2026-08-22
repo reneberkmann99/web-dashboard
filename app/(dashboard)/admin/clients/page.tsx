@@ -135,7 +135,7 @@ export default function AdminClientsPage(): React.JSX.Element {
       key: "state",
       header: "State",
       sortValue: (c) => (c.isActive ? "active" : "inactive"),
-      render: (c) => <Badge variant={c.isActive ? "success" : "default"}>{c.isActive ? "active" : "inactive"}</Badge>
+      render: (c) => <Badge variant={c.isActive ? "success" : "neutral"}>{c.isActive ? "active" : "inactive"}</Badge>
     },
     {
       key: "lastActivity",

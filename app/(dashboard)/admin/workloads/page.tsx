@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
-import { compactMemory, humanizeAction, timeAgo } from "@/lib/format";
+import { formatBytesColumn, parseMemoryUsedBytes, humanizeAction, timeAgo } from "@/lib/format";
 import type { WorkloadSummary } from "@/types/domain";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
@@ -18,6 +18,7 @@ import { MobileFiltersRow, workloadCard } from "@/components/mobile/mobile-resou
 import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
 import { Menu } from "@/components/ui/menu";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type RefPayload = { nodes: Array<{ id: string; name: string }>; clients: Array<{ id: string; name: string }> };
@@ -81,6 +82,16 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
   const { search, nodeFilter, clientFilter, stateFilter, sourceFilter, needsAttentionOnly } = filters;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetCount, setSheetCount] = useState<number | null>(null);
+  // Bulk-select parity with Containers (§2): "restart these 3 workloads" is
+  // the same job one level up from "restart these 18 mailcow containers".
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkRestarting, setBulkRestarting] = useState(false);
+  // Scopes "select all on this page" to what DataTable actually renders —
+  // `rows` below is every filtered workload across all pages, not just the
+  // visible ones, so using it directly for the header checkbox let a single
+  // click select (and bulk-restart) workloads the operator never saw.
+  const [currentPageIds, setCurrentPageIds] = useState<string[]>([]);
+  const [confirmBulkRestart, setConfirmBulkRestart] = useState(false);
 
   const syncUrl = useCallback((next: Filters) => {
     const params = new URLSearchParams();
@@ -145,7 +156,53 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     });
   }, [allWorkloads, filters]);
 
+  const formatMemory = formatBytesColumn(rows.map((w) => parseMemoryUsedBytes(w.memoryUsage)));
+  const selectedWorkloads = rows.filter((w) => selected.has(w.id) && w.totalContainers > 0);
+
+  const runBulkRestart = async (): Promise<void> => {
+    setBulkRestarting(true);
+    try {
+      const results = await Promise.allSettled(selectedWorkloads.map((w) => restartMutation.mutateAsync(w.id)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) toast.warning(`${results.length - failed}/${results.length} workloads restarted`);
+      else toast.success(`Restart queued for ${results.length} workload${results.length === 1 ? "" : "s"}`);
+      setSelected(new Set());
+    } finally {
+      setBulkRestarting(false);
+    }
+  };
+
   const columns: Column<WorkloadSummary>[] = [
+    {
+      key: "select",
+      ariaLabel: "Select workloads",
+      header: (
+        <input
+          type="checkbox"
+          aria-label="Select all workloads on this page"
+          checked={currentPageIds.length > 0 && currentPageIds.every((id) => selected.has(id))}
+          onChange={(event) => {
+            const next = new Set(selected);
+            for (const id of currentPageIds) {
+              if (event.target.checked) next.add(id);
+              else next.delete(id);
+            }
+            setSelected(next);
+          }}
+          className="h-4 w-4 accent-brand"
+        />
+      ),
+      className: "w-10 text-center",
+      render: (w) => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${w.name}`}
+          checked={selected.has(w.id)}
+          onChange={(event) => { const next = new Set(selected); if (event.target.checked) next.add(w.id); else next.delete(w.id); setSelected(next); }}
+          className="h-4 w-4 accent-brand"
+        />
+      )
+    },
     {
       key: "name",
       header: "Workload",
@@ -158,6 +215,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       key: "node",
       header: "Node",
       sortValue: (w) => w.nodeName,
+      omitWhenUniform: true,
       render: (w) => <span className="text-sm">{w.nodeName}</span>,
       hideBelow: "sm"
     },
@@ -165,6 +223,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       key: "client",
       header: "Organization",
       sortValue: (w) => w.clientName ?? "",
+      omitWhenUniform: true,
       render: (w) => <span className="text-sm">{w.clientName ?? "—"}</span>,
       hideBelow: "sm"
     },
@@ -191,18 +250,14 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     {
       key: "health",
       header: "Health",
-      sortValue: (w) => w.health,
-      render: (w) => <AttentionBadge severity={healthAttention(w)} label={w.health} />
-    },
-    {
-      key: "attention",
-      header: "Attention",
       sortValue: (w) => ATTENTION_RANK[healthAttention(w)],
-      omitWhenEmpty: (w) => healthAttention(w) === "healthy",
-      render: (w) => {
-        const a = healthAttention(w);
-        return a === "healthy" ? null : <AttentionBadge severity={a} />;
-      },
+      // Health and Attention said the same thing on every healthy row
+      // ("healthy" text next to a blank Attention cell) — one column,
+      // suppressed the moment every visible workload is healthy, and back
+      // the instant a second value appears (design review round 2, §2).
+      omitWhenUniform: true,
+      uniformKey: (w) => healthAttention(w),
+      render: (w) => <AttentionBadge severity={healthAttention(w)} label={w.health} />,
       hideBelow: "md"
     },
     {
@@ -217,7 +272,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
       header: "Memory",
       className: "text-right",
       hideBelow: "md",
-      render: (w) => <span className="font-mono text-xs tabular-nums text-text-muted" title={w.memoryUsage ?? undefined}>{compactMemory(w.memoryUsage)}</span>
+      render: (w) => <span className="font-mono text-xs tabular-nums text-text-muted" title={w.memoryUsage ?? undefined}>{formatMemory(parseMemoryUsedBytes(w.memoryUsage))}</span>
     },
     {
       key: "lastEvent",
@@ -346,6 +401,18 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         <option value="">All nodes</option>{nodeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
 
+      {selected.size > 0 && (
+        <div className="hidden min-h-10 items-center gap-2 rounded-panel border border-selected-border/30 bg-selected/30 px-3 py-2 md:flex" data-bulk-action-bar>
+          <span className="font-mono text-xs text-text-muted">{selected.size} selected</span>
+          {selectedWorkloads.length > 0 && (
+            <Button size="sm" variant="secondary" onClick={() => setConfirmBulkRestart(true)} disabled={bulkRestarting}>
+              {bulkRestarting ? "Restarting…" : `Restart ${selectedWorkloads.length}`}
+            </Button>
+          )}
+          <button type="button" onClick={() => setSelected(new Set())} className="ml-auto rounded-control px-2 py-1 text-xs text-text-muted hover:bg-surface-raised hover:text-text">Clear selection</button>
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         rows={rows}
@@ -371,6 +438,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
           go({ url: `/admin/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
         }}
         rowKey={(w) => w.id}
+        onPageRowsChange={(pageRows) => setCurrentPageIds(pageRows.map((w) => w.id))}
       />
 
       <FilterSheet
@@ -383,6 +451,17 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         onApply={(draft) => updateFilters(draftToFilters(draft))}
         onReset={() => updateFilters({ nodeFilter: "", clientFilter: "", stateFilter: "", sourceFilter: "", needsAttentionOnly: false })}
         onDraftChange={(draft) => setSheetCount(applyFilters(allWorkloads, draftToFilters(draft)).length)}
+      />
+
+      <ConfirmDialog
+        open={confirmBulkRestart}
+        onClose={() => setConfirmBulkRestart(false)}
+        onConfirm={() => { setConfirmBulkRestart(false); void runBulkRestart(); }}
+        title={`Restart ${selectedWorkloads.length} workload${selectedWorkloads.length === 1 ? "" : "s"}?`}
+        impact="Every container in each selected workload will be restarted."
+        confirmLabel="Restart workloads"
+        danger={false}
+        busy={bulkRestarting}
       />
     </div>
   );

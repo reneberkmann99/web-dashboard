@@ -178,7 +178,7 @@ export function MobileAdminOverview({ data }: { data: MobileAdminOverviewData })
           <button
             type="button"
             onClick={() => go({ url: "/admin/workloads", label: "Workloads", type: "workloads" })}
-            className="font-mono text-xs text-brand focus:outline-none focus:ring-2 focus:ring-focus"
+            className="font-mono text-xs text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             All {workloads.length}
           </button>
@@ -206,7 +206,7 @@ export function MobileAdminOverview({ data }: { data: MobileAdminOverviewData })
           <button
             type="button"
             onClick={() => go({ url: "/admin/nodes", label: "Nodes", type: "nodes" })}
-            className="font-mono text-xs text-brand focus:outline-none focus:ring-2 focus:ring-focus"
+            className="font-mono text-xs text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             Manage
           </button>

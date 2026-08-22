@@ -120,3 +120,15 @@ export function resourceThresholds() {
     disk: { warning: r.diskWarningPercent, critical: r.diskCriticalPercent }
   };
 }
+
+/**
+ * CPU/RAM shown anywhere in the UI is the sustained-pressure window average
+ * (the same value attention derivation reads from NodeResourceSample) — never
+ * an unlabelled instantaneous per-request sample. This is the single label
+ * every surface (Overview, Nodes, node detail) renders next to CPU/RAM so the
+ * same number always carries the same meaning (design review round 2, §4).
+ */
+export function nodeResourceWindowLabel(): string {
+  const minutes = Math.max(1, Math.round(ATTENTION_CONFIG.nodeResource.sustainedWindowMs / 60_000));
+  return `${minutes}m avg`;
+}

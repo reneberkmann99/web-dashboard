@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/fetcher";
@@ -16,6 +16,7 @@ import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
 import { FilterSheet, type FilterDraft } from "@/components/mobile/filter-sheet";
 import { MobileFiltersRow } from "@/components/mobile/mobile-resource-cards";
 import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
+import { TimeRangeFilter, rangeToFrom, parseTimeRangeParam } from "@/components/activity/time-range-filter";
 
 type AuditEntry = {
   id: string;
@@ -26,6 +27,8 @@ type AuditEntry = {
   humanized: string;
   targetType: string;
   targetId: string | null;
+  targetLabel: string | null;
+  targetDeleted: boolean;
   result: string;
   sourceIp: string | null;
   clientAccountId: string | null;
@@ -50,8 +53,18 @@ export default function AdminActivityPage(): React.JSX.Element {
   const [clientId, setClientId] = useState(searchParams.get("clientId") ?? "");
   const containerId = searchParams.get("containerId") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
-  const from = searchParams.get("from") ?? "";
-  const to = searchParams.get("to") ?? "";
+  // Time range (§10): defaults to 24h so 845+ events never load unbounded.
+  // "range" plus explicit from/to (custom only) is the URL-shareable state.
+  const range = parseTimeRangeParam(searchParams.get("range"));
+  const customFrom = searchParams.get("from") ?? "";
+  const customTo = searchParams.get("to") ?? "";
+  // Memoized so the relative-range boundary is computed once per selection,
+  // not on every render — `rangeToFrom` calls Date.now(), and recomputing it
+  // inline on every render produced a new query key each time, which
+  // triggered a refetch loop that could leave the table showing a
+  // momentary empty result even though the API had real data.
+  const effectiveFrom = useMemo(() => (range === "custom" ? customFrom : rangeToFrom(range)), [range, customFrom]);
+  const effectiveTo = range === "custom" ? customTo : "";
   const page = Math.max(Number(searchParams.get("page") ?? "1"), 1);
 
   const syncUrl = useCallback(
@@ -74,7 +87,7 @@ export default function AdminActivityPage(): React.JSX.Element {
   }, [searchParams]);
 
   const query = useQuery({
-    queryKey: ["admin-activity", { q, result, nodeId, clientId, containerId, projectId, from, to, page }],
+    queryKey: ["admin-activity", { q, result, nodeId, clientId, containerId, projectId, range, effectiveFrom, effectiveTo, page }],
     queryFn: () => {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
@@ -83,8 +96,8 @@ export default function AdminActivityPage(): React.JSX.Element {
       if (clientId) params.set("clientId", clientId);
       if (containerId) params.set("containerId", containerId);
       if (projectId) params.set("projectId", projectId);
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
+      if (effectiveFrom) params.set("from", effectiveFrom);
+      if (effectiveTo) params.set("to", effectiveTo);
       params.set("page", String(page));
       params.set("limit", String(PAGE_SIZE));
       return apiFetch<ActivityPayload>(`/api/admin/audit-logs?${params.toString()}`);
@@ -166,6 +179,16 @@ export default function AdminActivityPage(): React.JSX.Element {
         </div>
       )}
 
+      <div className="hidden items-center gap-2 md:flex">
+        <TimeRangeFilter
+          range={range}
+          from={customFrom}
+          to={customTo}
+          onChange={({ range: nextRange, from: nextFrom, to: nextTo }) => {
+            syncUrl({ range: nextRange === "24h" ? "" : nextRange, from: nextFrom, to: nextTo, page: "1" });
+          }}
+        />
+      </div>
       <DesktopFilterBar
         search={q}
         onSearchChange={(value) => { setQ(value); syncUrl({ q: value, page: "1" }); }}
@@ -250,6 +273,7 @@ export default function AdminActivityPage(): React.JSX.Element {
             <Detail label="Actor" value={selected.actorEmail ?? "system"} />
             <Detail label="Role" value={selected.actorRole ?? "—"} />
             <Detail label="Result" value={selected.result} />
+            <Detail label="Resource" value={selected.targetDeleted ? `${selected.targetLabel ?? "Unknown"} (deleted)` : selected.targetLabel ?? "—"} />
             <Detail label="Target type" value={selected.targetType} />
             <Detail label="Target id" value={selected.targetId ?? "—"} />
             <Detail label="Source IP" value={selected.sourceIp ?? "—"} />

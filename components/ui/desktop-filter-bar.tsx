@@ -87,7 +87,7 @@ export function DesktopFilterBar({
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            className="h-8 w-full rounded-control border border-border bg-surface-raised pl-8 pr-2 text-[13px] text-text placeholder:text-text-subtle focus:border-selected-border focus:outline-none focus:ring-2 focus:ring-focus/30"
+            className="h-8 w-full rounded-control border border-border bg-surface-raised pl-8 pr-2 text-[13px] text-text placeholder:text-text-subtle focus:border-selected-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/30"
           />
         </label>
       )}
@@ -99,7 +99,7 @@ export function DesktopFilterBar({
             key={dimension.id}
             type="button"
             onClick={() => dimension.onChange("")}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control bg-selected/70 px-2.5 text-[13px] text-text hover:bg-selected focus:outline-none focus:ring-2 focus:ring-focus"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control bg-selected/70 px-2.5 text-[13px] text-text hover:bg-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             aria-label={`Remove ${dimension.label} filter ${label}`}
           >
             {label}<X size={12} className="text-brand-hover" />
@@ -112,7 +112,7 @@ export function DesktopFilterBar({
           key={toggle.id}
           type="button"
           onClick={() => toggle.onChange(false)}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control bg-selected/70 px-2.5 text-[13px] text-text hover:bg-selected focus:outline-none focus:ring-2 focus:ring-focus"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control bg-selected/70 px-2.5 text-[13px] text-text hover:bg-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           aria-label={`Remove ${toggle.label} filter`}
         >
           {toggle.label}<X size={12} className="text-brand-hover" />
@@ -128,7 +128,7 @@ export function DesktopFilterBar({
               setDimensionId(null);
             }}
             aria-expanded={open}
-            className="inline-flex h-8 items-center gap-1.5 rounded-control border border-dashed border-border-strong px-2.5 text-[13px] text-text-muted hover:border-selected-border/50 hover:bg-surface-raised hover:text-text focus:outline-none focus:ring-2 focus:ring-focus"
+            className="inline-flex h-8 items-center gap-1.5 rounded-control border border-dashed border-border-strong px-2.5 text-[13px] text-text-muted hover:border-selected-border/50 hover:bg-surface-raised hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             <Plus size={13} /> Add filter
           </button>

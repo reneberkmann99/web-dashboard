@@ -5,10 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
-import { Badge } from "@/components/ui/badge";
 import { AttentionBadge } from "@/components/ui/attention-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ServerDataTable } from "@/components/ui/server-data-table";
+import { StatePanel } from "@/components/ui/state-panel";
 import type { Column } from "@/components/ui/data-table";
 import type { ContainerView } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
@@ -19,7 +19,10 @@ import { DesktopFilterBar } from "@/components/ui/desktop-filter-bar";
 import { Menu } from "@/components/ui/menu";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { compactMemory, compactUptime } from "@/lib/format";
+import { compactUptime, formatBytesColumn, parseMemoryUsedBytes } from "@/lib/format";
+import { GroupedContainers } from "@/components/containers/grouped-containers";
+import { cn } from "@/lib/utils";
+import { Layers, List } from "lucide-react";
 
 type ContainersPayload = {
   containers: ContainerView[];
@@ -62,6 +65,12 @@ export default function SettingsContainersPage(): React.JSX.Element {
   const [sheetCount, setSheetCount] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState<"start" | "stop" | "restart" | null>(null);
+  // Group by workload (§6/§9): an alternate display over the same filtered
+  // row set — search, filters, selection, and actions are unchanged, only
+  // fetched as one larger batch instead of a 25-row server page so a whole
+  // workload's containers collapse into a single row regardless of paging.
+  const view = searchParams.get("view") === "grouped" ? "grouped" : "list";
+  const grouped = view === "grouped";
 
   const syncUrl = useCallback(
     (patch: Record<string, string>) => {
@@ -103,7 +112,38 @@ export default function SettingsContainersPage(): React.JSX.Element {
       params.set("limit", String(PAGE_SIZE));
       return apiFetch<ContainersPayload>(`/api/admin/containers?${params.toString()}`);
     },
-    refetchInterval: 10000
+    refetchInterval: grouped ? false : 10000,
+    enabled: !grouped
+  });
+
+  const groupedQuery = useQuery({
+    queryKey: ["admin-all-containers-grouped", { search, status, nodeId, clientId, projectId, health, needsAttention }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (status) params.set("status", status);
+      if (nodeId) params.set("nodeId", nodeId);
+      if (clientId) params.set("clientId", clientId);
+      if (projectId) params.set("projectId", projectId);
+      if (health) params.set("health", health);
+      if (needsAttention) params.set("needsAttention", "1");
+      params.set("sort", "name");
+      params.set("dir", "asc");
+      // The server clamps `limit` to 100/request regardless of what's asked
+      // for, so grouping must page through every result rather than trusting
+      // one oversized request — otherwise a fleet over 100 containers would
+      // silently group (and let bulk actions touch) only the first page.
+      const first = await apiFetch<ContainersPayload>(`/api/admin/containers?${params.toString()}&page=1&limit=100`);
+      const all = [...first.containers];
+      const MAX_PAGES = 50; // 5,000 containers — far beyond any real fleet this UI targets
+      for (let page = 2; page <= first.pageCount && page <= MAX_PAGES; page++) {
+        const next = await apiFetch<ContainersPayload>(`/api/admin/containers?${params.toString()}&page=${page}&limit=100`);
+        all.push(...next.containers);
+      }
+      return { ...first, containers: all };
+    },
+    refetchInterval: grouped ? 10000 : false,
+    enabled: grouped
   });
 
   const refsQuery = useQuery({
@@ -127,15 +167,16 @@ export default function SettingsContainersPage(): React.JSX.Element {
       else toast.success(`${data.queued} container action${data.queued === 1 ? "" : "s"} queued`);
       setSelected(new Set());
       await queryClient.invalidateQueries({ queryKey: ["admin-all-containers"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-all-containers-grouped"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Bulk action failed")
   });
 
   useEffect(() => {
     setSelected(new Set());
-  }, [page]);
+  }, [page, grouped]);
 
-  const currentRows = query.data?.containers ?? [];
+  const currentRows = grouped ? (groupedQuery.data?.containers ?? []) : (query.data?.containers ?? []);
   const selectedRows = useMemo(
     () => currentRows.filter((container) => selected.has(`${container.nodeId}:${container.containerId}`)),
     [currentRows, selected]
@@ -150,6 +191,10 @@ export default function SettingsContainersPage(): React.JSX.Element {
     const rows = compatibleRows(action);
     bulkMutation.mutate({ action, targets: rows.map((container) => ({ nodeId: container.nodeId, containerId: container.containerId })) });
   };
+
+  // One consistent memory unit for the whole visible page (§2/§6) instead of
+  // each row picking its own (660K next to 750.7M next to 2.5G).
+  const formatMemory = formatBytesColumn(currentRows.map((c) => parseMemoryUsedBytes(c.memoryUsage)));
 
   const columns: Column<ContainerView>[] = [
     {
@@ -186,12 +231,11 @@ export default function SettingsContainersPage(): React.JSX.Element {
         <p className="max-w-[320px] truncate font-mono text-[13px] font-medium text-text" title={c.name}>{c.name}</p>
       )
     },
-    { key: "node", header: "Node", sortValue: (c) => c.nodeName, render: (c) => <span className="text-sm">{c.nodeName}</span>, hideBelow: "sm" },
-    { key: "client", header: "Organization", sortValue: (c) => c.clientName, render: (c) => <span className="text-sm">{c.clientName}</span>, hideBelow: "sm" },
-    { key: "status", header: "State", sortValue: (c) => c.status, render: (c) => <StatusBadge status={c.status} expectedStopped={c.expectedStopped} /> },
-    { key: "health", header: "Health", sortValue: (c) => c.health ?? "none", omitWhenEmpty: (c) => !c.health, render: (c) => c.health ? <Badge variant={c.health === "healthy" ? "success" : c.health === "unhealthy" ? "danger" : "warning"}>{c.health}</Badge> : null },
+    { key: "node", header: "Node", sortValue: (c) => c.nodeName, omitWhenUniform: true, render: (c) => <span className="text-sm">{c.nodeName}</span>, hideBelow: "sm" },
+    { key: "client", header: "Organization", sortValue: (c) => c.clientName, omitWhenUniform: true, render: (c) => <span className="text-sm">{c.clientName}</span>, hideBelow: "sm" },
+    { key: "status", header: "Status", sortValue: (c) => c.status, render: (c) => <StatusBadge status={c.status} expectedStopped={c.expectedStopped} health={c.health} /> },
     { key: "cpu", header: "CPU", className: "text-right", sortValue: (c) => c.cpuPercent ?? -1, render: (c) => <span className="font-mono text-xs tabular-nums" title={c.cpuPercent !== null ? `${c.cpuPercent}%` : undefined}>{c.cpuPercent !== null ? `${c.cpuPercent.toFixed(1)}%` : <span className="text-text-subtle">—</span>}</span>, hideBelow: "md" },
-    { key: "mem", header: "Memory", className: "text-right", render: (c) => <span className="font-mono text-xs tabular-nums" title={c.memoryUsage ?? undefined}>{compactMemory(c.memoryUsage)}</span>, hideBelow: "md" },
+    { key: "mem", header: "Memory", className: "text-right", sortValue: (c) => parseMemoryUsedBytes(c.memoryUsage) ?? -1, render: (c) => <span className="font-mono text-xs tabular-nums" title={c.memoryUsage ?? undefined}>{formatMemory(parseMemoryUsedBytes(c.memoryUsage))}</span>, hideBelow: "md" },
     { key: "restartCount", header: "Restarts", className: "text-right", sortValue: (c) => c.restartCount ?? 0, render: (c) => <span className="font-mono text-xs tabular-nums">{c.restartCount ?? 0}</span>, hideBelow: "lg" },
     { key: "uptime", header: "Uptime", className: "text-right", render: (c) => <span className="font-mono text-xs tabular-nums text-text-muted" title={c.uptime ?? undefined}>{compactUptime(c.uptime)}</span>, hideBelow: "lg" },
     {
@@ -308,13 +352,34 @@ export default function SettingsContainersPage(): React.JSX.Element {
             { id: "health", label: "Health", value: health, options: [{ value: "healthy", label: "Healthy" }, { value: "unhealthy", label: "Unhealthy" }, { value: "starting", label: "Starting" }, { value: "none", label: "No healthcheck" }], onChange: (value) => { setHealth(value); syncUrl({ health: value, page: "1" }); } }
           ]}
           toggles={[{ id: "attention", label: "Needs attention", active: needsAttention, onChange: (active) => { setNeedsAttention(active); syncUrl({ needsAttention: active ? "1" : "", page: "1" }); } }]}
-          resultCount={query.data?.total ?? 0}
+          resultCount={(grouped ? groupedQuery.data?.total : query.data?.total) ?? 0}
           totalCount={totalQuery.data?.total ?? query.data?.total ?? 0}
           onClearAll={() => { setSearch(""); setStatus(""); setNodeId(""); setClientId(""); setProjectId(""); setHealth(""); setNeedsAttention(false); syncUrl({ search: "", status: "", nodeId: "", clientId: "", projectId: "", health: "", needsAttention: "", page: "1" }); }}
         />
         <div className="w-full md:hidden">
           <MobileFiltersRow count={activeFilterCount} onOpen={openSheet} chips={activeChips} />
         </div>
+      </div>
+
+      <div className="hidden items-center gap-1 rounded-control border border-border bg-surface-deck p-0.5 md:inline-flex" role="tablist" aria-label="Container view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!grouped}
+          onClick={() => syncUrl({ view: "" })}
+          className={cn("inline-flex h-7 items-center gap-1.5 rounded-control px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus", !grouped ? "bg-selected/70 text-text" : "text-text-muted hover:text-text")}
+        >
+          <List size={13} /> Individual
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={grouped}
+          onClick={() => syncUrl({ view: "grouped" })}
+          className={cn("inline-flex h-7 items-center gap-1.5 rounded-control px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus", grouped ? "bg-selected/70 text-text" : "text-text-muted hover:text-text")}
+        >
+          <Layers size={13} /> Group by workload
+        </button>
       </div>
 
       {selectedRows.length > 0 && (
@@ -327,33 +392,72 @@ export default function SettingsContainersPage(): React.JSX.Element {
         </div>
       )}
 
-      <ServerDataTable
-        columns={columns}
-        rows={query.data?.containers ?? []}
-        total={query.data?.total ?? 0}
-        page={query.data?.page ?? page}
-        pageSize={PAGE_SIZE}
-        onPageChange={(p) => syncUrl({ page: String(p) })}
-        sortKey={sort}
-        sortDir={dir}
-        onSortChange={(key) => {
-          const nextDir = key === sort && dir === "asc" ? "desc" : "asc";
-          syncUrl({ sort: key, dir: nextDir, page: "1" });
-        }}
-        loading={query.isLoading}
-        error={query.isError ? "Failed to load containers" : null}
-        emptyTitle="No containers"
-        emptyBody="Containers appear here once an agent reports them."
-        onRowClick={(c) => {
-          go({ url: `/admin/containers/${c.nodeId}/${c.containerId}`, label: c.name, type: "container", id: c.containerId });
-        }}
-        rowKey={(c) => `${c.nodeId}:${c.containerId}`}
-        mobileCard={(c) =>
-          containerCard(c, () => {
+      {grouped ? (
+        groupedQuery.isLoading ? (
+          <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-deck" />
+        ) : groupedQuery.isError ? (
+          <StatePanel tone="error" title="Unable to load containers" />
+        ) : (
+          <GroupedContainers
+            containers={groupedQuery.data?.containers ?? []}
+            selected={selected}
+            onToggleOne={(key, checked) => {
+              const next = new Set(selected);
+              if (checked) next.add(key);
+              else next.delete(key);
+              setSelected(next);
+            }}
+            onToggleMany={(keys, checked) => {
+              const next = new Set(selected);
+              for (const key of keys) {
+                if (checked) next.add(key);
+                else next.delete(key);
+              }
+              setSelected(next);
+            }}
+            onRowClick={(c) => go({ url: `/admin/containers/${c.nodeId}/${c.containerId}`, label: c.name, type: "container", id: c.containerId })}
+            renderActions={(container) => (
+              <Menu
+                label={`Actions for ${container.name}`}
+                items={[
+                  { label: "View logs", onSelect: () => go({ url: `/admin/containers/${container.nodeId}/${container.containerId}`, label: container.name, type: "container", id: container.containerId }) },
+                  ...(container.status === "running" ? [{ label: "Restart", onSelect: () => bulkMutation.mutate({ action: "restart", targets: [{ nodeId: container.nodeId, containerId: container.containerId }] }) }, { label: "Stop", tone: "danger" as const, onSelect: () => bulkMutation.mutate({ action: "stop", targets: [{ nodeId: container.nodeId, containerId: container.containerId }] }) }] : []),
+                  ...(container.status === "stopped" ? [{ label: "Start", onSelect: () => bulkMutation.mutate({ action: "start", targets: [{ nodeId: container.nodeId, containerId: container.containerId }] }) }] : []),
+                  { label: "Copy ID", onSelect: () => { void navigator.clipboard.writeText(container.containerId); toast.success("Container ID copied"); } }
+                ]}
+              />
+            )}
+          />
+        )
+      ) : (
+        <ServerDataTable
+          columns={columns}
+          rows={query.data?.containers ?? []}
+          total={query.data?.total ?? 0}
+          page={query.data?.page ?? page}
+          pageSize={PAGE_SIZE}
+          onPageChange={(p) => syncUrl({ page: String(p) })}
+          sortKey={sort}
+          sortDir={dir}
+          onSortChange={(key) => {
+            const nextDir = key === sort && dir === "asc" ? "desc" : "asc";
+            syncUrl({ sort: key, dir: nextDir, page: "1" });
+          }}
+          loading={query.isLoading}
+          error={query.isError ? "Failed to load containers" : null}
+          emptyTitle="No containers"
+          emptyBody="Containers appear here once an agent reports them."
+          onRowClick={(c) => {
             go({ url: `/admin/containers/${c.nodeId}/${c.containerId}`, label: c.name, type: "container", id: c.containerId });
-          })
-        }
-      />
+          }}
+          rowKey={(c) => `${c.nodeId}:${c.containerId}`}
+          mobileCard={(c) =>
+            containerCard(c, () => {
+              go({ url: `/admin/containers/${c.nodeId}/${c.containerId}`, label: c.name, type: "container", id: c.containerId });
+            })
+          }
+        />
+      )}
 
       <FilterSheet
         open={sheetOpen}

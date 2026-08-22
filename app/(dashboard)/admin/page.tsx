@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Loader2, PlayCircle, Server, X } from "lucide-react";
+import { ArrowRight, Loader2, Server, X } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { Badge } from "@/components/ui/badge";
 import { AttentionBadge } from "@/components/ui/attention-badge";
-import { MetricCard } from "@/components/ui/metric-card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
 import { ResourceUsage } from "@/components/ui/resource-usage";
 import { timeAgo, humanizeAction } from "@/lib/format";
+import { freshnessAgeLabel } from "@/lib/freshness";
 import { useResourceNavigation } from "@/components/navigation/navigation-context";
 import { MobileAdminOverview } from "@/components/mobile/mobile-overview";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
@@ -41,6 +41,7 @@ type OverviewPayload = {
     systemInfo: Record<string, unknown> | null;
   }>;
   resourceThresholds: ResourceThresholds;
+  resourceWindowLabel: string;
   attention: AttentionItem[];
   workloads: WorkloadSummary[];
   recentActivity: Array<{ id: string; action: string; humanized: string; actorEmail: string | null; result: string; createdAt: string; targetLabel: string | null }>;
@@ -103,11 +104,33 @@ export default function AdminOverviewPage(): React.JSX.Element {
     );
   }
 
-  const { fleetSummary, nodes, attention, workloads, recentActivity, recentFailures, activeOperations, resourceThresholds } = query.data;
+  const { fleetSummary, nodes, attention, workloads, recentActivity, recentFailures, activeOperations, resourceThresholds, resourceWindowLabel } = query.data;
   const unexpectedAttention = attention.filter((item) => !item.maintenance);
   const maintenanceAttention = attention.filter((item) => item.maintenance);
   const attentionVisible = unexpectedAttention.length > 0;
   const fleetNominal = fleetSummary.attentionIssues === 0 && fleetSummary.nodesOnline === fleetSummary.nodesTotal;
+
+  // Per-node workload counts for the merged node cards below — grouping the
+  // already-fetched workloads list client-side avoids a second backend
+  // aggregate that could disagree with the Workloads page's own counts.
+  const workloadsByNode = new Map<string, WorkloadSummary[]>();
+  for (const w of workloads) {
+    const list = workloadsByNode.get(w.nodeId);
+    if (list) list.push(w);
+    else workloadsByNode.set(w.nodeId, [w]);
+  }
+
+  // A ratio that's always N/N trains people to skip it (§2): show the plain
+  // total, and only surface the denominator — in amber — once it diverges.
+  const renderRatio = (numerator: number, denominator: number): React.JSX.Element =>
+    numerator === denominator ? (
+      <span className="tabular-nums">{denominator}</span>
+    ) : (
+      <span className="tabular-nums text-warning-foreground">
+        {numerator}
+        <span className="text-text-subtle">/{denominator}</span>
+      </span>
+    );
 
   const renderAttentionCard = (item: AttentionItem): React.JSX.Element => (
     <button
@@ -165,38 +188,36 @@ export default function AdminOverviewPage(): React.JSX.Element {
         }
       />
 
-      {/* Fleet summary (§2) — concise counters, never a Grafana clone */}
-      <div className="grid gap-4 xl:grid-cols-[2fr_1fr_1fr]">
-        <div className="rounded-panel border border-border bg-surface-deck p-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">Fleet</p>
-          <div className="mt-3 grid grid-cols-3 divide-x divide-border">
-            <div className="pr-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Nodes</p><p className="mt-2 font-mono text-2xl font-medium tabular-nums">{fleetSummary.nodesOnline}<span className="text-text-subtle">/{fleetSummary.nodesTotal}</span></p></div>
-            <div className="px-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Workloads</p><p className="mt-2 font-mono text-2xl font-medium tabular-nums">{fleetSummary.workloadsHealthy}<span className="text-text-subtle">/{fleetSummary.workloadsTotal}</span></p></div>
-            <div className="pl-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Containers</p><p className="mt-2 font-mono text-2xl font-medium tabular-nums">{fleetSummary.containersRunning}<span className="text-text-subtle">/{fleetSummary.containersTotal}</span></p></div>
-          </div>
+      {/* Fleet summary (§2) — concise counters, never a Grafana clone. One
+          card: three real numbers, given the width they need rather than
+          splitting it with two metric cards that just restate "0 issues" /
+          "0 active" — the attention strip and Active operations section
+          below already carry those facts when they're true. */}
+      <div className="rounded-panel border border-border bg-surface-deck p-4">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">Fleet</p>
+        <div className="mt-3 grid grid-cols-3 divide-x divide-border">
+          <div className="pr-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Nodes</p><p className="mt-2 font-mono text-2xl font-medium">{renderRatio(fleetSummary.nodesOnline, fleetSummary.nodesTotal)}</p></div>
+          <div className="px-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Workloads</p><p className="mt-2 font-mono text-2xl font-medium">{renderRatio(fleetSummary.workloadsHealthy, fleetSummary.workloadsTotal)}</p></div>
+          <div className="pl-4"><p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">Containers</p><p className="mt-2 font-mono text-2xl font-medium">{renderRatio(fleetSummary.containersRunning, fleetSummary.containersTotal)}</p></div>
         </div>
-        <MetricCard
-          icon={AlertTriangle}
-          label="Attention"
-          value={String(fleetSummary.attentionIssues)}
-          sub={fleetSummary.attentionIssues === 0 ? "no active issues" : `issue${fleetSummary.attentionIssues === 1 ? "" : "s"}`}
-        />
-        <MetricCard
-          icon={fleetSummary.activeOperations > 0 ? Loader2 : PlayCircle}
-          label="Operations"
-          value={String(fleetSummary.activeOperations)}
-          sub={fleetSummary.activeOperations > 0 ? "active now" : "none active"}
-        />
       </div>
 
-      {/* Needs attention — the most important section, deduplicated server-side (§3/§4) */}
+      {/* Needs attention — the most important section, deduplicated server-side
+          (§3/§4). Zero is a one-line state, not a hero: the biggest, brightest
+          element on a healthy screen must not be the absence of information. */}
       <section aria-label="Needs attention">
-        <h2 className="mb-2 text-lg font-semibold">Needs attention</h2>
-        {!attentionVisible ? (
-          <StatePanel compact tone="success" title="Nothing needs you." description={`All ${fleetSummary.nodesTotal} node${fleetSummary.nodesTotal === 1 ? "" : "s"} and ${fleetSummary.workloadsTotal} workload${fleetSummary.workloadsTotal === 1 ? "" : "s"} are operating normally.`} action={<Link href="/admin/attention?view=resolved" className="text-sm text-brand">Resolved history →</Link>} />
+        {attentionVisible ? (
+          <>
+            <h2 className="mb-2 text-lg font-semibold">Needs attention</h2>
+            <div className="space-y-2">{unexpectedAttention.map(renderAttentionCard)}</div>
+          </>
         ) : (
-          <div className="space-y-2">
-            {unexpectedAttention.map(renderAttentionCard)}
+          <div className="flex h-12 items-center justify-between gap-3 rounded-panel border border-border bg-surface-deck px-4">
+            <span className="flex items-center gap-2 text-sm text-text-muted">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+              All {fleetSummary.nodesTotal} node{fleetSummary.nodesTotal === 1 ? "" : "s"} and {fleetSummary.workloadsTotal} workload{fleetSummary.workloadsTotal === 1 ? "" : "s"} operating normally.
+            </span>
+            <Link href="/admin/attention?view=resolved" className="shrink-0 text-sm text-brand hover:underline">Resolved history →</Link>
           </div>
         )}
       </section>
@@ -239,10 +260,13 @@ export default function AdminOverviewPage(): React.JSX.Element {
         </section>
       )}
 
-      {/* Fleet Resources — real per-node telemetry (CPU/RAM/disk). */}
-      <section aria-label="Fleet resources">
+      {/* Nodes — real per-node telemetry (CPU/RAM/disk) plus the workload and
+          container counts that used to duplicate as separate Workloads/Nodes
+          sections one click away. Everything here is one click from the
+          sidebar's own Nodes/Workloads pages, so it doesn't need restating. */}
+      <section aria-label="Nodes">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Fleet resources</h2>
+          <h2 className="text-lg font-semibold">Nodes</h2>
           <Link href="/admin/nodes" className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
             Manage <ArrowRight size={14} />
           </Link>
@@ -250,6 +274,7 @@ export default function AdminOverviewPage(): React.JSX.Element {
         <div className="grid gap-3 md:grid-cols-2">
           {nodes.map((node) => {
             const sys = (node.systemInfo ?? {}) as Record<string, unknown>;
+            const nodeWorkloads = workloadsByNode.get(node.id) ?? [];
             return (
               <a
                 key={node.id}
@@ -282,101 +307,15 @@ export default function AdminOverviewPage(): React.JSX.Element {
                   telemetryCurrent={node.telemetryCurrent && !node.offline && !node.staleHeartbeat}
                   state={node.offline ? "offline" : node.staleHeartbeat ? "stale" : "current"}
                   thresholds={resourceThresholds}
+                  windowLabel={resourceWindowLabel}
                   compact
                 />
                 <p className="mt-2 font-mono text-[11px] text-text-subtle">
-                  {node.containerCount} containers · heartbeat {timeAgo(node.lastHeartbeatAt)}
+                  {node.containerCount} container{node.containerCount === 1 ? "" : "s"} · {nodeWorkloads.length} workload{nodeWorkloads.length === 1 ? "" : "s"} · heartbeat {freshnessAgeLabel(node.lastHeartbeatAt)}
                 </p>
               </a>
             );
           })}
-        </div>
-      </section>
-
-      {/* Workloads */}
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Workloads</h2>
-          <Link
-            href="/admin/workloads"
-            className="inline-flex items-center gap-1 text-sm text-accent hover:underline"
-          >
-            View all <ArrowRight size={14} />
-          </Link>
-        </div>
-        {workloads.length === 0 ? (
-          <p className="text-sm text-muted">No workloads yet — group containers into stacks to get started.</p>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {workloads.slice(0, 9).map((w) => (
-              <a
-                key={w.id}
-                href={`/admin/workloads/${w.id}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  go({ url: `/admin/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
-                }}
-                className="cursor-pointer rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="font-medium">{w.name}</p>
-                  <AttentionBadge severity={w.health === "down" ? "critical" : w.health === "degraded" ? "warning" : w.health} />
-                </div>
-                <p className="mt-0.5 font-mono text-[11px] text-text-muted">{w.nodeName}</p>
-                <p className="mt-3 font-mono text-sm">
-                  {w.runningContainers}/{w.totalContainers} running
-                  {w.intentionallyStoppedContainers > 0 && (
-                    <span className="text-text-muted"> · {w.intentionallyStoppedContainers} intentionally stopped</span>
-                  )}
-                </p>
-                {(w.cpuPercent !== null || w.memoryUsage) && (
-                  <p className="mt-1 font-mono text-[11px] text-text-muted">
-                    {w.cpuPercent !== null ? `${w.cpuPercent}% CPU` : ""}
-                    {w.cpuPercent !== null && w.memoryUsage ? " · " : ""}
-                    {w.memoryUsage ?? ""}
-                  </p>
-                )}
-              </a>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Nodes */}
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Nodes</h2>
-          <Link href="/admin/nodes" className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
-            Manage <ArrowRight size={14} />
-          </Link>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {nodes.map((node) => (
-            <a
-              key={node.id}
-              href={`/admin/nodes/${node.id}`}
-              onClick={(event) => {
-                event.preventDefault();
-                go({ url: `/admin/nodes/${node.id}`, label: node.name, type: "node", id: node.id });
-              }}
-              className="flex cursor-pointer items-center gap-3 rounded-panel border border-border bg-surface-deck p-4 transition-colors hover:border-selected-border/40"
-            >
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[0.625rem] bg-surface-raised">
-                <Server size={16} className="text-text-muted" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="truncate font-medium">{node.name}</p>
-                  <Badge variant={node.offline ? "danger" : node.staleHeartbeat ? "warning" : "success"}>
-                    {node.offline ? "offline" : node.staleHeartbeat ? "stale" : "online"}
-                  </Badge>
-                </div>
-                <p className="mt-0.5 font-mono text-xs text-text-muted">
-                  {node.containerCount} containers · heartbeat {timeAgo(node.lastHeartbeatAt)}
-                </p>
-              </div>
-            </a>
-          ))}
         </div>
       </section>
 

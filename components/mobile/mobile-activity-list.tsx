@@ -188,7 +188,7 @@ export function MobileActivityList({
                     <button
                       type="button"
                       onClick={() => setExpanded((prev) => new Set(prev).add(event.id))}
-                      className="flex w-full items-center gap-3 px-4 py-[13px] text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
+                      className="flex w-full items-center gap-3 px-4 py-[13px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
                     >
                       <span className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[9px] bg-surface-raised font-mono text-[11px] text-text-muted">
                         ×{collapsed + 1}
@@ -204,7 +204,7 @@ export function MobileActivityList({
                     <button
                       type="button"
                       onClick={() => onSelect(event)}
-                      className="w-full text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus"
+                      className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
                     >
                       {row}
                     </button>

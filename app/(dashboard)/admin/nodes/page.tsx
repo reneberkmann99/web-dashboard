@@ -12,7 +12,8 @@ import { AttentionBadge } from "@/components/ui/attention-badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
-import { timeAgo } from "@/lib/format";
+import { timeAgo, cleanVersion } from "@/lib/format";
+import { freshnessAgeLabel } from "@/lib/freshness";
 import type { NodeRecord } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
@@ -129,13 +130,14 @@ export default function AdminNodesPage(): React.JSX.Element {
       key: "attention",
       header: "Attention",
       sortValue: (n) => ({ critical: 0, warning: 1, info: 2, unknown: 3, healthy: 4 }[n.attention] ?? 3),
-      render: (n) => (n.attention === "healthy" ? <span className="text-xs text-muted">No issues</span> : <AttentionBadge severity={n.attention} />)
+      omitWhenEmpty: (n) => n.attention === "healthy",
+      render: (n) => (n.attention === "healthy" ? null : <AttentionBadge severity={n.attention} />)
     },
     {
       key: "heartbeat",
       header: "Last heartbeat",
       sortValue: (n) => n.lastHeartbeatAt ?? "",
-      render: (n) => <span className="text-sm">{timeAgo(n.lastHeartbeatAt)}</span>,
+      render: (n) => <span className="text-sm">{freshnessAgeLabel(n.lastHeartbeatAt)}</span>,
       hideBelow: "sm"
     },
     {
@@ -144,7 +146,7 @@ export default function AdminNodesPage(): React.JSX.Element {
       hideBelow: "md",
       render: (n) => {
         if (n.offline || n.staleHeartbeat) {
-          return <span className="text-xs text-text-muted">Telemetry stale · {timeAgo(n.lastHeartbeatAt)}</span>;
+          return <span className="text-xs text-text-muted">Telemetry stale · {freshnessAgeLabel(n.lastHeartbeatAt)}</span>;
         }
         const sys = (n.systemInfo ?? {}) as Record<string, unknown>;
         const cpu = typeof sys.cpuPercent === "number" ? sys.cpuPercent : null;
@@ -171,8 +173,8 @@ export default function AdminNodesPage(): React.JSX.Element {
       hideBelow: "lg",
       render: (n) => (
         <span className="font-mono text-xs text-muted">
-          agent {n.agentVersion ?? "?"}
-          <span className="block">docker {n.dockerVersion ?? "?"}</span>
+          agent {cleanVersion(n.agentVersion) ?? "?"}
+          <span className="block">docker {cleanVersion(n.dockerVersion) ?? "?"}</span>
         </span>
       )
     },
@@ -254,7 +256,7 @@ export default function AdminNodesPage(): React.JSX.Element {
       <button
         type="button"
         onClick={() => setEnrollOpen(true)}
-        className="flex h-12 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-border-strong/70 text-[15px] text-brand-hover focus:outline-none focus:ring-2 focus:ring-focus md:hidden"
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-border-strong/70 text-[15px] text-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus md:hidden"
       >
         <Plus size={16} />
         Add node

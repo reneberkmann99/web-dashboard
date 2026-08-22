@@ -120,7 +120,8 @@ export function ResourceUsage({
   state,
   thresholds,
   compact = false,
-  className
+  className,
+  windowLabel
 }: {
   cpuPercent: number | null;
   memPercent: number | null;
@@ -135,6 +136,8 @@ export function ResourceUsage({
   thresholds: ResourceThresholds;
   compact?: boolean;
   className?: string;
+  /** Sampling window CPU/RAM represent, e.g. "5m avg" — shown next to the label so the same value always carries the same meaning everywhere (round 2 §4). */
+  windowLabel?: string;
 }): React.JSX.Element {
   const effectiveState = state ?? (telemetryCurrent ? "current" : "stale");
 
@@ -144,14 +147,14 @@ export function ResourceUsage({
   const items: ResourceUsageItem[] = [
     {
       key: "cpu",
-      label: "CPU",
+      label: windowLabel ? `CPU · ${windowLabel}` : "CPU",
       percent: cpuPercent,
       used: cpuPercent !== null ? `${cpuPercent.toFixed(0)}%` : null,
       capacity: cpuCount ? `${cpuCount} cores` : null
     },
     {
       key: "mem",
-      label: "RAM",
+      label: windowLabel ? `RAM · ${windowLabel}` : "RAM",
       percent: memPercent,
       used: memPercent !== null ? `${memPercent.toFixed(0)}%` : null,
       capacity: memCapacity,
