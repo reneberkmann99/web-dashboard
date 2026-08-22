@@ -1075,7 +1075,7 @@ describe("Phase 5 review follow-ups", () => {
 
     const freshA = await getIngressEndpoint(endpointA.id, sessionFor(world.clientAAdmin));
     const freshB = await getIngressEndpoint(endpointB.id, sessionFor(world.clientAAdmin));
-    expect(freshA.status).toBe("ERROR");
+    expect(freshA.status).toBe("BACKEND_UNAVAILABLE");
     expect(freshA.statusDetail).toBe("Backend container is no longer reported by the node agent");
     expect(freshB.status).toBe("DISABLED"); // untouched — an operator's explicit disable is never overwritten
   });
@@ -1163,7 +1163,7 @@ describe("Phase 5 review follow-ups", () => {
 
     const freshEndpoint = await getIngressEndpoint(endpoint.id, sessionFor(world.clientAAdmin));
     const freshDisabled = await getIngressEndpoint(disabledEndpoint.id, sessionFor(world.clientAAdmin));
-    expect(freshEndpoint.status).toBe("ERROR");
+    expect(freshEndpoint.status).toBe("BACKEND_UNAVAILABLE");
     expect(freshEndpoint.statusDetail).toBe("Workload is deactivated");
     expect(freshDisabled.status).toBe("DISABLED"); // untouched — an operator's explicit disable is never overwritten
   });

@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOptionalNavigation, useResourceNavigation } from "@/components/navigation/navigation-context";
 import { useDetailTab } from "@/components/navigation/view-state";
+import { PublishService } from "@/components/ingress/publish-service";
 
 type WorkloadsPayload = { workloads: WorkloadSummary[] };
 type ContainersPayload = { containers: ContainerView[] };
@@ -95,6 +96,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
         back={<Breadcrumbs />}
         description={<span>{workload.nodeName} · <span className="font-mono">{workload.runningContainers}/{workload.totalContainers}</span> running</span>}
         actions={<>
+          <PublishService workloadId={workload.id} containers={workloadContainers} />
           <Badge variant={workload.health === "healthy" ? "success" : workload.health === "degraded" ? "warning" : "danger"}>{workload.health}</Badge>
           {deployment?.managed && (
             <Badge variant={deployment.runtimeState === "CONVERGED" ? "success" : deployment.runtimeState === "DEGRADED" ? "warning" : "default"}>

@@ -249,6 +249,7 @@ enum PublicAddressAllocation {
 enum IngressProviderKind {
   MANUAL
   NGINX_PROXY_MANAGER
+  CADDY
 }
 
 /**
@@ -264,8 +265,18 @@ enum IngressExposureType {
 enum IngressEndpointStatus {
   PENDING
   ACTIVE
-  ERROR
+  BACKEND_UNAVAILABLE
+  DNS_INVALID
+  TLS_FAILED
   DISABLED
+}
+
+enum IngressTlsStatus {
+  NOT_APPLICABLE
+  PENDING
+  ISSUED
+  RENEWING
+  FAILED
 }
 
 model ClientAccount {
@@ -1308,7 +1319,6 @@ model RecentFailureDismissal {
  * client-supplied claim). A domain must be VERIFIED before any
  * IngressEndpoint may bind it (HTTPS/HTTP only — TCP/UDP endpoints never
  * reference a Domain, they route by PublicAddress + explicit port).
- *
  * `hostname` is deliberately NOT globally unique at the DB level: a hard
  * unique constraint here would let any organization "squat" a hostname it
  * doesn't control by creating a PENDING_VERIFICATION row for it — since that
@@ -1386,16 +1396,17 @@ model PublicAddress {
  * resulting endpoint's identity and status.
  */
 model IngressProvider {
-  id               String              @id @default(cuid())
-  name             String
-  kind             IngressProviderKind @default(MANUAL)
-  enabled          Boolean             @default(true)
-  gatewayHostname  String?
-  config           Json?
-  publicAddresses  PublicAddress[]
-  ingressEndpoints IngressEndpoint[]
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+  id                  String              @id @default(cuid())
+  name                String
+  kind                IngressProviderKind @default(MANUAL)
+  enabled             Boolean             @default(true)
+  gatewayHostname     String?
+  config              Json?
+  credentialEncrypted String?
+  publicAddresses     PublicAddress[]
+  ingressEndpoints    IngressEndpoint[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
 }
 
 /**
@@ -1440,6 +1451,8 @@ model IngressEndpoint {
   provider        IngressProvider?      @relation(fields: [providerId], references: [id], onDelete: SetNull)
   status          IngressEndpointStatus @default(PENDING)
   statusDetail    String?
+  tlsStatus       IngressTlsStatus      @default(NOT_APPLICABLE)
+  providerRouteId String?
   createdById     String?
   createdBy       User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt       DateTime              @default(now())

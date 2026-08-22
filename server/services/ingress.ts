@@ -3,6 +3,10 @@ import { Prisma, type IngressExposureType, type PublicAddressAllocation, type In
 import { lockClientAccountForQuota, lockContainerForUpdate, lockIngressEndpointForUpdate, lockIngressProviderForUpdate, lockProjectForUpdate, lockPublicAddressForUpdate, prisma } from "@/server/db";
 import { logAuditEvent } from "@/server/audit";
 import type { AuthSession } from "@/server/auth/session";
+import { encryptSecret } from "@/server/security/crypto";
+import { managedProviderFor } from "@/server/services/ingress-providers";
+import type { ManagedRoute } from "@/server/services/ingress-providers/types";
+import YAML from "yaml";
 
 /**
  * Ingress (Phase 5): PublicAddress and IngressProvider are platform-owned —
@@ -218,7 +222,7 @@ export async function reconcileIngressEndpointsForDeactivatedContainers(containe
       // after an earlier sweep selected it. Only error endpoints whose
       // backend is still inactive at this write.
       where: { containerId: { in: containerIds }, status: { not: "DISABLED" }, container: { isActive: false } },
-      data: { status: "ERROR", statusDetail: "Backend container is no longer reported by the node agent" }
+      data: { status: "BACKEND_UNAVAILABLE", statusDetail: "Backend container is no longer reported by the node agent" }
     })
     .catch(() => undefined);
 }
@@ -243,7 +247,7 @@ export async function reconcileIngressEndpointsForDeactivatedWorkload(workloadId
   await prisma.ingressEndpoint
     .updateMany({
       where: { workloadId, status: { not: "DISABLED" } },
-      data: { status: "ERROR", statusDetail: "Workload is deactivated" }
+      data: { status: "BACKEND_UNAVAILABLE", statusDetail: "Workload is deactivated" }
     })
     .catch(() => undefined);
 }
@@ -375,6 +379,7 @@ export type CreateIngressProviderInput = {
   enabled?: boolean;
   gatewayHostname?: string | null;
   config?: Record<string, unknown> | null;
+  credential?: string | null;
   actor: AuthSession;
   sourceIp?: string | null;
 };
@@ -388,6 +393,7 @@ export async function createIngressProvider(input: CreateIngressProviderInput) {
       enabled: input.enabled ?? true,
       gatewayHostname: input.gatewayHostname ?? null,
       config: (input.config ?? Prisma.JsonNull) as Prisma.InputJsonValue
+      ,credentialEncrypted: input.credential ? encryptSecret(input.credential, "INGRESS_PROVIDER_CREDENTIALS") : null
     },
     select: providerSelect
   });
@@ -416,6 +422,7 @@ export type UpdateIngressProviderInput = {
   enabled?: boolean;
   gatewayHostname?: string | null;
   config?: Record<string, unknown> | null;
+  credential?: string | null;
   actor: AuthSession;
   sourceIp?: string | null;
 };
@@ -434,6 +441,7 @@ export async function updateIngressProvider(input: UpdateIngressProviderInput) {
         enabled: input.enabled,
         gatewayHostname: input.gatewayHostname,
         config: input.config === undefined ? undefined : ((input.config ?? Prisma.JsonNull) as Prisma.InputJsonValue)
+        ,credentialEncrypted: input.credential === undefined ? undefined : input.credential ? encryptSecret(input.credential, "INGRESS_PROVIDER_CREDENTIALS") : null
       },
       select: providerSelect
     });
@@ -525,6 +533,8 @@ const ingressEndpointSelect = {
   provider: { select: { id: true, name: true, kind: true } },
   status: true,
   statusDetail: true,
+  tlsStatus: true,
+  providerRouteId: true,
   createdAt: true,
   updatedAt: true
 } satisfies Prisma.IngressEndpointSelect;
@@ -605,10 +615,58 @@ export type CreateIngressEndpointInput = {
   sourceIp?: string | null;
 };
 
+async function assertTargetPortDeclared(workloadId: string, serviceName: string | null | undefined, targetPort: number): Promise<void> {
+  if (!serviceName) return; // discovered containers are inventory-authoritative
+  const revision = await prisma.deploymentRevision.findFirst({
+    where: { deployment: { projectId: workloadId } }, orderBy: { revisionNumber: "desc" }, select: { composeCanonical: true }
+  });
+  if (!revision) return;
+  const compose = YAML.parse(revision.composeCanonical) as { services?: Record<string, { ports?: Array<string | number | { target?: number }>; expose?: Array<string | number> }> };
+  const service = compose.services?.[serviceName];
+  if (!service) throw new Error("SERVICE_NOT_FOUND");
+  const declared = [...(service.ports ?? []), ...(service.expose ?? [])].some((entry) => {
+    if (typeof entry === "object") return Number(entry.target) === targetPort;
+    const raw = String(entry).split("/")[0];
+    return Number(raw.split(":").at(-1)) === targetPort;
+  });
+  if (!declared) throw new Error("TARGET_PORT_NOT_DECLARED_BY_SERVICE");
+}
+
+async function providerRoute(endpointId: string): Promise<{ provider: ReturnType<typeof managedProviderFor>; route: ManagedRoute } | null> {
+  const endpoint = await prisma.ingressEndpoint.findUnique({ where: { id: endpointId }, include: { domain: true, provider: true, container: true, workload: { include: { node: true } } } });
+  if (!endpoint?.provider) return null;
+  const provider = managedProviderFor(endpoint.provider);
+  if (!provider) return null;
+  const service = endpoint.serviceName ?? endpoint.container?.composeService ?? endpoint.container?.dockerName;
+  if (!service) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
+  // This private service DNS name is derived exclusively from managed inventory; callers can never submit an IP target.
+  const backendUrl = `http://${service}.${endpoint.workload.node.hostname}:${endpoint.targetPort}`;
+  return { provider, route: { id: endpoint.id, exposure: endpoint.exposureType, hostname: endpoint.domain?.hostname ?? null, backendUrl } };
+}
+
+export async function activateIngressEndpoint(id: string): Promise<void> {
+  const resolved = await providerRoute(id);
+  if (!resolved) return;
+  await prisma.ingressEndpoint.update({ where: { id }, data: { status: "PENDING", tlsStatus: resolved.route.exposure === "HTTPS" ? "PENDING" : "NOT_APPLICABLE", statusDetail: "Configuring gateway" } });
+  try {
+    const health = await resolved.provider!.probe(resolved.route);
+    if (!health.ok) {
+      await prisma.ingressEndpoint.update({ where: { id }, data: { status: "BACKEND_UNAVAILABLE", statusDetail: health.detail } });
+      return;
+    }
+    await resolved.provider!.upsert(resolved.route);
+    await prisma.ingressEndpoint.update({ where: { id }, data: { status: "ACTIVE", providerRouteId: id, tlsStatus: resolved.route.exposure === "HTTPS" ? "ISSUED" : "NOT_APPLICABLE", statusDetail: "Gateway route active" } });
+  } catch (error) {
+    const tls = resolved.route.exposure === "HTTPS" && /ACME|TLS|CERT/i.test(String(error));
+    await prisma.ingressEndpoint.update({ where: { id }, data: { status: tls ? "TLS_FAILED" : "BACKEND_UNAVAILABLE", tlsStatus: tls ? "FAILED" : undefined, statusDetail: error instanceof Error ? error.message : "Gateway unavailable" } });
+  }
+}
+
 export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
   requireIngressManageActor(input.actor);
   const clientAccountId = input.actor.role === "ADMIN" ? input.clientAccountId : input.actor.clientAccountId!;
   if (!clientAccountId) throw new Error("ORGANIZATION_REQUIRED");
+  await assertTargetPortDeclared(input.workloadId, input.serviceName, input.targetPort);
 
   const account = await prisma.clientAccount.findUnique({
     where: { id: clientAccountId },
@@ -777,7 +835,8 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
     result: "SUCCESS",
     sourceIp: input.sourceIp ?? null
   });
-  return endpoint;
+  await activateIngressEndpoint(endpoint.id);
+  return getIngressEndpoint(endpoint.id, input.actor);
 }
 
 export async function listIngressEndpoints(actor: AuthSession, filters?: { workloadId?: string }) {
@@ -903,7 +962,9 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
     result: "SUCCESS",
     sourceIp: input.sourceIp ?? null
   });
-  return endpoint;
+  if (input.status === "ACTIVE" || input.targetPort !== undefined || input.containerId !== undefined || input.serviceName !== undefined) await activateIngressEndpoint(endpoint.id);
+  if (input.status === "DISABLED") (await providerRoute(endpoint.id))?.provider?.remove(endpoint.id).catch(() => undefined);
+  return getIngressEndpoint(endpoint.id, input.actor);
 }
 
 export async function deleteIngressEndpoint(input: { id: string; actor: AuthSession; sourceIp?: string | null }): Promise<void> {
@@ -912,6 +973,8 @@ export async function deleteIngressEndpoint(input: { id: string; actor: AuthSess
   if (!existing) throw new Error("NOT_FOUND");
   assertOwnsClientAccountId(input.actor, existing.clientAccountId);
 
+  const route = await providerRoute(input.id);
+  if (route) await route.provider?.remove(input.id);
   await prisma.ingressEndpoint.delete({ where: { id: input.id } });
   await logAuditEvent({
     actorUserId: input.actor.userId,
