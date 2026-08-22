@@ -116,11 +116,15 @@ export async function PATCH(
     // lock (see server/db.ts's lockProjectForUpdate doc comment) so a
     // concurrent createIngressEndpoint can't insert a fresh endpoint between
     // the check and the reassignment.
-    const isReassignment = body.clientAccountId !== undefined && body.clientAccountId !== target.clientAccountId;
     await prisma.$transaction(async (tx) => {
-      if (isReassignment) {
+      if (body.clientAccountId !== undefined) {
+        // Decide ownership from the locked row, never a stale pre-lock
+        // snapshot: another request may have reassigned it in the interim.
         await lockProjectForUpdate(tx, id);
-        await assertWorkloadReassignable(id, tx);
+        const fresh = await tx.project.findUniqueOrThrow({ where: { id }, select: { clientAccountId: true } });
+        if (body.clientAccountId !== fresh.clientAccountId) {
+          await assertWorkloadReassignable(id, tx);
+        }
       }
 
       await tx.project.update({
@@ -138,11 +142,10 @@ export async function PATCH(
     // A deactivated workload's containers are no longer a valid ingress
     // backend — reconcile any bound endpoints the same way an explicit
     // workload-lifecycle deactivation does (see
-    // reconcileIngressEndpointsForDeactivatedWorkload's doc comment). Only on
-    // the true->false transition, after the update commits.
-    if (body.isActive === false && target.isActive) {
-      await reconcileIngressEndpointsForDeactivatedWorkload(id);
-    }
+    // reconcileIngressEndpointsForDeactivatedWorkload's doc comment). This is
+    // idempotent, so every explicit deactivation is safe and avoids relying
+    // on the stale pre-transaction state to infer a transition.
+    if (body.isActive === false) await reconcileIngressEndpointsForDeactivatedWorkload(id);
 
     await logAuditEvent({
       actorUserId: session.userId,

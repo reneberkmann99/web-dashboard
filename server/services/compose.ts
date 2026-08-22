@@ -153,11 +153,14 @@ export async function reconcileComposeWorkloads(nodeId: string, live: ComposeCon
       });
       if (deactivating.length > 0) {
         const deactivatingIds = deactivating.map((c) => c.id);
-        await prisma.container.updateMany({
-          where: { id: { in: deactivatingIds } },
-          data: { isActive: false, lastSeenAt: new Date() }
+        const deactivated = await prisma.container.updateManyAndReturn({
+          // Preserve the read predicate in the write: overlapping sweeps may
+          // have already observed a member as active again.
+          where: { id: { in: deactivatingIds }, isActive: true, dockerContainerId: { notIn: members.map((c) => c.id) } },
+          data: { isActive: false, lastSeenAt: new Date() },
+          select: { id: true }
         });
-        await reconcileIngressEndpointsForDeactivatedContainers(deactivatingIds);
+        await reconcileIngressEndpointsForDeactivatedContainers(deactivated.map((container) => container.id));
       }
     }
   }

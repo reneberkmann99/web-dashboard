@@ -589,13 +589,16 @@ async function collectAllContainersEnriched(): Promise<ContainerView[]> {
         .catch(() => []);
       if (deactivating.length > 0) {
         const deactivatingIds = deactivating.map((c) => c.id);
-        await prisma.container
-          .updateMany({
-            where: { id: { in: deactivatingIds } },
-            data: { isActive: false, lastSeenAt: new Date() }
+        const deactivated = await prisma.container
+          .updateManyAndReturn({
+            // Another overlapping poll can have already observed and revived
+            // one of these rows since the initial sweep snapshot.
+            where: { id: { in: deactivatingIds }, isActive: true, dockerContainerId: { notIn: Array.from(seenIds) } },
+            data: { isActive: false, lastSeenAt: new Date() },
+            select: { id: true }
           })
           .catch(() => undefined);
-        await reconcileIngressEndpointsForDeactivatedContainers(deactivatingIds);
+        await reconcileIngressEndpointsForDeactivatedContainers(deactivated?.map((container) => container.id) ?? []);
       }
     }
 

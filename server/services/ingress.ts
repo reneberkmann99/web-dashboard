@@ -214,7 +214,10 @@ export async function reconcileIngressEndpointsForDeactivatedContainers(containe
   if (containerIds.length === 0) return;
   await prisma.ingressEndpoint
     .updateMany({
-      where: { containerId: { in: containerIds }, status: { not: "DISABLED" } },
+      // The container can be revived by a newer overlapping inventory poll
+      // after an earlier sweep selected it. Only error endpoints whose
+      // backend is still inactive at this write.
+      where: { containerId: { in: containerIds }, status: { not: "DISABLED" }, container: { isActive: false } },
       data: { status: "ERROR", statusDetail: "Backend container is no longer reported by the node agent" }
     })
     .catch(() => undefined);
@@ -451,14 +454,19 @@ export async function updateIngressProvider(input: UpdateIngressProviderInput) {
 
 export async function deleteIngressProvider(input: { id: string; actor: AuthSession; sourceIp?: string | null }): Promise<void> {
   requirePlatformAdmin(input.actor);
-  const existing = await prisma.ingressProvider.findUnique({
-    where: { id: input.id },
-    select: { id: true, name: true, _count: { select: { publicAddresses: true, ingressEndpoints: true } } }
+  const existing = await prisma.$transaction(async (tx) => {
+    // create/updateIngressEndpoint takes this same lock before it validates
+    // the provider, so repeat the reference check while holding it.
+    await lockIngressProviderForUpdate(tx, input.id);
+    const provider = await tx.ingressProvider.findUnique({
+      where: { id: input.id },
+      select: { id: true, name: true, _count: { select: { publicAddresses: true, ingressEndpoints: true } } }
+    });
+    if (!provider) throw new Error("NOT_FOUND");
+    if (provider._count.publicAddresses > 0 || provider._count.ingressEndpoints > 0) throw new Error("INGRESS_PROVIDER_IN_USE");
+    await tx.ingressProvider.delete({ where: { id: input.id } });
+    return provider;
   });
-  if (!existing) throw new Error("NOT_FOUND");
-  if (existing._count.publicAddresses > 0 || existing._count.ingressEndpoints > 0) throw new Error("INGRESS_PROVIDER_IN_USE");
-
-  await prisma.ingressProvider.delete({ where: { id: input.id } });
   await logAuditEvent({
     actorUserId: input.actor.userId,
     actorEmail: input.actor.email,
