@@ -191,7 +191,7 @@ export function CommandPalette(): React.JSX.Element | null {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={isAdmin ? "Search workloads, containers, nodes, clients…" : "Search workloads and containers…"}
+            placeholder={isAdmin ? "Search workloads, containers, nodes, organizations…" : "Search workloads and containers…"}
             aria-label="Search"
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />

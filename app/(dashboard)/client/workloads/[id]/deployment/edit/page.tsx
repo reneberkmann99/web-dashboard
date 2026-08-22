@@ -42,7 +42,7 @@ export default function ClientDeploymentEditPage(): React.JSX.Element {
             ? "You don't have permission to manage this workload's deployment."
             : "This workload is not managed by Noderaft and has no deployment lifecycle."}
         </p>
-        <Button size="sm" variant="secondary" onClick={() => router.push(`/client/workloads/${params.id}`)}>
+        <Button size="sm" variant="secondary" onClick={() => router.push(`/organization/workloads/${params.id}`)}>
           ← Back to workload
         </Button>
       </div>
@@ -57,8 +57,8 @@ export default function ClientDeploymentEditPage(): React.JSX.Element {
       activeOperation={deployment.activeOperation}
       apiBase="/api/client/deployments"
       validateUrl="/api/client/deployments/validate"
-      backHref={`/client/workloads/${params.id}`}
-      rollbackHref={`/client/workloads/${params.id}?rollback=1`}
+      backHref={`/organization/workloads/${params.id}`}
+      rollbackHref={`/organization/workloads/${params.id}?rollback=1`}
     />
   );
 }

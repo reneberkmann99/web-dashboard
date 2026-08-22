@@ -23,6 +23,7 @@ import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { MobileActivityList } from "@/components/mobile/mobile-activity-list";
 import { userCard } from "@/components/mobile/mobile-resource-cards";
 import { CardChip } from "@/components/mobile/mobile-resource-card";
+import { roleLabel } from "@/types/domain";
 
 type ClientDetailPayload = {
   client: {
@@ -63,12 +64,12 @@ type ClientDetailPayload = {
 type CreateUserResponse = { id: string; activationUrl: string; activationExpiresAt: string };
 
 const ROLE_OPTIONS = [
-  { value: "CLIENT_VIEWER", label: "Viewer (read-only)" },
-  { value: "CLIENT_OPERATOR", label: "Operator (operate workloads)" },
-  { value: "CLIENT_ADMIN", label: "Client admin (manage users)" }
+  { value: "CLIENT_VIEWER", label: "Organization Viewer (read-only)" },
+  { value: "CLIENT_OPERATOR", label: "Organization Operator (operate workloads)" },
+  { value: "CLIENT_ADMIN", label: "Organization admin (manage members)" }
 ];
 
-const TABS = ["Overview", "Users", "Workloads", "Permissions", "Deployment Nodes", "Activity"] as const;
+const TABS = ["Overview", "Members", "Workloads", "Activity", "Settings"] as const;
 
 export default function AdminClientDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
@@ -131,8 +132,8 @@ export default function AdminClientDetailPage(): React.JSX.Element {
     mutationFn: () =>
       apiFetch<{ success: boolean }>(`/api/admin/clients/${params.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      toast.success("Client deactivated");
-      router.push("/admin/clients");
+      toast.success("Organization deactivated");
+      router.push("/organizations");
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to deactivate")
   });
@@ -148,7 +149,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
   });
 
   if (query.isLoading) return <div className="h-40 animate-pulse rounded-lg bg-panelAlt" />;
-  if (query.isError || !query.data) return <p className="text-sm text-critical-foreground">Failed to load client.</p>;
+  if (query.isError || !query.data) return <p className="text-sm text-critical-foreground">Failed to load organization.</p>;
 
   const { client, activity } = query.data;
 
@@ -163,7 +164,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         </div>
       )
     },
-    { key: "role", header: "Role", sortValue: (u) => u.role, render: (u) => <span className="text-sm">{u.role.replace(/_/g, " ").toLowerCase()}</span> },
+    { key: "role", header: "Role", sortValue: (u) => u.role, render: (u) => <span className="text-sm">{roleLabel(u.role)}</span> },
     {
       key: "status",
       header: "Status",
@@ -215,7 +216,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Client"
+        eyebrow="Organization"
         title={client.name}
         back={<Breadcrumbs />}
         description={<div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm">{client.slug}</span><span>· {client.counts.users} users · {client.counts.projects} workloads</span><Badge variant={client.isActive ? "success" : "default"}>{client.isActive ? "active" : "inactive"}</Badge></div>}
@@ -223,7 +224,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           <Button variant="ghost" onClick={() => router.push(`/admin/activity?clientId=${client.id}`)}>
             View activity
           </Button>
-          {client.isActive && <Menu label={`Actions for ${client.name}`} items={[{ label: "Deactivate client", tone: "danger", onSelect: () => setDeactivateClient(true) }]} />}
+          {client.isActive && <Menu label={`Actions for ${client.name}`} items={[{ label: "Deactivate organization", tone: "danger", onSelect: () => setDeactivateClient(true) }]} />}
         </>}
       />
 
@@ -232,13 +233,13 @@ export default function AdminClientDetailPage(): React.JSX.Element {
 
       {tab === "Overview" && (
         <div className="grid gap-4 md:grid-cols-3">
-          <Metric label="Active users" value={String(client.users.filter((u) => u.isActive).length)} />
+          <Metric label="Active members" value={String(client.users.filter((u) => u.isActive).length)} />
           <Metric label="Workloads" value={String(client.projects.length)} />
           <Metric label="Grants" value={String(client.grants.length)} />
         </div>
       )}
 
-      {tab === "Users" && (
+      {tab === "Members" && (
         <div className="space-y-4">
           <div className="flex justify-end">
             <Button onClick={() => setInviteOpen(true)}>Invite user</Button>
@@ -249,10 +250,10 @@ export default function AdminClientDetailPage(): React.JSX.Element {
             searchableText={(u) => `${u.displayName} ${u.email}`}
             searchPlaceholder="Search users…"
             emptyTitle="No users yet"
-            emptyBody="Invite a user to give them access to this client's workloads."
+            emptyBody="Invite a member to give them access to this organization's workloads."
             rowKey={(u) => u.id}
             stateKey={`client:${client.id}:users`}
-            ariaLabel="Client users"
+            ariaLabel="Organization members"
             mobileCard={(u) =>
               userCard({
                 id: u.id,
@@ -280,10 +281,10 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           searchableText={(p) => p.name}
           searchPlaceholder="Search workloads…"
           emptyTitle="No workloads"
-          emptyBody="Grant this client access to a workload to get started."
+          emptyBody="Grant this organization access to a workload to get started."
           rowKey={(p) => p.id}
           stateKey={`client:${client.id}:workloads`}
-          ariaLabel="Client workloads"
+          ariaLabel="Organization workloads"
           onRowClick={(p) => {
             go({ url: `/admin/workloads/${p.id}`, label: p.name, type: "workload", id: p.id });
           }}
@@ -307,28 +308,22 @@ export default function AdminClientDetailPage(): React.JSX.Element {
         />
       )}
 
-      {tab === "Permissions" && (
-        <DataTable
-          columns={grantColumns}
-          rows={client.grants}
-          emptyTitle="No permissions granted"
-          emptyBody="Grant access from a workload's detail page, or grant a single container as an exception."
-          rowKey={(g) => g.id}
-          stateKey={`client:${client.id}:permissions`}
-          ariaLabel="Client permissions"
-        />
-      )}
-
-      {tab === "Deployment Nodes" && <ClientDeploymentNodesTab clientId={client.id} />}
-
       {tab === "Activity" && (
         <div className="rounded-lg border border-border bg-panel">
           <div className="max-md:hidden">
-            <ActivityTimeline events={activity} resourceName={client.name} emptyText="No activity recorded for this client." />
+            <ActivityTimeline events={activity} resourceName={client.name} emptyText="No activity recorded for this organization." />
           </div>
           <div className="md:hidden">
-            <MobileActivityList events={activity} resourceName={client.name} emptyText="No activity recorded for this client." />
+            <MobileActivityList events={activity} resourceName={client.name} emptyText="No activity recorded for this organization." />
           </div>
+        </div>
+      )}
+
+      {tab === "Settings" && (
+        <div className="rounded-lg border border-border bg-panel p-5 text-sm">
+          <h2 className="font-medium">Organization settings</h2>
+          <p className="mt-1 text-muted">Manage organization identity, access, and lifecycle from this detail surface.</p>
+          <p className="mt-4 text-muted">Status: <span className="text-text">{client.isActive ? "active" : "inactive"}</span></p>
         </div>
       )}
 
@@ -339,7 +334,7 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           setInviteOpen(false);
           setActivationUrl(null);
         }}
-        title={`Invite user to ${client.name}`}
+        title={`Invite member to ${client.name}`}
         description="The user receives a one-time activation link and sets their own password."
         footer={
           activationUrl ? (
@@ -397,17 +392,17 @@ export default function AdminClientDetailPage(): React.JSX.Element {
           if (deactivateUser) return deactivateUserMutation.mutate(deactivateUser.id);
         }}
         title={`Deactivate ${deactivateUser?.name ?? "user"}?`}
-        impact="This user will immediately lose access to the client's workloads."
+        impact="This member will immediately lose access to the organization's workloads."
         confirmLabel="Deactivate"
       />
 
-      {/* Deactivate client confirm */}
+      {/* Deactivate organization confirm */}
       <ConfirmDialog
         open={deactivateClient}
         onClose={() => setDeactivateClient(false)}
         onConfirm={() => deactivateClientMutation.mutate()}
         title={`Deactivate ${client.name}?`}
-        impact="All of this client's users lose access immediately. Grants are preserved but inactive."
+        impact="All of this organization's members lose access immediately. Grants are preserved but inactive."
         confirmLabel="Deactivate"
       />
     </div>
@@ -428,8 +423,8 @@ type AllowedNode = { nodeId: string; name: string; hostname: string; status: str
 
 /**
  * Admin-managed node allowlist for tenant self-service (Phase 7). Empty list
- * = the client cannot create workloads. Strict security policy is applied at
- * the API layer for every client-authored deployment, independent of which
+ * = the organization cannot create workloads. Strict security policy is applied at
+ * the API layer for every organization-authored deployment, independent of which
  * nodes are allowed here.
  */
 function ClientDeploymentNodesTab({ clientId }: { clientId: string }): React.JSX.Element {
@@ -477,9 +472,9 @@ function ClientDeploymentNodesTab({ clientId }: { clientId: string }): React.JSX
       <div className="rounded-lg border border-border bg-panel p-4 text-sm">
         <p className="font-medium">Self-service deployment nodes</p>
         <p className="mt-1 text-muted">
-          Nodes checked below are where this client&apos;s users may create and deploy their own managed workloads.
+          Nodes checked below are where this organization&apos;s members may create and deploy their own managed workloads.
           Unchecking a node does not affect workloads already deployed there — it only blocks new deployments.
-          Client-authored configurations always run under strict policy: no privileged containers, host binds, host
+          Organization-authored configurations always run under strict policy: no privileged containers, host binds, host
           networking/PID/IPC, Docker socket mounts, extra capabilities, devices, or external network/volume
           attachment — regardless of which nodes are allowed.
         </p>

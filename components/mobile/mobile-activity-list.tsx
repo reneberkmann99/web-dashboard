@@ -90,7 +90,7 @@ function pluralize(action: string, count: number): string {
   const lower = base.toLowerCase();
   if (lower.endsWith(" container")) return `${count} more container${count > 1 ? "s" : ""}`;
   if (lower.endsWith(" user")) return `${count} more user${count > 1 ? "s" : ""}`;
-  if (lower.endsWith(" client")) return `${count} more client${count > 1 ? "s" : ""}`;
+  if (lower.endsWith(" client")) return `${count} more organization${count > 1 ? "s" : ""}`;
   return `${count} more ${lower.replace(/^(created|deleted|updated|started|stopped|restarted|revoked|granted|activated|deactivated|reissued|registered|adopted|converted|detached|enrolled)\s+/, "")}`;
 }
 

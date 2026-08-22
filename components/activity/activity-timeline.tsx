@@ -64,9 +64,9 @@ function clockTime(iso: string): string {
 }
 
 function rollupSentence(value: string, count: number): string {
-  const match = /^(.*)\s(user|container|workload|node|client|deployment|secret|grant)$/i.exec(value);
+  const match = /^(.*)\s(user|container|workload|node|client|organization|deployment|secret|grant)$/i.exec(value);
   if (!match) return `${value} · ${count} events`;
-  return `${match[1]} ${count} ${match[2].toLowerCase()}s`;
+  return `${match[1]} ${count} ${match[2].toLowerCase() === "client" ? "organization" : match[2].toLowerCase()}s`;
 }
 
 export type ActivityGroup = { key: string; day: string; events: TimelineEvent[] };

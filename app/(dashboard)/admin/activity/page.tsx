@@ -132,7 +132,7 @@ export default function AdminActivityPage(): React.JSX.Element {
     },
     {
       id: "client",
-      label: "Client",
+      label: "Organization",
       options: (refsQuery.data?.clients ?? []).map((c) => ({ value: c.id, label: c.name })),
       selected: clientId ? [clientId] : []
     }
@@ -173,7 +173,7 @@ export default function AdminActivityPage(): React.JSX.Element {
         dimensions={[
           { id: "result", label: "Result", value: result, options: [{ value: "SUCCESS", label: "Success" }, { value: "FAILURE", label: "Failure" }], onChange: (value) => { setResult(value); syncUrl({ result: value, page: "1" }); } },
           { id: "node", label: "Node", value: nodeId, options: (refsQuery.data?.nodes ?? []).map((node) => ({ value: node.id, label: node.name })), onChange: (value) => { setNodeId(value); syncUrl({ nodeId: value, page: "1" }); } },
-          { id: "client", label: "Client", value: clientId, options: (refsQuery.data?.clients ?? []).map((client) => ({ value: client.id, label: client.name })), onChange: (value) => { setClientId(value); syncUrl({ clientId: value, page: "1" }); } }
+          { id: "client", label: "Organization", value: clientId, options: (refsQuery.data?.clients ?? []).map((client) => ({ value: client.id, label: client.name })), onChange: (value) => { setClientId(value); syncUrl({ clientId: value, page: "1" }); } }
         ]}
         resultCount={query.data?.total ?? 0}
         totalCount={totalQuery.data?.total ?? query.data?.total ?? 0}
@@ -199,7 +199,7 @@ export default function AdminActivityPage(): React.JSX.Element {
             chips={[
               ...(result ? [{ label: result.toLowerCase() }] : []),
               ...(nodeId ? [{ label: refsQuery.data?.nodes.find((n) => n.id === nodeId)?.name ?? "Node" }] : []),
-              ...(clientId ? [{ label: refsQuery.data?.clients.find((c) => c.id === clientId)?.name ?? "Client" }] : [])
+              ...(clientId ? [{ label: refsQuery.data?.clients.find((c) => c.id === clientId)?.name ?? "Organization" }] : [])
             ]}
           />
         </div>

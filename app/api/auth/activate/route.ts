@@ -66,7 +66,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const session = await createSession(token.userId);
     const response = ok({
       user: { id: token.user.id, email: token.user.email, role: token.user.role },
-      redirectPath: token.user.role === "ADMIN" ? "/admin" : "/client"
+      redirectPath: token.user.role === "ADMIN" ? "/admin" : "/organization"
     });
     setSessionCookie(response, session.token, session.expiresAt);
     setCsrfCookie(response, session.expiresAt);

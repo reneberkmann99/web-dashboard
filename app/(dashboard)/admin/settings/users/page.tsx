@@ -27,9 +27,10 @@ type CreateUserResponse = {
 };
 
 const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
-  { value: "CLIENT_VIEWER", label: "Client Viewer (read-only)" },
-  { value: "CLIENT_OPERATOR", label: "Client Operator (operate assigned workloads)" },
-  { value: "CLIENT_ADMIN", label: "Client Admin (manage own client users)" },
+  { value: "CLIENT", label: "Organization Admin (legacy role)" },
+  { value: "CLIENT_VIEWER", label: "Organization Viewer (read-only)" },
+  { value: "CLIENT_OPERATOR", label: "Organization Operator (operate assigned workloads)" },
+  { value: "CLIENT_ADMIN", label: "Organization Admin (manage organization members)" },
   { value: "ADMIN", label: "Platform Admin" }
 ];
 
@@ -135,7 +136,7 @@ export default function AdminUsersPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Access" title="User management" description="Invite users; they set their own password via a one-time Noderaft activation link." />
+      <PageHeader eyebrow="Access" title="All Users" description="Invite users; they set their own password via a one-time Noderaft activation link." />
 
       <Card className="panel">
         <CardHeader>
@@ -157,7 +158,7 @@ export default function AdminUsersPage(): React.JSX.Element {
             </Select>
             {role !== "ADMIN" && (
               <Select value={clientAccountId} onChange={(event) => setClientAccountId(event.target.value)} required>
-                <option value="">Select client</option>
+                <option value="">Select organization</option>
                 {(query.data?.clients ?? []).map((client) => (
                   <option key={client.id} value={client.id}>
                     {client.name}
@@ -215,7 +216,7 @@ export default function AdminUsersPage(): React.JSX.Element {
               },
               {
                 key: "client",
-                header: "Client",
+                header: "Organization",
                 sortValue: (u: UserRecord) => u.clientAccount?.name ?? "",
                 render: (u: UserRecord) =>
                   u.role === "ADMIN" ? (

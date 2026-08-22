@@ -161,7 +161,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         body: JSON.stringify({ isActive })
       }),
     onSuccess: (_data, isActive) => {
-      toast.success(isActive ? "Workload reactivated" : "Workload deactivated — client access disabled, Docker resources left running");
+      toast.success(isActive ? "Workload reactivated" : "Workload deactivated — organization access disabled, Docker resources left running");
       queryClient.invalidateQueries({ queryKey: ["workload", params.id] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Update failed")
@@ -350,7 +350,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
               <Stat label="Intentionally stopped" value={String(workload.intentionallyStoppedContainers)} />
               <Stat label="CPU" value={workload.cpuPercent !== null ? `${workload.cpuPercent}%` : "—"} />
               <Stat label="Memory" value={workload.memoryUsage ?? "—"} />
-              <Stat label="Client" value={workload.client?.name ?? "—"} />
+              <Stat label="Organization" value={workload.client?.name ?? "—"} />
               <Stat label="Stopped" value={String(workload.stoppedContainers)} />
               <Stat label="Unhealthy" value={String(workload.unhealthyContainers)} />
             </dl>
@@ -369,7 +369,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           <div className="rounded-lg border border-border bg-panel p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Access</h2>
             {workload.grants.length === 0 ? (
-              <p className="text-sm text-muted">No client has access to this workload yet.</p>
+              <p className="text-sm text-muted">No organization has access to this workload yet.</p>
             ) : (
               <ul className="space-y-2 text-sm">
                 {workload.grants.map((g) => (
@@ -531,7 +531,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
           convertMutation.mutate();
         }}
         title={`Convert ${workload.name} to Compose-managed?`}
-        impact={`Noderaft will start tracking this workload from Compose project "${convertPreview.data?.preview.composeProject ?? ""}". Its ID, name, client, grants and activity history are retained. Membership will then sync automatically as containers are recreated.`}
+        impact={`Noderaft will start tracking this workload from Compose project "${convertPreview.data?.preview.composeProject ?? ""}". Its ID, name, organization, grants and activity history are retained. Membership will then sync automatically as containers are recreated.`}
         confirmLabel="Convert to Compose-managed"
       />
 
@@ -545,7 +545,7 @@ export default function AdminWorkloadDetailPage(): React.JSX.Element {
         title={`${workload.isActive ? "Deactivate" : "Reactivate"} ${workload.name}?`}
         impact={
           workload.isActive
-            ? "The workload remains in Noderaft but client access is disabled and Noderaft stops operational management/notifications. Docker containers, volumes, and networks are left completely untouched. This is reversible."
+            ? "The workload remains in Noderaft but organization access is disabled and Noderaft stops operational management/notifications. Docker containers, volumes, and networks are left completely untouched. This is reversible."
             : "The workload becomes visible and operational again. Docker resources were never touched while deactivated."
         }
         confirmLabel={workload.isActive ? "Deactivate workload" : "Reactivate workload"}
@@ -635,7 +635,7 @@ function GrantModal({
       open={open}
       onClose={onClose}
       title="Grant access"
-      description={`Choose which client may access ${workloadName}.`}
+      description={`Choose which organization may access ${workloadName}.`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={saving}>
@@ -650,14 +650,14 @@ function GrantModal({
       <div className="space-y-4">
         <div className="space-y-1">
           <label htmlFor="grant-client" className="text-sm text-muted">
-            Client
+            Organization
           </label>
           <Select
             id="grant-client"
             value={clientId}
             onChange={(e) => onClientChange(e.target.value)}
           >
-            <option value="">Select client…</option>
+            <option value="">Select organization…</option>
             {(clientsQuery.data?.clients ?? []).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

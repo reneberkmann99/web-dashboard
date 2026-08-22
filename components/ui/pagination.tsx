@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * Shared design-system pagination. A single "X–Y of N" summary with Prev/Next
- * controls — used consistently by large data sets (Containers, Clients, Users,
+ * controls — used consistently by large data sets (Containers, Organizations, Users,
  * Activity, notification delivery history, release history) so no page ships
  * its own subtly-different pagination footer.
  */

@@ -21,7 +21,7 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
         back={
           <button
             type="button"
-            onClick={() => router.push("/client/workloads")}
+            onClick={() => router.push("/organization/workloads")}
             className="mb-2 text-sm text-brand hover:text-brand-hover"
           >
             ← Workloads
@@ -37,8 +37,8 @@ export default function NewClientWorkloadPage(): React.JSX.Element {
       />
       <CreateWorkloadWizard
         tenant="client"
-        backHref="/client/workloads"
-        detailHref={(projectId) => `/client/workloads/${projectId}`}
+        backHref="/organization/workloads"
+        detailHref={(projectId) => `/organization/workloads/${projectId}`}
       />
     </div>
   );

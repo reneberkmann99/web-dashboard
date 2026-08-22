@@ -27,11 +27,17 @@ export type NavRootKey =
   | "overview"
   | "workloads"
   | "nodes"
-  | "clients"
+  | "organizations"
   | "attention"
   | "activity"
   | "users"
   | "containers"
+  | "alerting"
+  | "platformSettings"
+  | "members"
+  | "settings"
+  // Legacy keys remain readable for old sessionStorage entries.
+  | "clients"
   | "notifications"
   | "team";
 
@@ -61,10 +67,32 @@ function readMap(): Record<string, NavContextState> {
 
 export function loadContext(url: string): NavContextState | null {
   try {
-    return readMap()[url] ?? null;
+    const context = readMap()[url];
+    if (!context) return null;
+    return normalizeContext(context);
   } catch {
     return null;
   }
+}
+
+/** Migrate persisted navigation labels/roots without invalidating the trail. */
+function normalizeContext(context: NavContextState): NavContextState {
+  const label = (value: string): string => ({
+    Client: "Organization",
+    Clients: "Organizations",
+    Team: "Members",
+    Users: "All Users",
+    Notifications: "Alerting"
+  }[value] ?? value);
+  const url = (value: string): string => value
+    .replace(/^\/admin\/clients(?=\/|$)/, "/organizations")
+    .replace(/^\/client(?=\/|$)/, "/organization");
+  const rootKey = context.rootKey === "clients" ? "organizations" : context.rootKey === "team" ? "members" : context.rootKey === "notifications" ? "alerting" : context.rootKey;
+  return {
+    rootKey,
+    rootHref: url(context.rootHref),
+    stack: context.stack.map((entry) => ({ ...entry, label: label(entry.label), url: url(entry.url), type: entry.type === "client" ? "organization" : entry.type }))
+  };
 }
 
 export function saveContext(url: string, ctx: NavContextState): void {
@@ -85,21 +113,48 @@ export function saveContext(url: string, ctx: NavContextState): void {
 export const ADMIN_ROOTS: Record<string, RootDef> = {
   overview: { key: "overview", href: "/admin", label: "Overview" },
   workloads: { key: "workloads", href: "/admin/workloads", label: "Workloads" },
-  nodes: { key: "nodes", href: "/admin/nodes", label: "Nodes" },
-  clients: { key: "clients", href: "/admin/clients", label: "Clients" },
+  containers: { key: "containers", href: "/admin/containers", label: "Containers" },
   attention: { key: "attention", href: "/admin/attention", label: "Attention" },
   activity: { key: "activity", href: "/admin/activity", label: "Activity" },
-  users: { key: "users", href: "/admin/settings/users", label: "Users" },
-  containers: { key: "containers", href: "/admin/containers", label: "Containers" },
-  notifications: { key: "notifications", href: "/admin/settings/notifications", label: "Notifications" }
+  nodes: { key: "nodes", href: "/admin/nodes", label: "Nodes" },
+  organizations: { key: "organizations", href: "/organizations", label: "Organizations" },
+  users: { key: "users", href: "/admin/settings/users", label: "All Users" },
+  alerting: { key: "alerting", href: "/admin/settings/notifications", label: "Alerting" },
+  platformSettings: { key: "platformSettings", href: "/admin/settings", label: "Platform Settings" }
 };
 
 export const CLIENT_ROOTS: Record<string, RootDef> = {
-  overview: { key: "overview", href: "/client", label: "Overview" },
-  workloads: { key: "workloads", href: "/client/workloads", label: "Workloads" },
-  activity: { key: "activity", href: "/client/activity", label: "Activity" },
-  team: { key: "team", href: "/client/team", label: "Team" }
+  overview: { key: "overview", href: "/organization", label: "Overview" },
+  workloads: { key: "workloads", href: "/organization/workloads", label: "Workloads" },
+  containers: { key: "containers", href: "/organization/containers", label: "Containers" },
+  attention: { key: "attention", href: "/organization/attention", label: "Attention" },
+  activity: { key: "activity", href: "/organization/activity", label: "Activity" },
+  members: { key: "members", href: "/organization/members", label: "Members" },
+  settings: { key: "settings", href: "/organization/settings", label: "Settings" }
 };
+
+export const PLATFORM_NAV_KEYS = [
+  "overview",
+  "workloads",
+  "containers",
+  "attention",
+  "activity",
+  "nodes",
+  "organizations",
+  "users",
+  "alerting",
+  "platformSettings"
+] as const;
+
+export const ORGANIZATION_OPERATIONAL_KEYS = ["overview", "workloads", "containers", "attention", "activity"] as const;
+
+export function navigationKeysForRole(role: string): readonly string[] {
+  return role === "ADMIN"
+    ? PLATFORM_NAV_KEYS
+    : role === "CLIENT" || role === "CLIENT_ADMIN"
+      ? [...ORGANIZATION_OPERATIONAL_KEYS, "members", "settings"]
+      : ORGANIZATION_OPERATIONAL_KEYS;
+}
 
 /**
  * Mobile account-sheet destinations (design §07). These are NOT bottom-tab
@@ -115,9 +170,12 @@ export const CONTAINER_SHEET_ROOT: RootDef = {
 
 export const MOBILE_SHEET_DESTINATIONS: Record<string, RootDef> = {
   containers: CONTAINER_SHEET_ROOT,
-  clients: { key: "clients", href: "/admin/clients", label: "Clients" },
-  users: { key: "users", href: "/admin/settings/users", label: "Users" },
-  notifications: { key: "notifications", href: "/admin/settings/notifications", label: "Notifications" }
+  organizations: { key: "organizations", href: "/organizations", label: "Organizations" },
+  users: { key: "users", href: "/admin/settings/users", label: "All Users" },
+  alerting: { key: "alerting", href: "/admin/settings/notifications", label: "Alerting" },
+  platformSettings: { key: "platformSettings", href: "/admin/settings", label: "Platform Settings" },
+  members: CLIENT_ROOTS.members,
+  settings: CLIENT_ROOTS.settings
 };
 
 function rootEntry(def: RootDef): NavEntry {
@@ -144,13 +202,14 @@ export function deriveFallback(pathname: string, search: string): NavContextStat
     { re: /^\/admin\/workloads$/, root: "workloads" },
     { re: /^\/admin\/nodes\/[^/]+$/, root: "nodes", type: "node", label: "Node" },
     { re: /^\/admin\/nodes$/, root: "nodes" },
-    { re: /^\/admin\/clients\/[^/]+$/, root: "clients", type: "client", label: "Client" },
-    { re: /^\/admin\/clients$/, root: "clients" },
+    { re: /^(?:\/admin\/clients|\/organizations)\/[^/]+$/, root: "organizations", type: "organization", label: "Organization" },
+    { re: /^(?:\/admin\/clients|\/organizations)$/, root: "organizations" },
     { re: /^\/admin\/attention$/, root: "attention" },
     { re: /^\/admin\/activity$/, root: "activity" },
     { re: /^\/admin\/settings\/users$/, root: "users" },
     { re: /^\/admin\/settings\/containers$/, root: "containers" },
-    { re: /^\/admin\/settings\/notifications$/, root: "notifications" }
+    { re: /^\/admin\/settings\/notifications$/, root: "alerting" },
+    { re: /^\/admin\/settings$/, root: "platformSettings" }
   ] as const;
 
   // Containers is a mobile sheet destination rooted under the Workloads
@@ -181,13 +240,15 @@ export function deriveFallback(pathname: string, search: string): NavContextStat
   }
 
   const client = [
-    { re: /^\/client$/, root: "overview" },
-    { re: /^\/client\/workloads\/[^/]+$/, root: "workloads", type: "workload", label: "Workload" },
-    { re: /^\/client\/workloads$/, root: "workloads" },
-    { re: /^\/client\/containers\/[^/]+$/, root: "workloads", type: "container", label: "Container" },
-    { re: /^\/client\/containers$/, root: "workloads" },
-    { re: /^\/client\/activity$/, root: "activity" },
-    { re: /^\/client\/team$/, root: "team" }
+    { re: /^(?:\/client|\/organization)$/, root: "overview" },
+    { re: /^(?:\/client|\/organization)\/workloads\/[^/]+$/, root: "workloads", type: "workload", label: "Workload" },
+    { re: /^(?:\/client|\/organization)\/workloads$/, root: "workloads" },
+    { re: /^(?:\/client|\/organization)\/containers\/[^/]+$/, root: "containers", type: "container", label: "Container" },
+    { re: /^(?:\/client|\/organization)\/containers$/, root: "containers" },
+    { re: /^(?:\/client|\/organization)\/attention$/, root: "attention" },
+    { re: /^(?:\/client|\/organization)\/activity$/, root: "activity" },
+    { re: /^(?:\/client|\/organization)\/(?:team|members)$/, root: "members" },
+    { re: /^(?:\/client|\/organization)\/settings$/, root: "settings" }
   ] as const;
 
   for (const rule of client) {

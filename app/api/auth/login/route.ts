@@ -245,7 +245,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         email: user.email,
         role: user.role
       },
-      redirectPath: user.role === "ADMIN" ? "/admin" : "/client"
+      redirectPath: user.role === "ADMIN" ? "/admin" : "/organization"
     });
 
     setSessionCookie(response, session.token, session.expiresAt);

@@ -365,10 +365,10 @@ export function CreateWorkloadWizard({
           {tenant === "admin" && (
             <div className="space-y-1.5">
               <label className="block text-xs font-medium uppercase tracking-wide text-text-muted" htmlFor="cw-client">
-                Client / ownership
+                Organization / ownership
               </label>
               <Select id="cw-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-                <option value="">Internal workload (no client)</option>
+                <option value="">Internal workload (no organization)</option>
                 {(clientsQuery.data?.clients ?? []).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} ({c.slug})
@@ -376,7 +376,7 @@ export function CreateWorkloadWizard({
                 ))}
               </Select>
               <p className="text-xs text-text-subtle">
-                Assigning a client lets that client's team see and manage this workload under their own account.
+                Assigning an organization lets that organization&apos;s members see and manage this workload under their own account.
               </p>
             </div>
           )}
@@ -512,8 +512,8 @@ export function CreateWorkloadWizard({
               </div>
               {tenant === "admin" && (
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-text-muted">Client</dt>
-                  <dd>{clientId ? clientsQuery.data?.clients.find((c) => c.id === clientId)?.name ?? clientId : "Internal (no client)"}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-text-muted">Organization</dt>
+                  <dd>{clientId ? clientsQuery.data?.clients.find((c) => c.id === clientId)?.name ?? clientId : "Internal (no organization)"}</dd>
                 </div>
               )}
               <div>

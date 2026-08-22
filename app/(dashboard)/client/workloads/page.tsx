@@ -61,7 +61,7 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
         eyebrow="Services"
         title="Workloads"
         description="The services assigned to you."
-        actions={<Button size="sm" onClick={() => router.push("/client/workloads/new")}>
+        actions={<Button size="sm" onClick={() => router.push("/organization/workloads/new")}>
           New workload
         </Button>}
       />
@@ -78,12 +78,12 @@ export default function ClientWorkloadsPage(): React.JSX.Element {
         stateKey="client-workloads"
         ariaLabel="Workloads"
         onRowClick={(w) => {
-          go({ url: `/client/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
+          go({ url: `/organization/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
         }}
         rowKey={(w) => w.id}
         mobileCard={(w) =>
           workloadCard(w, () => {
-            go({ url: `/client/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
+          go({ url: `/organization/workloads/${w.id}`, label: w.name, type: "workload", id: w.id });
           })
         }
       />

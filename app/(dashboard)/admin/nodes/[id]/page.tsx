@@ -254,7 +254,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
                       {p.name}
                     </button>
                     <span className="ml-2 text-xs text-muted">
-                      {p.clientAccount?.name ?? "No client"} · {p._count.containers} containers
+                      {p.clientAccount?.name ?? "No organization"} · {p._count.containers} containers
                     </span>
                   </li>
                 ))}
@@ -269,7 +269,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
         <DataTable
           columns={[
             { key: "name", header: "Workload", sortValue: (p: (typeof node.projects)[number]) => p.name, render: (p) => <p className="font-medium">{p.name}</p> },
-            { key: "client", header: "Client", render: (p: (typeof node.projects)[number]) => <span>{p.clientAccount?.name ?? "No client"}</span> },
+            { key: "client", header: "Organization", render: (p: (typeof node.projects)[number]) => <span>{p.clientAccount?.name ?? "No organization"}</span> },
             { key: "containers", header: "Containers", sortValue: (p: (typeof node.projects)[number]) => p._count.containers, render: (p) => <span className="font-mono">{p._count.containers}</span> }
           ]}
           rows={node.projects}
@@ -297,7 +297,7 @@ export default function AdminNodeDetailPage(): React.JSX.Element {
                 <p className="font-medium">{p.name}</p>
                 <CardChip tone="neutral">{p._count.containers} containers</CardChip>
               </div>
-              <p className="mt-1 font-mono text-[11px] text-text-muted">{p.clientAccount?.name ?? "No client"}</p>
+            <p className="mt-1 font-mono text-[11px] text-text-muted">{p.clientAccount?.name ?? "No organization"}</p>
             </div>
           )}
         />

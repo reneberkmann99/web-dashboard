@@ -364,7 +364,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
                 <Stat label="Health" value={container.details?.health ?? "—"} />
                 <Stat label="Created" value={timeAgo(container.createdAt)} />
                 <Stat label="Stack" value={container.projectName ?? "—"} />
-                <Stat label="Client" value={container.clientName} />
+                <Stat label="Organization" value={container.clientName} />
                 <Stat label="Ports" value={container.ports} />
               </dl>
             </section>
@@ -460,7 +460,7 @@ export default function DirectContainerDetailPage(): React.JSX.Element {
               <Stat label="Health" value={container.details?.health ?? "—"} />
               <Stat label="Created" value={timeAgo(container.createdAt)} />
               <Stat label="Stack" value={container.projectName ?? "—"} />
-              <Stat label="Client" value={container.clientName} />
+              <Stat label="Organization" value={container.clientName} />
               <Stat label="Ports" value={container.ports} />
             </dl>
           </section>

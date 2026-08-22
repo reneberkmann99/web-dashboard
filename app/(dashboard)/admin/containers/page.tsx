@@ -187,7 +187,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
       )
     },
     { key: "node", header: "Node", sortValue: (c) => c.nodeName, render: (c) => <span className="text-sm">{c.nodeName}</span>, hideBelow: "sm" },
-    { key: "client", header: "Client", sortValue: (c) => c.clientName, render: (c) => <span className="text-sm">{c.clientName}</span>, hideBelow: "sm" },
+    { key: "client", header: "Organization", sortValue: (c) => c.clientName, render: (c) => <span className="text-sm">{c.clientName}</span>, hideBelow: "sm" },
     { key: "status", header: "State", sortValue: (c) => c.status, render: (c) => <StatusBadge status={c.status} expectedStopped={c.expectedStopped} /> },
     { key: "health", header: "Health", sortValue: (c) => c.health ?? "none", omitWhenEmpty: (c) => !c.health, render: (c) => c.health ? <Badge variant={c.health === "healthy" ? "success" : c.health === "unhealthy" ? "danger" : "warning"}>{c.health}</Badge> : null },
     { key: "cpu", header: "CPU", className: "text-right", sortValue: (c) => c.cpuPercent ?? -1, render: (c) => <span className="font-mono text-xs tabular-nums" title={c.cpuPercent !== null ? `${c.cpuPercent}%` : undefined}>{c.cpuPercent !== null ? `${c.cpuPercent.toFixed(1)}%` : <span className="text-text-subtle">—</span>}</span>, hideBelow: "md" },
@@ -237,7 +237,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
     },
     {
       id: "client",
-      label: "Client",
+      label: "Organization",
       options: (refsQuery.data?.clients ?? []).map((c) => ({ value: c.id, label: c.name })),
       selected: clientId ? [clientId] : []
     },
@@ -303,7 +303,7 @@ export default function SettingsContainersPage(): React.JSX.Element {
           dimensions={[
             { id: "status", label: "State", value: status, options: STATUSES.map((value) => ({ value, label: value })), onChange: (value) => { setStatus(value); syncUrl({ status: value, page: "1" }); } },
             { id: "node", label: "Node", value: nodeId, options: (refsQuery.data?.nodes ?? []).map((node) => ({ value: node.id, label: node.name })), onChange: (value) => { setNodeId(value); syncUrl({ nodeId: value, page: "1" }); } },
-            { id: "client", label: "Client", value: clientId, options: (refsQuery.data?.clients ?? []).map((client) => ({ value: client.id, label: client.name })), onChange: (value) => { setClientId(value); syncUrl({ clientId: value, page: "1" }); } },
+            { id: "client", label: "Organization", value: clientId, options: (refsQuery.data?.clients ?? []).map((client) => ({ value: client.id, label: client.name })), onChange: (value) => { setClientId(value); syncUrl({ clientId: value, page: "1" }); } },
             { id: "workload", label: "Workload", value: projectId, options: (refsQuery.data?.workloads ?? []).map((workload) => ({ value: workload.id, label: workload.name })), onChange: (value) => { setProjectId(value); syncUrl({ projectId: value, page: "1" }); } },
             { id: "health", label: "Health", value: health, options: [{ value: "healthy", label: "Healthy" }, { value: "unhealthy", label: "Unhealthy" }, { value: "starting", label: "Starting" }, { value: "none", label: "No healthcheck" }], onChange: (value) => { setHealth(value); syncUrl({ health: value, page: "1" }); } }
           ]}

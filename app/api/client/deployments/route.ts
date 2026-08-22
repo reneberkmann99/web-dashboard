@@ -18,7 +18,7 @@ import { getSourceIpFromRequest } from "@/server/request";
 export async function POST(request: Request): Promise<Response> {
   try {
     const session = await requireApiCapability("project.create");
-    if (!session.clientAccountId) return fail("FORBIDDEN", "No client account", 403);
+    if (!session.clientAccountId) return fail("FORBIDDEN", "No organization account", 403);
     const sourceIp = getSourceIpFromRequest(request);
     const body = createDeploymentSchema.parse(await request.json());
 

@@ -163,7 +163,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
     },
     {
       key: "client",
-      header: "Client",
+      header: "Organization",
       sortValue: (w) => w.clientName ?? "",
       render: (w) => <span className="text-sm">{w.clientName ?? "—"}</span>,
       hideBelow: "sm"
@@ -274,7 +274,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         ],
         selected: sourceFilter ? [sourceFilter] : []
       },
-      { id: "client", label: "Client", options: clientOptions, selected: clientFilter ? [clientFilter] : [] }
+      { id: "client", label: "Organization", options: clientOptions, selected: clientFilter ? [clientFilter] : [] }
     ],
     [nodeOptions, clientOptions, nodeFilter, stateFilter, sourceFilter, clientFilter]
   );
@@ -327,7 +327,7 @@ export default function AdminWorkloadsPage(): React.JSX.Element {
         searchPlaceholder="Search workloads…"
         dimensions={[
           { id: "node", label: "Node", value: nodeFilter, options: nodeOptions, onChange: (value) => updateFilters({ nodeFilter: value }) },
-          { id: "client", label: "Client", value: clientFilter, options: clientOptions, onChange: (value) => updateFilters({ clientFilter: value }) },
+          { id: "client", label: "Organization", value: clientFilter, options: clientOptions, onChange: (value) => updateFilters({ clientFilter: value }) },
           { id: "state", label: "State", value: stateFilter, options: [{ value: "healthy", label: "Healthy" }, { value: "degraded", label: "Degraded" }, { value: "down", label: "Down" }, { value: "unknown", label: "Unknown" }], onChange: (value) => updateFilters({ stateFilter: value }) },
           { id: "source", label: "Type", value: sourceFilter, options: [{ value: "MANUAL", label: "Manual" }, { value: "COMPOSE", label: "External Compose" }, { value: "MANAGED", label: "Managed" }], onChange: (value) => updateFilters({ sourceFilter: value }) }
         ]}

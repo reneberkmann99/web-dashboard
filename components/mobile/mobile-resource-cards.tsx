@@ -3,6 +3,7 @@
 import { Heart, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ContainerView, WorkloadSummary, UserRecord } from "@/types/domain";
+import { roleLabel } from "@/types/domain";
 import { timeAgo } from "@/lib/format";
 import {
   MobileResourceCard,
@@ -211,7 +212,7 @@ export function nodeCard(
   );
 }
 
-/* ----------------------------- Clients ------------------------------ */
+/* -------------------------- Organizations --------------------------- */
 
 export type MobileClientRow = {
   id: string;
@@ -229,7 +230,7 @@ export function clientCard(client: MobileClientRow, onOpen?: () => void): React.
     <MobileResourceCard
       title={client.name}
       titleMono={false}
-      aria-label={`Client ${client.name}`}
+      aria-label={`Organization ${client.name}`}
       status={<CardChip tone={client.isActive ? "success" : "neutral"} dot>{client.isActive ? "active" : "inactive"}</CardChip>}
       context={<span className="font-mono text-[11px] text-text-subtle">{client.slug}</span>}
       footer={
@@ -259,7 +260,7 @@ export function userCard(
       aria-label={`User ${user.displayName || user.email}`}
       status={
         <>
-          <CardChip tone="brand">{user.role.replace("CLIENT_", "").toLowerCase()}</CardChip>
+          <CardChip tone="brand">{roleLabel(user.role)}</CardChip>
           {!user.isActive ? (
             <CardChip tone="danger">inactive</CardChip>
           ) : user.pending ? (

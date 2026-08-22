@@ -54,7 +54,7 @@ export async function GET(
       }
     });
     if (!client) {
-      return fail("NOT_FOUND", "Client not found", 404);
+      return fail("NOT_FOUND", "Organization not found", 404);
     }
 
     const activity = await prisma.auditLog.findMany({

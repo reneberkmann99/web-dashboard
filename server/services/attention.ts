@@ -311,7 +311,7 @@ async function getSustainedNodePressure(nodeIds: string[]): Promise<Map<string, 
 // ---------------------------------------------------------------------------
 
 function href(resourceType: ResourceType, id: string, role: "ADMIN" | "CLIENT"): string | null {
-  const base = role === "ADMIN" ? "/admin" : "/client";
+  const base = role === "ADMIN" ? "/admin" : "/organization";
   switch (resourceType) {
     case "NODE":
       return role === "ADMIN" ? `${base}/nodes/${id}` : null; // node infra hidden from clients

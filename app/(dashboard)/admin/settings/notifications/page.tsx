@@ -135,7 +135,7 @@ export default function NotificationsSettingsPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Alert delivery" title="Notifications" description="Global webhook destinations, delivery policy and alert-pipeline health." actions={<Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" /> Add webhook</Button>} />
+      <PageHeader eyebrow="Alert delivery" title="Alerting" description="Global webhook destinations, delivery policy and alert-pipeline health." actions={<Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" /> Add webhook</Button>} />
 
       {failing.length > 0 && <div className="rounded-lg border border-critical/40 bg-critical/5 p-4"><div className="flex items-center gap-2 text-critical-foreground"><TriangleAlert className="h-4 w-4" /><p className="font-medium">Notification destination failing</p></div>{failing.map((item) => <p key={item.id} className="mt-1 text-sm text-muted">{item.name}: {item.consecutiveFailures} consecutive failures. This warning is internal and does not recursively notify itself.</p>)}</div>}
 

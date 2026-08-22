@@ -6,7 +6,7 @@ const CSRF_COOKIE = "hostpanel_csrf";
 const CSRF_HEADER = "x-csrf-token";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const PUBLIC_HOST = new URL(BRAND.publicSiteUrl).hostname;
-const PLATFORM_ONLY_PREFIXES = ["/admin", "/client", "/api", "/login", "/activate", "/forbidden"];
+const PLATFORM_ONLY_PREFIXES = ["/admin", "/client", "/organization", "/organizations", "/api", "/login", "/activate", "/forbidden"];
 
 // Endpoints that perform their own authentication and are exempt from the
 // double-submit CSRF check (login/activation have no session yet; logout is
@@ -61,7 +61,7 @@ export function middleware(request: NextRequest): NextResponse {
   // Page-level gate (UX only — API routes enforce their own auth).
   const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
   const hasSessionCookie = Boolean(sessionCookie);
-  if ((pathname.startsWith("/admin") || pathname.startsWith("/client")) && !hasSessionCookie) {
+  if ((pathname.startsWith("/admin") || pathname.startsWith("/client") || pathname.startsWith("/organization") || pathname.startsWith("/organizations")) && !hasSessionCookie) {
     return applyIndexingBoundary(NextResponse.redirect(new URL("/login", request.url)), hostname);
   }
 
@@ -110,5 +110,5 @@ export function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/activate", "/forbidden", "/admin/:path*", "/client/:path*", "/api/:path*"]
+  matcher: ["/", "/login", "/activate", "/forbidden", "/admin/:path*", "/client/:path*", "/organization/:path*", "/organizations/:path*", "/api/:path*"]
 };

@@ -3,7 +3,7 @@ import { LandingPage } from "@/components/landing/landing-page";
 import { BRAND } from "@/lib/brand";
 
 const title = "Noderaft — Docker fleet operations, on one deck";
-const description = "A self-hosted control plane for Docker nodes, workloads and containers, with managed Compose releases and scoped client access.";
+const description = "A self-hosted control plane for Docker nodes, workloads and containers, with managed Compose releases and scoped organization access.";
 
 export const dynamic = "force-static";
 

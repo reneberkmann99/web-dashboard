@@ -44,7 +44,7 @@ export async function PUT(
 
     switch (result.status) {
       case "client_not_found":
-        return fail("NOT_FOUND", "Client not found", 404);
+        return fail("NOT_FOUND", "Organization not found", 404);
       case "node_not_found":
         return fail("NOT_FOUND", `Node ${result.nodeId} not found`, 404);
       case "updated":

@@ -18,6 +18,7 @@ const MOBILE_HIDDEN_ROOTS = new Set([
   "/admin/containers",
   "/admin/nodes",
   "/admin/clients",
+  "/organizations",
   "/admin/attention",
   "/admin/activity",
   "/admin/compose",
@@ -27,7 +28,14 @@ const MOBILE_HIDDEN_ROOTS = new Set([
   "/client/workloads",
   "/client/containers",
   "/client/activity",
-  "/client/team"
+  "/client/team",
+  "/organization",
+  "/organization/workloads",
+  "/organization/containers",
+  "/organization/attention",
+  "/organization/activity",
+  "/organization/members",
+  "/organization/settings"
 ]);
 
 function mobileModeFor(pathname: string): "hidden" | "compact" {

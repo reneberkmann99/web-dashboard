@@ -77,7 +77,7 @@ describe("global search", () => {
     const workerResults = await searchForClient(sessionA, "worker");
     const workerItems = workerResults.flatMap((g) => g.items).filter((i) => i.type === "container");
     expect(workerItems.some((i) => i.title === "worker")).toBe(true);
-    expect(workerItems[0].href).toBe(`/client/containers/${world.workerGrant.id}`);
+    expect(workerItems[0].href).toBe(`/organization/containers/${world.workerGrant.id}`);
   });
 
   it("empty or blank query returns no groups", async () => {

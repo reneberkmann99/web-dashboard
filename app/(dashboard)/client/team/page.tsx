@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { timeAgo } from "@/lib/format";
-import type { UserRole } from "@/types/domain";
+import { roleLabel, type UserRole } from "@/types/domain";
 import { PageHeader } from "@/components/ui/page-header";
 import { Menu } from "@/components/ui/menu";
 import { userCard } from "@/components/mobile/mobile-resource-cards";
@@ -111,7 +111,7 @@ export default function ClientTeamPage(): React.JSX.Element {
       key: "role",
       header: "Role",
       sortValue: (u) => u.role,
-      render: (u) => <span className="text-sm">{u.role.replace(/_/g, " ").toLowerCase()}</span>
+      render: (u) => <span className="text-sm">{roleLabel(u.role)}</span>
     },
     {
       key: "status",
@@ -154,8 +154,8 @@ export default function ClientTeamPage(): React.JSX.Element {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Access"
-        title="Team"
-        description="Manage who can access your organization's workloads."
+        title="Members"
+        description="Manage who can access your organization&apos;s workloads."
         actions={<Button onClick={() => { setInviteOpen(true); setActivationUrl(null); setInviteEmail(""); setInviteName(""); }}>
           Invite user
         </Button>}
@@ -165,10 +165,10 @@ export default function ClientTeamPage(): React.JSX.Element {
         columns={columns}
         rows={users}
         searchableText={(u) => `${u.displayName} ${u.email}`}
-        searchPlaceholder="Search team…"
+        searchPlaceholder="Search members…"
         loading={query.isLoading}
         error={query.isError ? "Failed to load team" : null}
-        emptyTitle="No team members yet"
+        emptyTitle="No members yet"
         emptyBody="Invite operators and viewers to give them access to your workloads."
         rowKey={(u) => u.id}
         stateKey="client-team"

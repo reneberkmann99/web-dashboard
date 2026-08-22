@@ -339,21 +339,21 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
 
             {step === 2 && (
               <div className="space-y-4">
-                <p className="text-sm text-muted">Who should own this workload? You can always grant access to clients later via the workload's "Grant access" action.</p>
+                <p className="text-sm text-muted">Who should own this workload? You can always grant access to organizations later via the workload&apos;s "Grant access" action.</p>
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" name="compose-owner" checked={clientId === ""} onChange={() => setClientId("")} className="accent-accent" />
-                    No client / internal workload
+                    No organization / internal workload
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" name="compose-owner" checked={clientId !== ""} onChange={() => setClientId(refs.data?.clients?.[0]?.id ?? "")} className="accent-accent" />
-                    Assign to existing client
+                    Assign to existing organization
                   </label>
                   {clientId !== "" && (
                     <Select
                       value={clientId}
                       onChange={(e) => setClientId(e.target.value)}
-                      aria-label="Select client"
+                    aria-label="Select organization"
                     >
                       {(refs.data?.clients ?? []).map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
@@ -362,7 +362,7 @@ export default function ComposeDiscoveryPage(): React.JSX.Element {
                   )}
                 </div>
                 <p className="text-xs text-muted">
-                  Assigning a client does not automatically grant permissions — use the existing access-grant system for that.
+                  Assigning an organization does not automatically grant permissions — use the existing access-grant system for that.
                 </p>
               </div>
             )}

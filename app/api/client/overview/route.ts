@@ -62,14 +62,14 @@ export async function GET(): Promise<Response> {
         type: op.type,
         state: op.state,
         targetName: op.container?.dockerName ?? "container",
-        href: op.container?.projectId ? `/client/workloads/${op.container.projectId}` : null
+        href: op.container?.projectId ? `/organization/workloads/${op.container.projectId}` : null
       })),
       ...deploymentOperations.map((op) => ({
         id: op.id,
         type: op.type,
         state: op.state,
         targetName: op.deployment.project.name,
-        href: `/client/workloads/${op.deployment.projectId}`
+        href: `/organization/workloads/${op.deployment.projectId}`
       }))
     ];
 

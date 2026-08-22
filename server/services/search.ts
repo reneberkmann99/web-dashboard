@@ -7,7 +7,7 @@ import { resolveVisibleContainersForSession } from "@/server/services/containers
  *
  * Security invariants:
  *  - ADMIN search spans the whole platform (workloads, containers, nodes,
- *    clients).
+ *    organizations).
  *  - Client search is strictly tenant-scoped: it only ever returns workloads
  *    and containers the caller has been granted, and never nodes or clients.
  *  - Container visibility for clients reuses the same
@@ -170,13 +170,13 @@ export async function searchForAdmin(q: string): Promise<SearchGroup[]> {
   if (clients.length > 0) {
     groups.push({
       type: "client",
-      label: "Clients",
+      label: "Organizations",
       items: clients.map((c) => ({
         type: "client" as const,
         id: c.id,
         title: c.name,
         subtitle: c.slug,
-        href: `/admin/clients/${c.id}`,
+        href: `/organizations/${c.id}`,
         meta: c.isActive ? "active" : "inactive"
       }))
     });
@@ -260,7 +260,7 @@ export async function searchForClient(session: AuthSession, q: string): Promise<
         id: p.id,
         title: p.name,
         subtitle: p.slug,
-        href: `/client/workloads/${p.id}`,
+        href: `/organization/workloads/${p.id}`,
         meta: p.node.name
       }))
     });
@@ -276,7 +276,7 @@ export async function searchForClient(session: AuthSession, q: string): Promise<
         id: row.grantId,
         title: row.dockerName,
         subtitle: row.image,
-        href: `/client/containers/${row.grantId}`,
+        href: `/organization/containers/${row.grantId}`,
         meta: row.node.name
       });
       if (matchingContainers.length >= MAX_PER_GROUP) {

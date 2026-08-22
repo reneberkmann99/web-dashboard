@@ -60,8 +60,8 @@ const NavigationContext = createContext<NavApi | null>(null);
 function defaultContext(pathname: string): NavContextState {
   return {
     rootKey: "overview",
-    rootHref: pathname.startsWith("/client") ? "/client" : "/admin",
-    stack: [{ kind: "root", label: "Overview", url: pathname.startsWith("/client") ? "/client" : "/admin" }]
+    rootHref: pathname.startsWith("/client") || pathname.startsWith("/organization") ? "/organization" : "/admin",
+    stack: [{ kind: "root", label: "Overview", url: pathname.startsWith("/client") || pathname.startsWith("/organization") ? "/organization" : "/admin" }]
   };
 }
 

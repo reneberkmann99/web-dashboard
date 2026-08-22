@@ -13,6 +13,7 @@ import {
   Search,
   Server,
   ShieldAlert,
+  Settings,
   Users,
   Workflow,
   PanelLeftClose,
@@ -46,25 +47,26 @@ const ADMIN_NAV: NavItem[] = [
   { key: "overview", href: "/admin", label: "Overview", icon: LayoutDashboard },
   { key: "workloads", href: "/admin/workloads", label: "Workloads", icon: Boxes },
   { key: "containers", href: "/admin/containers", label: "Containers", icon: Container },
-  { key: "nodes", href: "/admin/nodes", label: "Nodes", icon: Server },
-  { key: "clients", href: "/admin/clients", label: "Clients", icon: Users },
   { key: "attention", href: "/admin/attention", label: "Attention", icon: ShieldAlert },
-  { key: "activity", href: "/admin/activity", label: "Activity", icon: Activity }
-];
-
-const ADMIN_SETTINGS: NavItem[] = [
-  { key: "users", href: "/admin/settings/users", label: "Users", icon: Users },
-  { key: "notifications", href: "/admin/settings/notifications", label: "Notifications", icon: BellRing }
+  { key: "activity", href: "/admin/activity", label: "Activity", icon: Activity },
+  { key: "nodes", href: "/admin/nodes", label: "Nodes", icon: Server },
+  { key: "organizations", href: "/organizations", label: "Organizations", icon: Users },
+  { key: "users", href: "/admin/settings/users", label: "All Users", icon: Users },
+  { key: "alerting", href: "/admin/settings/notifications", label: "Alerting", icon: BellRing },
+  { key: "platformSettings", href: "/admin/settings", label: "Platform Settings", icon: Settings }
 ];
 
 const CLIENT_NAV: NavItem[] = [
-  { key: "overview", href: "/client", label: "Overview", icon: LayoutDashboard },
-  { key: "workloads", href: "/client/workloads", label: "Workloads", icon: Workflow },
-  { key: "activity", href: "/client/activity", label: "Activity", icon: Activity }
+  { key: "overview", href: "/organization", label: "Overview", icon: LayoutDashboard },
+  { key: "workloads", href: "/organization/workloads", label: "Workloads", icon: Workflow },
+  { key: "containers", href: "/organization/containers", label: "Containers", icon: Container },
+  { key: "attention", href: "/organization/attention", label: "Attention", icon: ShieldAlert },
+  { key: "activity", href: "/organization/activity", label: "Activity", icon: Activity }
 ];
 
 const CLIENT_ADMIN_NAV: NavItem[] = [
-  { key: "team", href: "/client/team", label: "Team", icon: Users }
+  { key: "members", href: "/organization/members", label: "Members", icon: Users },
+  { key: "settings", href: "/organization/settings", label: "Settings", icon: Settings }
 ];
 
 export type LayoutVariant = "wide" | "standard" | "full";
@@ -72,7 +74,7 @@ export type LayoutVariant = "wide" | "standard" | "full";
 /**
  * Resolve a route to one of three intentional layout variants (no arbitrary
  * per-page max widths):
- *  - `wide`   inventory surfaces (Overview, Workloads, Nodes, Clients, Attention, Activity)
+ *  - `wide`   inventory surfaces (Overview, Workloads, Nodes, Organizations, Attention, Activity)
  *  - `standard` detail / settings pages
  *  - `full`   logs / editors
  */
@@ -80,7 +82,8 @@ export function layoutVariantFor(pathname: string): LayoutVariant {
   if (
     pathname.includes("/deployment/edit") ||
     pathname.startsWith("/admin/containers/") ||
-    pathname.startsWith("/client/containers/")
+    pathname.startsWith("/client/containers/") ||
+    pathname.startsWith("/organization/containers/")
   ) {
     return "full";
   }
@@ -95,6 +98,14 @@ export function layoutVariantFor(pathname: string): LayoutVariant {
     "/admin/compose",
     "/admin/settings/users",
     "/admin/settings/notifications",
+    "/organization",
+    "/organization/workloads",
+    "/organization/containers",
+    "/organization/attention",
+    "/organization/activity",
+    "/organization/members",
+    "/organization/settings",
+    // Legacy paths remain supported for bookmarked sessions.
     "/client",
     "/client/workloads",
     "/client/containers",
@@ -156,10 +167,9 @@ function DashboardShellInner({
   const router = useRouter();
   const { rootHref, goRoot } = useNavigation();
   const isAdmin = session.role === "ADMIN";
-  const isClientAdmin = session.role === "CLIENT_ADMIN";
+  const isClientAdmin = session.role === "CLIENT" || session.role === "CLIENT_ADMIN";
   const navItems = isAdmin ? ADMIN_NAV : [...CLIENT_NAV, ...(isClientAdmin ? CLIENT_ADMIN_NAV : [])];
-  const settingsItems = isAdmin ? ADMIN_SETTINGS : [];
-  const overviewHref = isAdmin ? "/admin" : "/client";
+  const overviewHref = isAdmin ? "/admin" : "/organization";
 
   const [accountOpen, setAccountOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -177,7 +187,7 @@ function DashboardShellInner({
   // Attention badge for the mobile bottom tab (admins only). Uses the same
   // authoritative fleet summary as the Overview screen; refreshes slowly.
   const attentionQuery = useQuery({
-    queryKey: ["shell-freshness", isAdmin ? "admin" : "client"],
+    queryKey: ["shell-freshness", isAdmin ? "admin" : "organization"],
     queryFn: () => apiFetch<ShellSummaryPayload>("/api/shell/summary"),
     refetchInterval: 20_000
   });
@@ -272,17 +282,6 @@ function DashboardShellInner({
         <nav className={cn("space-y-0.5", sidebarCollapsed ? "mt-3" : "mt-5")} aria-label="Primary">
           {navItems.map((item) => renderLink(item, item.icon))}
         </nav>
-
-        {settingsItems.length > 0 && (
-          <>
-            <div className="mt-5 border-t border-border pt-3">
-              {!sidebarCollapsed && <p className="px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-text-subtle">Settings</p>}
-            </div>
-            <nav className="mt-2 space-y-1" aria-label="Settings">
-              {settingsItems.map((item) => renderLink(item, item.icon))}
-            </nav>
-          </>
-        )}
 
         <div className="mt-auto border-t border-border pt-2">
           <Menu

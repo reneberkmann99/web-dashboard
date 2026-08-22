@@ -22,7 +22,18 @@ export async function requirePageRole(role: "ADMIN" | "CLIENT"): Promise<AuthSes
   const isAdminRequest = role === "ADMIN";
   const ok = isAdminRequest ? session.role === "ADMIN" : isClientRole(session.role);
   if (!ok) {
-    redirect(session.role === "ADMIN" ? "/admin" : "/client");
+    redirect(session.role === "ADMIN" ? "/admin" : "/organization");
+  }
+  return session;
+}
+
+/** Server-side page guard for capability-scoped organization surfaces. */
+export async function requirePageCapability(capability: Capability): Promise<AuthSession> {
+  const session = await requirePageSession();
+  try {
+    ensureCan(session, capability);
+  } catch {
+    redirect(session.role === "ADMIN" ? "/admin" : "/organization");
   }
   return session;
 }

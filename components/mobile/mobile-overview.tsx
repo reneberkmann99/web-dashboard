@@ -357,7 +357,7 @@ export function MobileClientOverview({ data }: { data: MobileClientOverviewData 
           {workloads.map((workload) => (
             <div key={workload.id}>
               {workloadCard(workload, () =>
-                go({ url: `/client/workloads/${workload.id}`, label: workload.name, type: "workload", id: workload.id })
+                go({ url: `/organization/workloads/${workload.id}`, label: workload.name, type: "workload", id: workload.id })
               )}
             </div>
           ))}
@@ -376,7 +376,7 @@ export function MobileClientOverview({ data }: { data: MobileClientOverviewData 
             {recentContainers.slice(0, 5).map((container) => (
               <div key={container.assignmentId}>
                 {containerCard(container as Parameters<typeof containerCard>[0], () =>
-                  go({ url: `/client/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId })
+                  go({ url: `/organization/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId })
                 )}
               </div>
             ))}

@@ -7,5 +7,5 @@ export default async function HomePage(): Promise<never> {
     redirect("/login");
   }
 
-  redirect(session.role === "ADMIN" ? "/admin" : "/client");
+  redirect(session.role === "ADMIN" ? "/admin" : "/organization");
 }

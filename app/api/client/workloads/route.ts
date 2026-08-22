@@ -7,7 +7,7 @@ export async function GET(): Promise<Response> {
   try {
     const session = await requireApiRole("CLIENT");
     if (!session.clientAccountId) {
-      return fail("FORBIDDEN", "No client account", 403);
+      return fail("FORBIDDEN", "No organization account", 403);
     }
     const clientId = session.clientAccountId;
 

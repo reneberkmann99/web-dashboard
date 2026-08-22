@@ -12,7 +12,7 @@ import { fromError, fail, ok } from "@/server/http";
 export async function POST(request: Request): Promise<Response> {
   try {
     const session = await requireApiCapability("deployment.manage");
-    if (!session.clientAccountId) return fail("FORBIDDEN", "No client account", 403);
+    if (!session.clientAccountId) return fail("FORBIDDEN", "No organization account", 403);
     const body = validateDeploymentSchema.parse(await request.json());
 
     const allowed = await listAllowedNodesForClient(session.clientAccountId);

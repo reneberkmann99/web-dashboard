@@ -1,14 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Bell, Container, KeyRound, LogOut, UserCog, UserRound, Users } from "lucide-react";
+import { Bell, Container, LogOut, Settings, UserCog, UserRound, Users } from "lucide-react";
 import { MobileSheet } from "@/components/mobile/mobile-sheet";
 import { useNavigation } from "@/components/navigation/navigation-context";
 import { MOBILE_SHEET_DESTINATIONS, type RootDef } from "@/lib/navigation";
 
 /**
  * Account sheet (design §07) — where secondary/admin destinations live on
- * mobile: Containers, Clients, Users & roles, Notifications, Account
+ * mobile: Containers, Organizations, All Users, Alerting, Account
  * settings, Log out. Bottom sheet, safe-area aware, closes on selection,
  * clear account identity. Never a sidebar clone.
  */
@@ -24,6 +24,7 @@ export function AccountSheet({
   const router = useRouter();
   const { rootKey, rootHref, stack, goRoot, setMobileReturn } = useNavigation();
   const isAdmin = session.role === "ADMIN";
+  const isOrganizationAdmin = session.role === "CLIENT_ADMIN";
 
   const currentRoot: RootDef = {
     key: rootKey,
@@ -94,25 +95,28 @@ export function AccountSheet({
             )}
           {isAdmin &&
             row(
-              "Clients",
+              "Organizations",
               <Users size={19} />,
-              () => navigate(MOBILE_SHEET_DESTINATIONS.clients),
-              { testId: "account-sheet-clients" }
+              () => navigate(MOBILE_SHEET_DESTINATIONS.organizations),
+              { testId: "account-sheet-organizations" }
             )}
           {isAdmin &&
             row(
-              "Users & roles",
+              "All Users",
               <UserCog size={19} />,
               () => navigate(MOBILE_SHEET_DESTINATIONS.users),
               { testId: "account-sheet-users" }
             )}
           {isAdmin &&
             row(
-              "Notifications",
+              "Alerting",
               <Bell size={19} />,
-              () => navigate(MOBILE_SHEET_DESTINATIONS.notifications),
-              { testId: "account-sheet-notifications" }
+              () => navigate(MOBILE_SHEET_DESTINATIONS.alerting),
+              { testId: "account-sheet-alerting" }
             )}
+          {isAdmin && row("Platform Settings", <Settings size={19} />, () => navigate(MOBILE_SHEET_DESTINATIONS.platformSettings), { testId: "account-sheet-platform-settings" })}
+          {isOrganizationAdmin && row("Members", <Users size={19} />, () => navigate(MOBILE_SHEET_DESTINATIONS.members), { testId: "account-sheet-members" })}
+          {isOrganizationAdmin && row("Settings", <Settings size={19} />, () => navigate(MOBILE_SHEET_DESTINATIONS.settings), { testId: "account-sheet-organization-settings" })}
           {row(
             "Account settings",
             <UserRound size={19} />,

@@ -103,11 +103,11 @@ export default function ClientContainersPage(): React.JSX.Element {
         ariaLabel="Assigned containers"
         rowKey={(container) => container.assignmentId}
         onRowClick={(container) => {
-          go({ url: `/client/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId });
+          go({ url: `/organization/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId });
         }}
         mobileCard={(container) =>
           containerCard(container, () => {
-            go({ url: `/client/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId });
+          go({ url: `/organization/containers/${container.assignmentId}`, label: container.name, type: "container", id: container.containerId });
           })
         }
       />

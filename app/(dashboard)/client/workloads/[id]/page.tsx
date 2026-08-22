@@ -44,7 +44,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
       setRollbackOpen(true);
       const next = new URLSearchParams(searchParams.toString());
       next.delete("rollback");
-      router.replace(`/client/workloads/${params.id}${next.size ? `?${next}` : ""}`, { scroll: false });
+      router.replace(`/organization/workloads/${params.id}${next.size ? `?${next}` : ""}`, { scroll: false });
     }
   }, [searchParams, params.id, router]);
 
@@ -124,12 +124,12 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
           stateKey={`client-workload:${workload.id}:containers`}
           ariaLabel={`${workload.name} containers`}
           onRowClick={(c) => {
-            go({ url: `/client/containers/${c.assignmentId}`, label: c.name, type: "container", id: c.containerId });
+            go({ url: `/organization/containers/${c.assignmentId}`, label: c.name, type: "container", id: c.containerId });
           }}
           rowKey={(c) => c.containerId}
           mobileCard={(c) =>
             containerCard(c, () => {
-              go({ url: `/client/containers/${c.assignmentId}`, label: c.name, type: "container", id: c.containerId });
+              go({ url: `/organization/containers/${c.assignmentId}`, label: c.name, type: "container", id: c.containerId });
             })
           }
         />
@@ -140,7 +140,7 @@ export default function ClientWorkloadDetailPage(): React.JSX.Element {
           <DeploymentsTab
             deploymentId={deployment.deploymentId}
             apiBase={CLIENT_API_BASE}
-            editHref={`/client/workloads/${workload.id}/deployment/edit`}
+            editHref={`/organization/workloads/${workload.id}/deployment/edit`}
             activeOperation={deployment.activeOperation}
           />
         ) : (

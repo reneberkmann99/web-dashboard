@@ -158,9 +158,9 @@ export function AdoptionDialog({
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={data.dockerName} />
                 </label>
                 <label className="space-y-1.5">
-                  <span className="block text-xs font-medium uppercase tracking-wide text-text-muted">Client (optional)</span>
+                  <span className="block text-xs font-medium uppercase tracking-wide text-text-muted">Organization (optional)</span>
                   <Select value={clientId} onChange={(e) => setClientId(e.target.value)}>
-                    <option value="">Internal — no client</option>
+                    <option value="">Internal — no organization</option>
                     {(clients.data?.data ?? []).map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}

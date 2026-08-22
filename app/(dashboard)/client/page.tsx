@@ -124,7 +124,7 @@ export default function ClientDashboardPage(): React.JSX.Element {
                   <button
                     key={w.id}
                     type="button"
-                    onClick={() => router.push(`/client/workloads/${w.id}`)}
+                    onClick={() => router.push(`/organization/workloads/${w.id}`)}
                     className="flex w-full items-center justify-between rounded-lg border border-border bg-panelAlt px-4 py-3 text-left transition hover:bg-panelAlt/60"
                   >
                     <div>

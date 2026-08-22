@@ -86,13 +86,13 @@ export default function AdminClientsPage(): React.JSX.Element {
         body: JSON.stringify({ name, slug: slug || slugify(name) })
       }),
     onSuccess: (data) => {
-      toast.success("Client created");
+      toast.success("Organization created");
       setCreateOpen(false);
       setName("");
       setSlug("");
       setSlugTouched(false);
       queryClient.invalidateQueries({ queryKey: ["admin-clients"] });
-      router.push(`/admin/clients/${data.id}`);
+      router.push(`/organizations/${data.id}`);
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Create failed")
   });
@@ -100,7 +100,7 @@ export default function AdminClientsPage(): React.JSX.Element {
   const columns: Column<ClientListRecord>[] = [
     {
       key: "name",
-      header: "Client",
+      header: "Organization",
       sortValue: (c) => c.name,
       render: (c) => (
         <p className="truncate font-medium text-text">{c.name}<span className="ml-2 font-mono text-[11px] font-normal text-text-subtle">{c.slug}</span></p>
@@ -150,20 +150,20 @@ export default function AdminClientsPage(): React.JSX.Element {
       header: "",
       className: "w-10 text-right",
       render: (client) => <Menu label={`Actions for ${client.name}`} items={[
-        { label: "Open client", onSelect: () => go({ url: `/admin/clients/${client.id}`, label: client.name, type: "client", id: client.id }) },
-        { label: "Copy identifier", onSelect: () => { void navigator.clipboard.writeText(client.id); toast.success("Client ID copied"); } }
+        { label: "Open organization", onSelect: () => go({ url: `/organizations/${client.id}`, label: client.name, type: "organization", id: client.id }) },
+        { label: "Copy identifier", onSelect: () => { void navigator.clipboard.writeText(client.id); toast.success("Organization ID copied"); } }
       ]} />
     }
   ];
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Tenancy" title="Clients" count={totalQuery.data?.total ?? query.data?.total ?? 0} description="Organizations and their access boundaries." actions={<Button onClick={() => setCreateOpen(true)}>Create client</Button>} />
+      <PageHeader eyebrow="Tenancy" title="Organizations" count={totalQuery.data?.total ?? query.data?.total ?? 0} description="Organizations and their access boundaries." actions={<Button onClick={() => setCreateOpen(true)}>Create organization</Button>} />
 
       <DesktopFilterBar
         search={search}
         onSearchChange={(value) => { setSearch(value); syncUrl({ search: value, page: "1" }); }}
-        searchPlaceholder="Search clients…"
+        searchPlaceholder="Search organizations…"
         dimensions={[{ id: "state", label: "State", value: state, options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }], onChange: (value) => { setState(value); syncUrl({ state: value, page: "1" }); } }]}
         resultCount={query.data?.total ?? 0}
         totalCount={totalQuery.data?.total ?? query.data?.total ?? 0}
@@ -178,8 +178,8 @@ export default function AdminClientsPage(): React.JSX.Element {
             setSearch(e.target.value);
             syncUrl({ search: e.target.value, page: "1" });
           }}
-          placeholder="Search clients…"
-          aria-label="Search clients"
+          placeholder="Search organizations…"
+          aria-label="Search organizations"
           className="w-full"
         />
       </div>
@@ -192,16 +192,16 @@ export default function AdminClientsPage(): React.JSX.Element {
         pageSize={PAGE_SIZE}
         onPageChange={(p) => syncUrl({ page: String(p) })}
         loading={query.isLoading}
-        error={query.isError ? "Failed to load clients" : null}
-        emptyTitle="No clients yet"
-        emptyBody="Create a client to represent an organization, then invite users and grant workloads."
+        error={query.isError ? "Failed to load organizations" : null}
+        emptyTitle="No organizations yet"
+        emptyBody="Create an organization, then invite members and grant workloads."
         onRowClick={(c) => {
-          go({ url: `/admin/clients/${c.id}`, label: c.name, type: "client", id: c.id });
+          go({ url: `/organizations/${c.id}`, label: c.name, type: "organization", id: c.id });
         }}
         rowKey={(c) => c.id}
         mobileCard={(c) =>
           clientCard(c, () => {
-            go({ url: `/admin/clients/${c.id}`, label: c.name, type: "client", id: c.id });
+            go({ url: `/organizations/${c.id}`, label: c.name, type: "organization", id: c.id });
           })
         }
       />
@@ -209,8 +209,8 @@ export default function AdminClientsPage(): React.JSX.Element {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Create client"
-        description="Represent an organization, then invite its users and grant workloads."
+        title="Create organization"
+        description="Represent an organization, then invite its members and grant workloads."
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>
@@ -220,7 +220,7 @@ export default function AdminClientsPage(): React.JSX.Element {
               disabled={createMutation.isPending || name.trim().length < 2}
               onClick={() => createMutation.mutate()}
             >
-              {createMutation.isPending ? "Creating…" : "Create client"}
+              {createMutation.isPending ? "Creating…" : "Create organization"}
             </Button>
           </>
         }
@@ -228,7 +228,7 @@ export default function AdminClientsPage(): React.JSX.Element {
         <div className="space-y-4">
           <div className="space-y-1">
             <label htmlFor="client-name" className="text-sm text-muted">
-              Client name
+              Organization name
             </label>
             <Input
               id="client-name"

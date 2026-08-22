@@ -12,6 +12,8 @@ export function robotsTextForHostname(hostname: string): string {
     "Allow: /",
     "Disallow: /admin/",
     "Disallow: /client/",
+    "Disallow: /organization/",
+    "Disallow: /organizations/",
     "Disallow: /api/",
     "Disallow: /login",
     "Disallow: /activate",

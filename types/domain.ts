@@ -1,10 +1,24 @@
 export type UserRole = "ADMIN" | "CLIENT" | "CLIENT_ADMIN" | "CLIENT_OPERATOR" | "CLIENT_VIEWER";
 
 /** Roles that represent tenant-scoped (non-platform) users. */
-export const CLIENT_ROLES: UserRole[] = ["CLIENT_ADMIN", "CLIENT_OPERATOR", "CLIENT_VIEWER"];
+export const CLIENT_ROLES: UserRole[] = ["CLIENT", "CLIENT_ADMIN", "CLIENT_OPERATOR", "CLIENT_VIEWER"];
 
 export function isClientRole(role: UserRole): boolean {
   return CLIENT_ROLES.includes(role);
+}
+
+/** User-facing terminology is Organization; Client is retained internally for migration safety. */
+export const isOrganizationRole = isClientRole;
+
+export function roleLabel(role: string): string {
+  const labels: Record<string, string> = {
+    ADMIN: "Platform Admin",
+    CLIENT: "Organization Admin",
+    CLIENT_ADMIN: "Organization Admin",
+    CLIENT_OPERATOR: "Organization Operator",
+    CLIENT_VIEWER: "Organization Viewer"
+  };
+  return labels[role] ?? role.replaceAll("_", " ");
 }
 
 export type NodeStatus = "ONLINE" | "OFFLINE" | "UNKNOWN" | "INACTIVE";

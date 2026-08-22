@@ -1,16 +1,16 @@
 "use client";
 
-import { Activity, Boxes, LayoutDashboard, Server, ShieldAlert, Users, Workflow } from "lucide-react";
+import { Activity, Boxes, Container, LayoutDashboard, Server, ShieldAlert, Users, Workflow } from "lucide-react";
 import { useNavigation } from "@/components/navigation/navigation-context";
 import { cn } from "@/lib/utils";
 import type { NavRootKey } from "@/lib/navigation";
 
 /**
  * Mobile bottom tab bar (design §02) — exactly five primary destinations for
- * admins (Overview · Workloads · Nodes · Attention · Activity); clients get
- * their existing roots (Overview · Workloads · Activity [+ Team for
- * CLIENT_ADMIN]). Containers/Clients/Users/Notifications deliberately never
- * appear here — they live in the account sheet.
+ * admins (Overview · Workloads · Nodes · Attention · Activity); organization users get
+ * organization users get the operational roots (Overview · Workloads ·
+ * Containers · Attention · Activity). Membership/settings are secondary
+ * organization-admin destinations in the account sheet.
  *
  * Fixed to the viewport bottom, safe-area aware, 44px+ touch targets, icon +
  * short label, no horizontal scrolling. The current navigation ROOT is
@@ -27,7 +27,6 @@ export function MobileBottomNav({
   const { rootKey, goRoot } = useNavigation();
 
   const isAdmin = role === "ADMIN";
-  const isClientAdmin = role === "CLIENT_ADMIN";
   const items: Array<{ key: NavRootKey; href: string; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = isAdmin
     ? [
         { key: "overview", href: "/admin", label: "Overview", icon: LayoutDashboard },
@@ -37,10 +36,11 @@ export function MobileBottomNav({
         { key: "activity", href: "/admin/activity", label: "Activity", icon: Activity }
       ]
     : [
-        { key: "overview", href: "/client", label: "Overview", icon: LayoutDashboard },
-        { key: "workloads", href: "/client/workloads", label: "Workloads", icon: Workflow },
-        ...(isClientAdmin ? [{ key: "team" as const, href: "/client/team", label: "Team", icon: Users }] : []),
-        { key: "activity", href: "/client/activity", label: "Activity", icon: Activity }
+        { key: "overview", href: "/organization", label: "Overview", icon: LayoutDashboard },
+        { key: "workloads", href: "/organization/workloads", label: "Workloads", icon: Workflow },
+        { key: "containers", href: "/organization/containers", label: "Containers", icon: Container },
+        { key: "attention", href: "/organization/attention", label: "Attention", icon: ShieldAlert },
+        { key: "activity", href: "/organization/activity", label: "Activity", icon: Activity }
       ];
 
   return (

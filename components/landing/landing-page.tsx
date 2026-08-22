@@ -52,8 +52,8 @@ const capabilities = [
   },
   {
     icon: UsersRound,
-    title: "Scoped client workspaces",
-    copy: "Client roles see tenant-scoped workloads and explicitly granted actions. Platform administration stays outside their workspace."
+    title: "Scoped organization workspaces",
+    copy: "Organization roles see tenant-scoped workloads and explicitly granted actions. Platform administration stays outside their workspace."
   },
   {
     icon: FileClock,
@@ -71,7 +71,7 @@ const securityPoints = [
   {
     icon: LockKeyhole,
     title: "Server-side authorization",
-    copy: "Role and tenant checks are enforced in API routes and service logic, not left to hidden navigation or client-side state."
+    copy: "Role and tenant checks are enforced in API routes and service logic, not left to hidden navigation or browser state."
   },
   {
     icon: Container,
@@ -218,7 +218,7 @@ export function LandingPage(): React.JSX.Element {
                 Your fleet,<br />on one deck.
               </h1>
               <p className="mt-6 max-w-[36rem] text-lg leading-8 text-text-muted sm:text-[1.1875rem]">
-                See the state that needs you, manage Compose releases, and give each client a scoped workspace — without putting Docker in the browser.
+                See the state that needs you, manage Compose releases, and give each organization a scoped workspace — without putting Docker in the browser.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <PlatformCta />
