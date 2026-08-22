@@ -294,7 +294,7 @@ function EndpointsPanel({ endpoints, loading, clients, domains, addresses, provi
             <span className="mb-1 block text-text-muted">Provider (optional)</span>
             <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
               <option value="">Inherit from public address</option>
-              {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {providers.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
           </label>
         </div>

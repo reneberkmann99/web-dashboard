@@ -191,30 +191,30 @@ export type UpdatePublicAddressInput = {
 
 export async function updatePublicAddress(input: UpdatePublicAddressInput) {
   requirePlatformAdmin(input.actor);
-  const existing = await prisma.publicAddress.findUnique({ where: { id: input.id } });
-  if (!existing) throw new Error("NOT_FOUND");
-
-  const allocation = input.allocation ?? existing.allocation;
-  const reservedForOrgId = input.reservedForOrgId !== undefined ? input.reservedForOrgId : existing.reservedForOrgId;
-  if (allocation === "SHARED" && reservedForOrgId) throw new Error("SHARED_ADDRESS_CANNOT_BE_RESERVED");
+  const existsCheck = await prisma.publicAddress.findUnique({ where: { id: input.id }, select: { id: true } });
+  if (!existsCheck) throw new Error("NOT_FOUND");
   if (input.providerId) await assertProviderExists(input.providerId);
 
   const address = await prisma.$transaction(async (tx) => {
-    // Lock order (ClientAccount, then PublicAddress) matches
-    // createIngressEndpoint's — see server/db.ts's lockPublicAddressForUpdate
-    // doc comment for why both operations must serialize on the address row:
-    // without it, a concurrent endpoint creation can read this address as
-    // still SHARED and insert after this transaction has already reserved it
-    // to a different organization (or vice versa), each having checked
-    // against a state the other has since invalidated.
+    // Lock the address FIRST (consistent order with createIngressEndpoint —
+    // see server/db.ts's lockPublicAddressForUpdate doc comment), then
+    // re-read it under that lock rather than reusing the pre-transaction
+    // snapshot above: deriving allocation/reservedForOrgId from a stale read
+    // can silently reinstate a reservation a concurrent update already
+    // cleared (or vice versa) once this transaction's own write lands.
+    await lockPublicAddressForUpdate(tx, input.id);
+    const existing = await tx.publicAddress.findUniqueOrThrow({ where: { id: input.id } });
+
+    const allocation = input.allocation ?? existing.allocation;
+    const reservedForOrgId = input.reservedForOrgId !== undefined ? input.reservedForOrgId : existing.reservedForOrgId;
+    if (allocation === "SHARED" && reservedForOrgId) throw new Error("SHARED_ADDRESS_CANNOT_BE_RESERVED");
+
     if (reservedForOrgId && reservedForOrgId !== existing.reservedForOrgId) {
       await lockClientAccountForQuota(tx, reservedForOrgId);
       if (allocation === "DEDICATED") await assertDedicatedIpQuota(tx, reservedForOrgId);
-    }
-    await lockPublicAddressForUpdate(tx, existing.id);
-    if (reservedForOrgId && reservedForOrgId !== existing.reservedForOrgId) {
       await assertNoConflictingEndpointOwners(tx, existing.id, reservedForOrgId);
     }
+
     return tx.publicAddress.update({
       where: { id: input.id },
       data: {
@@ -486,12 +486,15 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
   if (!account) throw new Error("NOT_FOUND");
 
   // The workload (and, if given, the container) must belong to this exact
-  // organization — never trust the client to only submit its own ids.
+  // organization — never trust the client to only submit its own ids. A
+  // container that's been deleted (soft: isActive false, see
+  // server/services/container-lifecycle.ts) can never back an endpoint —
+  // the row surviving is bookkeeping, not something a gateway can route to.
   const workload = await prisma.project.findUnique({ where: { id: input.workloadId }, select: { id: true, clientAccountId: true } });
   if (!workload || workload.clientAccountId !== clientAccountId) throw new Error("NOT_FOUND");
   if (input.containerId) {
-    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true } });
-    if (!container || container.projectId !== input.workloadId) throw new Error("NOT_FOUND");
+    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true, isActive: true } });
+    if (!container || container.projectId !== input.workloadId || !container.isActive) throw new Error("NOT_FOUND");
   }
 
   const tcpUdp = isTcpUdp(input.exposureType);
@@ -512,21 +515,20 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
 
   if (!input.containerId && !input.serviceName) throw new Error("BACKEND_IDENTIFIER_REQUIRED");
 
-  // The row locks serialize this against both concurrent quota checks for
+  // The row locks serialize this against both a concurrent updatePublicAddress
+  // reservation change (without the PublicAddress lock, acquired FIRST for
+  // consistency with that function — see server/db.ts's
+  // lockPublicAddressForUpdate doc comment — and re-reading it under that
+  // lock, this could still bind to an address an admin is simultaneously
+  // reserving to a different organization) and concurrent quota checks for
   // this organization (maxIngressEndpoints/maxTcpUdpEndpoints — without the
   // ClientAccount lock, two concurrent requests with one slot remaining
-  // could both observe headroom and both insert) and a concurrent
-  // updatePublicAddress reservation change (without the PublicAddress lock
-  // and re-reading it under that lock, this could still bind to an address
-  // an admin is simultaneously reserving to a different organization — see
-  // server/db.ts's lockPublicAddressForUpdate doc comment). The
-  // port-conflict check runs in here too (consistent read within the same
-  // transaction); it's additionally backstopped by the table's own unique
-  // constraint regardless.
+  // could both observe headroom and both insert). The port-conflict check
+  // runs in here too (consistent read within the same transaction); it's
+  // additionally backstopped by the table's own unique constraint regardless.
   let endpoint;
   try {
     endpoint = await prisma.$transaction(async (tx) => {
-      await lockClientAccountForQuota(tx, clientAccountId);
       await lockPublicAddressForUpdate(tx, input.publicAddressId);
 
       const publicAddress = await tx.publicAddress.findUnique({ where: { id: input.publicAddressId } });
@@ -534,6 +536,17 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
       if (publicAddress.allocation === "DEDICATED" && publicAddress.reservedForOrgId !== clientAccountId) {
         throw new Error("PUBLIC_ADDRESS_RESERVED");
       }
+
+      // A disabled provider must never be freshly bound to — whether
+      // explicitly chosen or inherited from the address — otherwise the
+      // provider's own Disable action has no effect on new bindings.
+      const resolvedProviderId = input.providerId ?? publicAddress.providerId ?? null;
+      if (resolvedProviderId) {
+        const provider = await tx.ingressProvider.findUnique({ where: { id: resolvedProviderId }, select: { id: true, enabled: true } });
+        if (!provider || !provider.enabled) throw new Error("INGRESS_PROVIDER_UNAVAILABLE");
+      }
+
+      await lockClientAccountForQuota(tx, clientAccountId);
 
       if (tcpUdp) {
         const totalExisting = await tx.ingressEndpoint.count({ where: { clientAccountId, exposureType: { in: ["TCP", "UDP"] } } });
@@ -561,7 +574,7 @@ export async function createIngressEndpoint(input: CreateIngressEndpointInput) {
           domainId,
           publicAddressId: input.publicAddressId,
           publicPort: tcpUdp ? input.publicPort! : null,
-          providerId: input.providerId ?? publicAddress.providerId ?? null,
+          providerId: resolvedProviderId,
           createdById: input.actor.userId
         },
         select: ingressEndpointSelect
@@ -640,8 +653,8 @@ export async function updateIngressEndpoint(input: UpdateIngressEndpointInput) {
   assertOwnsClientAccountId(input.actor, existing.clientAccountId);
 
   if (input.containerId) {
-    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true } });
-    if (!container || container.projectId !== existing.workloadId) throw new Error("NOT_FOUND");
+    const container = await prisma.container.findUnique({ where: { id: input.containerId }, select: { id: true, projectId: true, isActive: true } });
+    if (!container || container.projectId !== existing.workloadId || !container.isActive) throw new Error("NOT_FOUND");
   }
 
   // An endpoint with neither a container nor a service name has nothing for

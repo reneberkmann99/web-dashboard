@@ -122,7 +122,8 @@ export function fromError(error: unknown): NextResponse {
       error.message === "DOMAIN_ALREADY_BOUND" ||
       error.message === "PUBLIC_ADDRESS_UNAVAILABLE" ||
       error.message === "PUBLIC_ADDRESS_RESERVED" ||
-      error.message === "BACKEND_IDENTIFIER_REQUIRED"
+      error.message === "BACKEND_IDENTIFIER_REQUIRED" ||
+      error.message === "INGRESS_PROVIDER_UNAVAILABLE"
     ) {
       return fail(error.message, "This ingress endpoint configuration was rejected", 422);
     }

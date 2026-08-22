@@ -674,4 +674,65 @@ describe("Phase 5 review follow-ups", () => {
     const final = await getDomain(domain.id, sessionFor(world.clientAAdmin));
     expect(final.status).toBe("DISABLED");
   });
+
+  it("rejects a deleted (soft: isActive false) container as an endpoint backend, on create and on update", async () => {
+    const deletedContainer = await prisma.container.create({
+      data: {
+        nodeId: world.node1.id,
+        projectId: world.projectA.id,
+        dockerContainerId: `deleted-${Date.now()}`,
+        dockerName: "deleted-container",
+        isActive: false
+      }
+    });
+    const address = await createPublicAddress({ label: "Inactive container test", ipAddress: "203.0.113.156", ipVersion: "V4", actor: sessionFor(world.adminA) });
+
+    await expect(createIngressEndpoint({
+      workloadId: world.projectA.id, containerId: deletedContainer.id, targetPort: 7400, exposureType: "TCP",
+      publicAddressId: address.id, publicPort: 27400, actor: sessionFor(world.clientAAdmin)
+    })).rejects.toThrow("NOT_FOUND");
+
+    const endpoint = await createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7401, exposureType: "TCP",
+      publicAddressId: address.id, publicPort: 27401, actor: sessionFor(world.clientAAdmin)
+    });
+    await expect(updateIngressEndpoint({ id: endpoint.id, containerId: deletedContainer.id, actor: sessionFor(world.clientAAdmin) }))
+      .rejects.toThrow("NOT_FOUND");
+  });
+
+  it("never leaves a SHARED address with a stale reservedForOrgId under concurrent updates (re-reads under the address lock, not a pre-lock snapshot)", async () => {
+    const address = await createPublicAddress({
+      label: "Consistency race", ipAddress: "203.0.113.157", ipVersion: "V4", allocation: "DEDICATED",
+      reservedForOrgId: world.clientA.id, actor: sessionFor(world.adminA)
+    });
+
+    const results = await Promise.allSettled([
+      updatePublicAddress({ id: address.id, allocation: "SHARED", reservedForOrgId: null, actor: sessionFor(world.adminA) }),
+      updatePublicAddress({ id: address.id, label: "Consistency race renamed", actor: sessionFor(world.adminA) })
+    ]);
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+
+    const final = await prisma.publicAddress.findUniqueOrThrow({ where: { id: address.id } });
+    if (final.allocation === "SHARED") {
+      expect(final.reservedForOrgId).toBeNull();
+    }
+  });
+
+  it("rejects binding to a disabled provider, whether explicitly chosen or inherited from the public address", async () => {
+    const disabledProvider = await createIngressProvider({ name: "Disabled gw", gatewayHostname: "disabled.gw.test", enabled: false, actor: sessionFor(world.adminA) });
+    const enabledAddress = await createPublicAddress({ label: "Explicit disabled provider", ipAddress: "203.0.113.158", ipVersion: "V4", actor: sessionFor(world.adminA) });
+
+    await expect(createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7500, exposureType: "TCP",
+      publicAddressId: enabledAddress.id, publicPort: 27500, providerId: disabledProvider.id, actor: sessionFor(world.clientAAdmin)
+    })).rejects.toThrow("INGRESS_PROVIDER_UNAVAILABLE");
+
+    const addressWithDisabledProvider = await createPublicAddress({
+      label: "Inherited disabled provider", ipAddress: "203.0.113.159", ipVersion: "V4", providerId: disabledProvider.id, actor: sessionFor(world.adminA)
+    });
+    await expect(createIngressEndpoint({
+      workloadId: world.projectA.id, serviceName: "svc", targetPort: 7501, exposureType: "TCP",
+      publicAddressId: addressWithDisabledProvider.id, publicPort: 27501, actor: sessionFor(world.clientAAdmin)
+    })).rejects.toThrow("INGRESS_PROVIDER_UNAVAILABLE");
+  });
 });
